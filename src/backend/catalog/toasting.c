@@ -34,6 +34,9 @@
 #include "utils/syscache.h"
 #include "utils/guc.h"
 
+Oid binary_upgrade_next_pg_type_toast_oid = InvalidOid;
+extern Oid binary_upgrade_next_toast_relfilenode;
+
 static bool create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 							   Oid *comptypeOid, bool is_part_child);
 
@@ -157,7 +160,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	/*
 	 * Check to see whether the table actually needs a TOAST table.
 	 */
-	if (!RelationNeedsToastTable(rel))
+	if (!RelationNeedsToastTable(rel) &&
+		!OidIsValid(binary_upgrade_next_toast_relfilenode))
 		return false;
 
 	/*
