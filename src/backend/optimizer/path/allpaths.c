@@ -1304,6 +1304,9 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		config = CopyPlannerConfig(root->config);
 		config->honor_order_by = false;		/* partial order is enough */
 
+		/* plan_params should not be in use in current query level */
+		Assert(root->plan_params == NIL);
+
 		rel->subplan = subquery_planner(root->glob, subquery,
 									root,
 									false, tuple_fraction,

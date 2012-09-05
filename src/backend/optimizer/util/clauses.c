@@ -5364,6 +5364,7 @@ flatten_join_alias_var_optimizer(Query *query, int queryLevel)
 	root->glob->finalrtable = NIL;
 	root->glob->relationOids = NIL;
 	root->glob->invalItems = NIL;
+	root->glob->nParamExec = 0;
 	root->glob->transientPlan = false;
 	root->glob->nParamExec = 0;
 

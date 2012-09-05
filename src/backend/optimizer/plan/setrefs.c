@@ -221,6 +221,10 @@ static void set_plan_references_input_asserts(PlannerGlobal *glob, Plan *plan, L
 
 	}
 
+	// GPDB_94_MERGE_FIXME: This GPDB-added assertion stopped working after cherry-picking upstream
+	// commit 46c508fbcf9
+#if 0
+
 	/* Ensure that all params that the plan refers to has a corresponding subplan */
 	allParams = extract_nodes(glob, (Node *) plan, T_Param);
 
@@ -233,7 +237,7 @@ static void set_plan_references_input_asserts(PlannerGlobal *glob, Plan *plan, L
 		Param *param = lfirst(lc);
 		if (param->paramkind == PARAM_EXEC)
 		{
-			Assert(param->paramid < list_length(glob->paramlist) && "Parameter ID outside range of parameters known at the global level.");
+			Assert(param->paramid < glob->nParamExec && "Parameter ID outside range of parameters known at the global level.");
 			PlannerParamItem *paramItem = list_nth(glob->paramlist, param->paramid);
 			Assert(paramItem);
 

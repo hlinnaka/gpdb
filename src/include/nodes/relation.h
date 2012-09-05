@@ -585,7 +585,7 @@ typedef struct RelOptInfo
 	/* use "struct Plan" to avoid including plannodes.h here */
 	struct Plan *subplan;		/* if subquery (in GPDB: or CTE) */
 	PlannerInfo *subroot;		/* if subquery (in GPDB: or CTE) */
-	List	   *subplan_params; /* if subquery */
+	List	   *subplan_params;	/* if subquery (in GPDB: or CTE) */
 	/* use "struct FdwRoutine" to avoid including fdwapi.h here */
 	struct FdwRoutine *fdwroutine;		/* if foreign table */
 	void	   *fdw_private;	/* if foreign table */

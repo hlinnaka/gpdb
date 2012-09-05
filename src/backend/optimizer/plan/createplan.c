@@ -242,6 +242,9 @@ create_subplan(PlannerInfo *root, Path *best_path)
 {
 	Plan	   *plan;
 
+	/* plan_params should not be in use in current query level */
+	Assert(root->plan_params == NIL);
+
 	/* Initialize this module's private workspace in PlannerInfo */
 	root->curOuterRels = NULL;
 	root->curOuterParams = NIL;
