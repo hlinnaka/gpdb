@@ -11126,6 +11126,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	int			i_aggsortop;
 	int			i_hypothetical;
 	int			i_aggtranstype;
+	int			i_aggtransspace;
 	int			i_agginitval;
 	int			i_convertok;
 	const char *aggtransfn;
@@ -11135,6 +11136,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	const char *aggsortop;
 	bool		hypothetical;
 	const char *aggtranstype;
+	const char *aggtransspace;
 	const char *agginitval;
 	bool		convertok;
 
@@ -11160,7 +11162,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "aggfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "(aggkind = 'h') as hypothetical, " /* aggkind was backported to GPDB6 */
-						  "agginitval, "
+						  "aggtransspace, agginitval, " /* aggtransspace was backported to GPDB6 */
 						  "%s, "
 						  "true AS convertok, "
 				  "pg_catalog.pg_get_function_arguments(p.oid) AS funcargs, "
@@ -11179,6 +11181,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "false AS aggfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "false AS hypothetical, "
+						  "0 AS aggtransspace, agginitval, "
 						  "agginitval, "
 						  "%s, "
 						  "'t'::boolean AS convertok, "
@@ -11204,6 +11207,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	i_aggsortop = PQfnumber(res, "aggsortop");
 	i_hypothetical = PQfnumber(res, "hypothetical");
 	i_aggtranstype = PQfnumber(res, "aggtranstype");
+	i_aggtransspace = PQfnumber(res, "aggtransspace");
 	i_agginitval = PQfnumber(res, "agginitval");
 	i_convertok = PQfnumber(res, "convertok");
 
@@ -11214,6 +11218,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	aggsortop = PQgetvalue(res, 0, i_aggsortop);
 	hypothetical = (PQgetvalue(res, 0, i_hypothetical)[0] == 't');
 	aggtranstype = PQgetvalue(res, 0, i_aggtranstype);
+	aggtransspace = PQgetvalue(res, 0, i_aggtransspace);
 	agginitval = PQgetvalue(res, 0, i_agginitval);
 	convertok = (PQgetvalue(res, 0, i_convertok)[0] == 't');
 
@@ -11251,6 +11256,12 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	else
 	{
 		error_unsupported_server_version(fout);
+	}
+
+	if (strcmp(aggtransspace, "0") != 0)
+	{
+		appendPQExpBuffer(details, ",\n    SSPACE = %s",
+						  aggtransspace);
 	}
 
 	if (!PQgetisnull(res, 0, i_agginitval))
