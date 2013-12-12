@@ -109,6 +109,17 @@ static void show_upper_qual(List *qual, const char *qlabel, Plan *plan,
 static void show_sort_keys(Plan *sortplan, int nkeys, AttrNumber *keycols,
 			   const char *qlabel,
 			   StringInfo str, int indent, ExplainState *es);
+static void show_agg_keys(AggState *astate,
+			  StringInfo str, int indent, ExplainState *es);
+#if 0
+static void show_group_keys(GroupState *gstate, List *ancestors,
+				ExplainState *es);
+#endif
+static void show_windowagg_keys(WindowAggState *gstate, StringInfo str, int indent,
+				ExplainState *es);
+static void show_sort_group_keys(PlanState *planstate, const char *qlabel,
+					 int nkeys, AttrNumber *keycols,
+					 StringInfo str, int indent, ExplainState *es);
 static const char *explain_get_index_name(Oid indexId);
 
 static void
@@ -1581,6 +1592,7 @@ explain_outNode(StringInfo str,
 			break;
 		}
 		case T_Agg:
+			show_agg_keys((AggState *) planstate, str, indent, es);
 			show_upper_qual(plan->qual,
 							"Filter", plan,
 							str, indent, es);
@@ -1591,6 +1603,7 @@ explain_outNode(StringInfo str,
 
 				if ( window->partNumCols > 0 )
 				{
+					show_windowagg_keys((WindowAggState *) planstate, str, indent, es);
 				}
 
 				show_sort_keys(outerPlan(plan),
@@ -2040,6 +2053,110 @@ show_sort_keys(Plan *sortplan, int nkeys, AttrNumber *keycols,
 		/* find key expression in tlist */
 		AttrNumber	keyresno = keycols[keyno];
 		TargetEntry *target = get_tle_by_resno(sortplan->targetlist, keyresno);
+
+		if (!target)
+			elog(ERROR, "no tlist entry for key %d", keyresno);
+		/* Deparse the expression, showing any top-level cast */
+		exprstr = deparse_expr_sweet((Node *) target->expr, context,
+									 useprefix, true);
+		/* And add to str */
+		if (keyno > 0)
+			appendStringInfo(str, ", ");
+		appendStringInfoString(str, exprstr);
+	}
+
+	appendStringInfo(str, "\n");
+}
+
+/*
+ * Show the grouping keys for an Agg node.
+ */
+static void
+show_agg_keys(AggState *astate,
+			  StringInfo str, int indent, ExplainState *es)
+{
+	Agg		   *plan = (Agg *) astate->ss.ps.plan;
+
+	if (plan->numCols > 0)
+	{
+		/* The key columns refer to the tlist of the child plan */
+		show_sort_group_keys(outerPlanState(astate), "Group Key",
+							 plan->numCols, plan->grpColIdx,
+							 str, indent, es);
+	}
+}
+
+#if 0
+/*
+ * Show the grouping keys for a Group node.
+ */
+static void
+show_group_keys(GroupState *gstate, List *ancestors,
+				ExplainState *es)
+{
+	Group	   *plan = (Group *) gstate->ss.ps.plan;
+
+	/* The key columns refer to the tlist of the child plan */
+	ancestors = lcons(gstate, ancestors);
+	show_sort_group_keys(outerPlanState(gstate), "Group Key",
+						 plan->numCols, plan->grpColIdx,
+						 ancestors, es);
+	ancestors = list_delete_first(ancestors);
+}
+#endif
+
+/*
+ * Show the grouping keys for a Group node.
+ */
+static void
+show_windowagg_keys(WindowAggState *winstate, StringInfo str, int indent,
+					ExplainState *es)
+{
+	WindowAgg  *plan = (WindowAgg *) winstate->ss.ps.plan;
+
+	/* The key columns refer to the tlist of the child plan */
+	show_sort_group_keys(outerPlanState(winstate), "Partition Key",
+						 plan->partNumCols, plan->partColIdx,
+						 str, indent, es);
+}
+
+/*
+ * Common code to show sort/group keys, which are represented in plan nodes
+ * as arrays of targetlist indexes
+ */
+static void
+show_sort_group_keys(PlanState *planstate, const char *qlabel,
+					 int nkeys, AttrNumber *keycols,
+					 StringInfo str, int indent, ExplainState *es)
+{
+	Plan	   *plan = planstate->plan;
+	List	   *context;
+	bool		useprefix;
+	int			keyno;
+	char	   *exprstr;
+	int			i;
+
+	if (nkeys <= 0)
+		return;
+
+	useprefix = list_length(es->rtable) > 1;    /*CDB*/
+
+	for (i = 0; i < indent; i++)
+		appendStringInfo(str, "  ");
+	appendStringInfo(str, "  %s: ", qlabel);
+
+	/* Set up deparsing context */
+	context = deparse_context_for_plan((Node *) plan,
+									   NULL,
+									   es->rtable,
+									   es->pstmt->subplans);
+	useprefix = list_length(es->rtable) > 1;
+
+	for (keyno = 0; keyno < nkeys; keyno++)
+	{
+		/* find key expression in tlist */
+		AttrNumber	keyresno = keycols[keyno];
+		TargetEntry *target = get_tle_by_resno(plan->targetlist, keyresno);
 
 		if (!target)
 			elog(ERROR, "no tlist entry for key %d", keyresno);
