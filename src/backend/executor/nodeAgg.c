@@ -1493,9 +1493,6 @@ agg_retrieve_direct(AggState *aggstate)
 	pergroup = aggstate->pergroup;
 	firstSlot = aggstate->ss.ss_ScanTupleSlot;
 
-	if (aggstate->agg_done)
-		return NULL;
-
 	/*
 	 * We loop retrieving tuples until we find one that matches
 	 * aggstate->ss.ps.qual
@@ -2842,6 +2839,7 @@ AggCheckCallContext(FunctionCallInfo fcinfo, MemoryContext *aggcontext)
 		{
 			AggState    *aggstate = ((AggState *) fcinfo->context);
 			ExprContext *cxt  = aggstate->aggcontexts[aggstate->current_set];
+
 			*aggcontext = cxt->ecxt_per_tuple_memory;
 		}
 		return AGG_CONTEXT_AGGREGATE;
@@ -2927,8 +2925,9 @@ AggRegisterCallback(FunctionCallInfo fcinfo,
 	if (fcinfo->context && IsA(fcinfo->context, AggState))
 	{
 		AggState   *aggstate = (AggState *) fcinfo->context;
+		ExprContext *cxt = aggstate->aggcontexts[aggstate->current_set];
 
-		RegisterExprContextCallback(aggstate->ss.ps.ps_ExprContext, func, arg);
+		RegisterExprContextCallback(cxt, func, arg);
 
 		return;
 	}
