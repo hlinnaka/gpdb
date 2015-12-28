@@ -573,9 +573,16 @@ AppendOnlyBlockDirectory_GetEntry(
 
 		index_endscan(idxScanDesc);
 
-		/* Load the minipage into cache */
+		/*
+		 * If this entry doesn't cover the requested tuple, it's not put into cache. We could
+		 * create a negative cache entry instead
+		 */
 		firstEntry = &minipageInfo->minipage->entry[0];
 		lastEntry = &minipageInfo->minipage->entry[minipageInfo->numMinipageEntries - 1];
+		if (rowNum >= lastEntry->firstRowNum + lastEntry->rowCount)
+			return false;
+
+		/* Load the minipage into cache */
 
 		cacheEntry = MemoryContextAlloc(blockDirectory->memoryContext,
 										sizeof(BlockDirCacheEntry));
