@@ -32,6 +32,8 @@ extern PGPROC *BackendPidGetProc(int pid);
 extern int	BackendXidGetPid(TransactionId xid);
 extern bool IsBackendPid(int pid);
 
+extern DistributedTransactionId BackendXidGetDistributedXid(TransactionId xid);
+
 extern int	CountActiveBackends(void);
 extern int	CountDBBackends(Oid databaseid);
 extern int	CountUserBackends(Oid roleid);

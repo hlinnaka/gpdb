@@ -18,6 +18,7 @@
 #include <sys/poll.h>
 #endif
 
+#include "access/transam.h"
 #include "catalog/catquery.h"
 #include "executor/execdesc.h"	/* QueryDesc */
 #include "storage/ipc.h"		/* For proc_exit_inprogress  */
@@ -44,6 +45,7 @@
 #include "cdb/cdbplan.h"
 #include "postmaster/syslogger.h"
 
+#include "cdb/cdblocaldistribxact.h"
 #include "cdb/cdbselect.h"
 #include "cdb/cdbdisp.h"
 #include "cdb/cdbdispatchresult.h"
@@ -122,6 +124,8 @@ CollectQEWriterTransactionInformation(SegmentDatabaseDescriptor *segdbDesc, CdbD
 
 static bool                     /* returns true if command complete */
 processResults(CdbDispatchResult   *dispatchResult);
+static void
+processSegmentNotify(SegmentDatabaseDescriptor *segdbDesc, PGnotify *notify);
 
 
 static void
@@ -1983,6 +1987,7 @@ processResults(CdbDispatchResult *dispatchResult)
 	SegmentDatabaseDescriptor *segdbDesc = dispatchResult->segdbDesc;
 	char	   *msg;
 	int			rc;
+	PGnotify   *notify;
 
 	/* MPP-2518: PQisBusy() has side-effects */
 	if (DEBUG5 >= log_min_messages)
@@ -2114,7 +2119,17 @@ processResults(CdbDispatchResult *dispatchResult)
 			cdbdisp_seterrcode(errcode, resultIndex, dispatchResult);
 		}						/* QE reported an error */
 	}							/* loop to call PQgetResult; won't block */
-	
+
+	/*
+	 * Also process any asynchronous NOTIFY messages we might've received.
+	 * Process them immediately.
+	 */
+	while ((notify = PQnotifies(segdbDesc->conn)) != NULL)
+	{
+		processSegmentNotify(segdbDesc, notify);
+		PQfreemem(notify);
+	}
+
 	return false;				/* we must keep on monitoring this socket */
 
 connection_error:
@@ -2129,6 +2144,47 @@ connection_error:
 	return true; /* connection is gone! */	
 }	/* processResults */
 
+
+/*
+ * Process an async notify message from segment. We don't use LISTEN/NOTIFY
+ * across segments, but we have repurposed these messages for other purposes.
+ */
+static void
+processSegmentNotify(SegmentDatabaseDescriptor *segdbDesc, PGnotify *notify)
+{
+	if (strcmp(notify->relname, "XID WAIT") == 0)
+	{
+		/*
+		 * The segment is about to wait on another transaction. Perform
+		 * a similar wait in the master, to allow the deadlock detector
+		 * to detect deadlocks arising from updates across segments.
+		 */
+		DistributedTransactionId dxid;
+		TransactionId xid;
+
+		/*
+		 * The distributed transaction ID of the transaction we need to wait
+		 * for is stashed in the 'payload' of the NOTIFY message.
+		 */
+		if (notify->extra == NULL)
+		{
+			elog(WARNING, "XID WAIT without payload received from segment");
+			return;
+		}
+		dxid = strtoul(notify->extra, NULL, 0);
+
+		xid = GetLocalXidForDistributedTransactionId(dxid);
+
+		/* for debugging/demonstration purposes */
+		elog(NOTICE, "Master received wait request for dXID %u (local XID %u)",
+			 dxid, xid);
+
+		if (xid != InvalidTransactionId)
+			XactLockTableWait(xid);
+	}
+	else
+		elog(WARNING, "unexpected NOTIFY message received from segment");
+}
 
 /*--------------------------------------------------------------------*/
 

@@ -1464,6 +1464,47 @@ BackendXidGetPid(TransactionId xid)
 	return result;
 }
 
+
+/*
+ * Given a local XID, look up the corresponding distributed XID.
+ * Return invalid, if the transaction is no longer in progress.
+ */
+DistributedTransactionId
+BackendXidGetDistributedXid(TransactionId xid)
+{
+	ProcArrayStruct *arrayP = procArray;
+	int			index;
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+
+	for (index = 0; index < arrayP->numProcs; index++)
+	{
+		volatile PGPROC *proc = arrayP->procs[index];
+
+		/* Fetch xid just once - see GetNewTransactionId */
+		TransactionId pxid = proc->xid;
+
+		if (pxid == xid)
+		{
+			/* Found it! Get its distributed XID. */
+			DistributedTransactionTimeStamp dtimestamp;
+			DistributedTransactionId dxid;
+
+			LocalDistribXact_GetDistributedXid(xid,
+								   (LocalDistribXactRef *) &proc->localDistribXactRef,
+											   &dtimestamp, &dxid);
+
+			LWLockRelease(ProcArrayLock);
+			return dxid;
+		}
+	}
+
+	/* not found */
+	LWLockRelease(ProcArrayLock);
+
+	return InvalidDistributedTransactionId;
+}
+
 /*
  * IsBackendPid -- is a given pid a running backend
  */

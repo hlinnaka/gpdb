@@ -5414,3 +5414,31 @@ log_disconnections(int code, Datum arg __attribute__((unused)))
 					port->user_name, port->database_name, port->remote_host,
 					port->remote_port[0] ? " port=" : "", port->remote_port)));
 }
+
+/*
+ * Send a specially-crafted async NOTIFY message back to the master, to
+ * indicate that we're about to wait for the given global transaction to
+ * commit or rollback. The master can use that information for detecting
+ * deadlocks across segments.
+ */
+void
+cdbdisp_notifyXidWait(DistributedTransactionId dxid)
+{
+	StringInfoData buf;
+	char		extrabuf[15];
+
+	snprintf(extrabuf, sizeof(extrabuf), "%u", dxid);
+
+	Assert(PG_PROTOCOL_MAJOR(FrontendProtocol) >= 3);
+
+	pq_beginmessage(&buf, 'A');
+	pq_sendint(&buf, MyProcPid, sizeof(int32));
+	pq_sendstring(&buf, "XID WAIT"); /* Channel. We use the magic "XID WAIT"
+									  * string to indicate that this is
+									  * special */
+	pq_sendstring(&buf, extrabuf);	/* Payload. We use this for the distributed
+									 * XID we're waiting for */
+	pq_endmessage(&buf);
+
+	pq_flush();
+}

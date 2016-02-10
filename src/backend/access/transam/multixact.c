@@ -601,9 +601,12 @@ MultiXactIdWait(MultiXactId multi)
 /*
  * ConditionalMultiXactIdWait
  *		As above, but only lock if we can get the lock without blocking.
+ *
+ * If the lock could not be acquired immediately, returns the XID of one
+ * of the transactions that we would need to wait for, in *xwait.
  */
 bool
-ConditionalMultiXactIdWait(MultiXactId multi)
+ConditionalMultiXactIdWait_getXwait(MultiXactId multi, TransactionId *xwait)
 {
 	bool		result = true;
 	TransactionId *members;
@@ -633,6 +636,14 @@ ConditionalMultiXactIdWait(MultiXactId multi)
 	}
 
 	return result;
+}
+
+bool
+ConditionalMultiXactIdWait(MultiXactId multi)
+{
+	TransactionId xwait;
+
+	return ConditionalMultiXactIdWait_getXwait(multi, &xwait);
 }
 
 /*

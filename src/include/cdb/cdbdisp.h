@@ -377,6 +377,8 @@ CdbDispatchUtilityStatement_NoTwoPhase(struct Node *stmt, char* debugCaller __at
 char *
 qdSerializeDtxContextInfo(int * size, bool wantSnapshot, bool inCursor, int txnOptions, char *debugCaller);
 
+extern void cdbdisp_notifyXidWait(TransactionId xid);
+
 
 struct EState;
 struct PlannedStmt;

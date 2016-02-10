@@ -1096,6 +1096,15 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 	do
 	{
 		PGSemaphoreLock(&MyProc->sem, true);
+
+		/*
+		 * The deadlock detector will also wake us up, if we're waiting
+		 * on a tuple lock, and therefore might be part of a global
+		 * deadlock. Notify the master of our status, if needed.
+		 */
+		if (MyProc->waitStatus == STATUS_WAITING)
+			refresh_tuple_wait();
+
 	} while (MyProc->waitStatus == STATUS_WAITING);
 
 	/*
@@ -1286,6 +1295,20 @@ CheckDeadLock(void)
 	if (!DeadLockCheck(MyProc))
 	{
 		/* No deadlock, so keep waiting */
+
+		/*
+		 * If we're waiting on a tuple-lock, it's possible that we are
+		 * participating in a global deadlock across segments. For example,
+		 * we might be waiting on a transaction, while a worker process
+		 * of that other transaction is waiting for us to complete, on a
+		 * different segment. So if we're waiting on a tuple-lock, wake up
+		 * to let ProcSleep() to notify the master if the XID we're waiting
+		 * for has changed. (We cannot do it here directly, because we are
+		 * inside a signal handler.)
+		 */
+		if (is_tuple_wait())
+			PGSemaphoreUnlock(&MyProc->sem);
+
 		goto check_done;
 	}
 
@@ -1640,7 +1663,7 @@ handle_sig_alarm(SIGNAL_ARGS)
 
 		if (deadlock_timeout_active && !DoingCommandRead)
 		{
-			deadlock_timeout_active = false;
+			//deadlock_timeout_active = false;
 			CheckDeadLock();
 		}
 

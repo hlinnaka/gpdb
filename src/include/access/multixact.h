@@ -48,6 +48,7 @@ extern bool MultiXactIdIsRunning(MultiXactId multi);
 extern bool MultiXactIdIsCurrent(MultiXactId multi);
 extern void MultiXactIdWait(MultiXactId multi);
 extern bool ConditionalMultiXactIdWait(MultiXactId multi);
+extern bool ConditionalMultiXactIdWait_getXwait(MultiXactId multi, TransactionId *xwait);
 extern void MultiXactIdSetOldestMember(void);
 extern int	GetMultiXactIdMembers(MultiXactId multi, TransactionId **xids);
 

@@ -332,4 +332,9 @@ extern HeapTuple heap_addheader(int natts, bool withoid,
 
 extern void heap_sync(Relation relation);
 
+/* GPDB distributed deadlock detection support functions */
+extern bool is_tuple_wait(void);
+extern void refresh_tuple_wait(void);
+
+
 #endif   /* HEAPAM_H */

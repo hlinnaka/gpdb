@@ -1061,3 +1061,39 @@ LocalDistribXact_GetDistributedXid(
 	*distribXid = ele->distribXid;
 
 }
+
+/*
+ * Look up the local XID of given distributed XID, or InvalidTransactionId if not found.
+ */
+DistributedTransactionId
+GetLocalXidForDistributedTransactionId(DistributedTransactionId dxid)
+{
+	LocalDistribXact 	ele;
+
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+
+	ele = (LocalDistribXact)
+					SharedDoublyLinkedHead_First(
+									&LocalDistribXactShared->sortedLocalBase,
+									&LocalDistribXactShared->sortedLocalList);
+	while (ele != NULL)
+	{
+		if (ele->distribXid == dxid)
+		{
+			TransactionId xid = ele->localXid;
+
+			LWLockRelease(ProcArrayLock);
+			return xid;
+		}
+
+		ele = (LocalDistribXact)
+					SharedDoubleLinks_Next(
+									&LocalDistribXactShared->sortedLocalBase,
+									&LocalDistribXactShared->sortedLocalList,
+									ele);
+	}
+
+	LWLockRelease(ProcArrayLock);
+
+	return InvalidTransactionId;
+}

@@ -100,4 +100,6 @@ extern void LocalDistribXactCache_AddCommitted(
 
 extern void LocalDistribXactCache_ShowStats(char *nameStr);
 
+extern DistributedTransactionId GetLocalXidForDistributedTransactionId(DistributedTransactionId dxid);
+
 #endif   /* CDBLOCALDISTRIBXACT_H */

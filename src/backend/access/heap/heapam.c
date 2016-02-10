@@ -63,8 +63,10 @@
 #include "utils/syscache.h"
 #include "storage/freespace.h"
 #include "utils/guc.h"
+#include "cdb/cdbdisp.h"
 #include "cdb/cdbfilerepprimary.h"
 #include "cdb/cdbpersistentrecovery.h"
+#include "cdb/cdbvars.h"
 
 static XLogRecPtr log_heap_update(Relation reln, Buffer oldbuf,
 		   ItemPointerData from, Buffer newbuf, HeapTuple newtup, bool move);
@@ -1000,6 +1002,8 @@ CdbTryOpenRelation(Oid relid, LOCKMODE reqmode, bool noWait, bool *lockUpgraded)
 	 *
 	 * Note: This code could be improved substantiatally.
 	 */
+/* FIXME: don't upgrade the lock, that's the point of this patch. */
+#if 0
 	if (lockmode == RowExclusiveLock)
 	{
 		rel = try_heap_open(relid, NoLock, noWait);
@@ -1015,6 +1019,7 @@ CdbTryOpenRelation(Oid relid, LOCKMODE reqmode, bool noWait, bool *lockUpgraded)
 		}
 		relation_close(rel, NoLock);
     }
+#endif
 
 	rel = try_heap_open(relid, lockmode, noWait);
 	if (!RelationIsValid(rel))
@@ -1027,6 +1032,8 @@ CdbTryOpenRelation(Oid relid, LOCKMODE reqmode, bool noWait, bool *lockUpgraded)
 	 * with the lock.  Double check that our chosen lock mode is still
 	 * okay.
 	 */
+/* FIXME: don't upgrade the lock, that's the point of this patch. */
+#if 0
 	if (lockmode == RowExclusiveLock &&
 		rel->rd_cdbpolicy &&
 		rel->rd_cdbpolicy->ptype == POLICYTYPE_PARTITIONED)
@@ -1034,6 +1041,7 @@ CdbTryOpenRelation(Oid relid, LOCKMODE reqmode, bool noWait, bool *lockUpgraded)
 		elog(ERROR, "relation \"%s\" concurrently updated", 
 			 RelationGetRelationName(rel));
 	}
+#endif
 
 	return rel;
 }                                       /* CdbOpenRelation */
@@ -2338,6 +2346,167 @@ heap_trace_current_tuple(
 }
 
 /*
+ * GPDB global deadlock detection support code.
+ *
+ * Because Greenplum is a distributed system, a deadlock can occur which
+ * involves multiple segments.
+ *
+ * We do not have that problem for table-level locks, because the master
+ * acquires necessary table-level locks for all the relations involved in a
+ * query, before dispatching the workers in the segments, so the deadlock
+ * will be detected in the master. We acquire table-level locks in segments
+ * too, but in normal usage, they should never conflict because acquiring
+ * the same locks in the master ensures that the locks are free in the
+ * segments too.
+ *
+ * With tuple-level locks, however, a deadlock is possible because the
+ * segments acquire tuple-level locks independently of each other. For
+ * example, if transaction A updates rows 1 and 2, in that order, and
+ * transaction B updates the same rows in the opposite order, you get
+ * a deadlock. If rows 1 and 2 reside in different segments, one segment
+ * will see that transaction A is waiting for transaction B, and transaction
+ * B is not blocked (it is in "idle in transaction" state), and the other
+ * segment will see the reverse. Looking at the situation locally in the
+ * segments, neither segment can detect the deadlock.
+ *
+ * To fix that, whenever a segment worker process needs to wait for a
+ * transaction to complete (by trying to acquire a lock on the XID), it also
+ * notifies the master about it. When the master receives the notification,
+ * it will also try to acquire the same lock in the master. This makes all
+ * the waiting-for -relationships visible in the master's lock table, and
+ * the master's lock manager's deadlock detector will detect it, and abort
+ * one of the transactions.
+ *
+ * Some complications:
+ *
+ * - Before we start waiting for an XID, we always acquire a heavy-weight
+ *   lock on the tuple, to establish a fair ordering if multiple transactions
+ *   try to update the same row. That means that it is not enough to send
+ *   the notification when we're about to start waiting for an XID lock, we
+ *   must also notify the master when we start waiting on a tuple lock. For
+ *   the purposes of deadlock-detection, we can however pretend that we are
+ *   waiting on a lock on the current XMAX on the tuple, even if we are
+ *   actually waiting on the tuple-level lock. If we're blocked on the tuple
+ *   lock, we know that the transaction that's holding tuple lock is waiting
+ *   for the current XMAX, so we are effectively also waiting for it.
+ *
+ * - The current XMAX of the tuple can change, while we're waiting to acquire
+ *   the tuple lock. So we must periodically re-check what the current XMAX
+ *   is, and notify the master again if it has changed.
+ *
+ * To handle that, when we are waiting for a tuple-level lock, we store
+ * information about the tuple in the global variables that follow. Whenever
+ * the (local) deadlock detector runs, it will call is_tuple_wait() and
+ * refresh_tuple_wait() functions to poll the current status of the tuple.
+ * refresh_tuple_wait() will check the current XMAX of the tuple, and notify
+ * the master if it has changed.
+ */
+
+static Buffer stashedBuffer = InvalidBuffer;
+static HeapTupleHeader stashedTuplePtr = NULL;
+static TransactionId stashedXwait = InvalidTransactionId;
+
+/*
+ * Are we currently waiting on a tuple lock?
+ *
+ * NB: This is called from a signal handler!
+ */
+bool
+is_tuple_wait(void)
+{
+	if (BufferIsValid(stashedBuffer))
+		return true;
+	else
+		return false;
+}
+
+/*
+ * If we are currently waiting on a tuple lock, check if the "primary" XID
+ * on the tuple we're waiting for has changed, and notify the client if it
+ * has.
+ *
+ * This code should mirror the logic in heap_update(), heap_delete() and
+ * heap_lock_tuple() to determine which XID to wait for.
+ */
+void
+refresh_tuple_wait(void)
+{
+	TransactionId xwait;
+	uint16		infomask;
+	TransactionId newxwait;
+	MIRROREDLOCK_BUFMGR_DECLARE;
+
+	if (Gp_role != GP_ROLE_EXECUTE)
+		return;
+
+	if (!BufferIsValid(stashedBuffer))
+		return;
+
+	// -------- MirroredLock ----------
+	MIRROREDLOCK_BUFMGR_LOCK;
+
+	/* Get the current XMAX of the tuple we're waiting on */
+	LockBuffer(stashedBuffer, BUFFER_LOCK_SHARE);
+
+	/* must copy state data before unlocking buffer */
+	xwait = HeapTupleHeaderGetXmax(stashedTuplePtr);
+	infomask = stashedTuplePtr->t_infomask;
+
+	LockBuffer(stashedBuffer, BUFFER_LOCK_UNLOCK);
+
+	MIRROREDLOCK_BUFMGR_UNLOCK;
+	// -------- MirroredLock ----------
+
+	if (infomask & HEAP_XMAX_IS_MULTI)
+	{
+		/* wait for multixact */
+		ConditionalMultiXactIdWait_getXwait((MultiXactId) xwait, &newxwait);
+	}
+	else
+	{
+		/* wait for regular transaction to end */
+		ConditionalXactLockTableWait_getXwait(xwait, &newxwait);
+	}
+
+	if (newxwait != stashedXwait && newxwait != InvalidTransactionId)
+	{
+		DistributedTransactionId dxwait = BackendXidGetDistributedXid(xwait);
+
+		stashedXwait = newxwait;
+
+		elog(NOTICE, "segment is blocked on dxid %u, notifying master", dxwait);
+		if (dxwait != InvalidDistributedTransactionId)
+			cdbdisp_notifyXidWait(dxwait);
+		else
+		{
+			/*
+			 * TODO: if the transaction could not be found in the proc
+			 * array, it presumably means that the transaction has just
+			 * completed. Our LockAcquire call below should fall through
+			 * quickly. But as a sanity check, it would be good to pass
+			 * 'nowait', and check that we indeed got the lock without
+			 * waiting.
+			 */
+		}
+	}
+}
+
+static void
+stash_tuple_wait(Buffer buf, HeapTupleHeader tuplePtr)
+{
+	stashedBuffer = buf;
+	stashedTuplePtr = tuplePtr;
+}
+
+/* FIXME: as a backstop, we should also reset these at Abort */
+static void
+unstash_tuple_wait(void)
+{
+	stashedBuffer = InvalidBuffer;
+	stashedTuplePtr = NULL;
+}
+
+/*
  *	heap_delete - delete a tuple
  *
  * NB: do not call this directly unless you are prepared to deal with
@@ -2436,6 +2605,7 @@ l1:
 		 */
 		if (!have_tuple_lock)
 		{
+			stash_tuple_wait(buffer, tp.t_data);
 			LockTuple(relation, &(tp.t_self), ExclusiveLock);
 			have_tuple_lock = true;
 		}
@@ -2540,7 +2710,10 @@ l1:
 		// -------- MirroredLock ----------
 		
 		if (have_tuple_lock)
+		{
+			unstash_tuple_wait();
 			UnlockTuple(relation, &(tp.t_self), ExclusiveLock);
+		}
 		return result;
 	}
 
@@ -2622,7 +2795,10 @@ l1:
 	 * Release the lmgr tuple lock, if we had it.
 	 */
 	if (have_tuple_lock)
+	{
+		unstash_tuple_wait();
 		UnlockTuple(relation, &(tp.t_self), ExclusiveLock);
+	}
 
 	pgstat_count_heap_delete(relation);
 
@@ -2762,6 +2938,7 @@ l2:
 		 */
 		if (!have_tuple_lock)
 		{
+			stash_tuple_wait(buffer, oldtup.t_data);
 			LockTuple(relation, &(oldtup.t_self), ExclusiveLock);
 			have_tuple_lock = true;
 		}
@@ -2872,7 +3049,10 @@ l2:
 		// -------- MirroredLock ----------
 		
 		if (have_tuple_lock)
+		{
+			unstash_tuple_wait();
 			UnlockTuple(relation, &(oldtup.t_self), ExclusiveLock);
+		}
 		return result;
 	}
 
@@ -3096,7 +3276,10 @@ l2:
 	 * Release the lmgr tuple lock, if we had it.
 	 */
 	if (have_tuple_lock)
+	{
+		unstash_tuple_wait();
 		UnlockTuple(relation, &(oldtup.t_self), ExclusiveLock);
+	}
 
 	pgstat_count_heap_update(relation, false);
 
@@ -3356,7 +3539,10 @@ l3:
 			Assert(infomask & HEAP_XMAX_SHARED_LOCK);
 			/* Probably can't hold tuple lock here, but may as well check */
 			if (have_tuple_lock)
+			{
+				unstash_tuple_wait();
 				UnlockTuple(relation, tid, tuple_lock_type);
+			}
 			return HeapTupleMayBeUpdated;
 		}
 
@@ -3385,7 +3571,10 @@ l3:
 						   RelationGetRelationName(relation))));
 			}
 			else
+			{
+				stash_tuple_wait(*buffer, tuple->t_data);
 				LockTuple(relation, tid, tuple_lock_type);
+			}
 			have_tuple_lock = true;
 		}
 		
@@ -3522,7 +3711,10 @@ l3:
 		// -------- MirroredLock ----------
 		
 		if (have_tuple_lock)
+		{
+			unstash_tuple_wait();
 			UnlockTuple(relation, tid, tuple_lock_type);
+		}
 		return result;
 	}
 
@@ -3555,7 +3747,10 @@ l3:
 		
 		/* Probably can't hold tuple lock here, but may as well check */
 		if (have_tuple_lock)
+		{
+			unstash_tuple_wait();
 			UnlockTuple(relation, tid, tuple_lock_type);
+		}
 		return HeapTupleMayBeUpdated;
 	}
 
@@ -3717,7 +3912,10 @@ l3:
 	 * release the lmgr tuple lock, if we had it.
 	 */
 	if (have_tuple_lock)
+	{
+		unstash_tuple_wait();
 		UnlockTuple(relation, tid, tuple_lock_type);
+	}
 
 	return HeapTupleMayBeUpdated;
 }

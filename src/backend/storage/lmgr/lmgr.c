@@ -27,6 +27,7 @@
 #include "storage/procarray.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"        /* CDB: get_rel_name() */
+#include "cdb/cdbdisp.h"
 #include "cdb/cdbvars.h"
 
 
@@ -596,6 +597,26 @@ XactLockTableWait(TransactionId xid)
 
 		SET_LOCKTAG_TRANSACTION(tag, xid);
 
+		if (Gp_role == GP_ROLE_EXECUTE)
+		{
+			DistributedTransactionId dxid = BackendXidGetDistributedXid(xid);
+
+			elog(NOTICE, "segment is blocking on dxid %u, notifying master", dxid);
+			if (dxid != InvalidDistributedTransactionId)
+				cdbdisp_notifyXidWait(dxid);
+			else
+			{
+				/*
+				 * TODO: if the transaction could not be found in the proc
+				 * array, it presumably means that the transaction has just
+				 * completed. Our LockAcquire call below should fall through
+				 * quickly. But as a sanity check, it would be good to pass
+				 * 'nowait', and check that we indeed got the lock without
+				 * waiting.
+				 */
+			}
+		}
+
 		(void) LockAcquire(&tag, ShareLock, false, false);
 
 		LockRelease(&tag, ShareLock, false);
@@ -611,9 +632,12 @@ XactLockTableWait(TransactionId xid)
  *
  * As above, but only lock if we can get the lock without blocking.
  * Returns TRUE if the lock was acquired.
+ *
+ * If the lock could not be acquired immediately, returns the XID of the
+ * (sub-)transaction that we would need to wait for, in *xwait.
  */
 bool
-ConditionalXactLockTableWait(TransactionId xid)
+ConditionalXactLockTableWait_getXwait(TransactionId xid, TransactionId *xwait)
 {
 	LOCKTAG		tag;
 
@@ -625,7 +649,10 @@ ConditionalXactLockTableWait(TransactionId xid)
 		SET_LOCKTAG_TRANSACTION(tag, xid);
 
 		if (LockAcquire(&tag, ShareLock, false, true) == LOCKACQUIRE_NOT_AVAIL)
+		{
+			*xwait = xid;
 			return false;
+		}
 
 		LockRelease(&tag, ShareLock, false);
 
@@ -636,6 +663,15 @@ ConditionalXactLockTableWait(TransactionId xid)
 
 	return true;
 }
+
+bool
+ConditionalXactLockTableWait(TransactionId xid)
+{
+	TransactionId xwait;
+
+	return ConditionalXactLockTableWait_getXwait(xid, &xwait);
+}
+
 
 /*
  *		LockDatabaseObject
