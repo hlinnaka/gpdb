@@ -27,6 +27,7 @@ typedef struct
 
 	char	   *conf_endpoint;
 
+	int			conf_nconnections;
 	int			conf_chunksize;
 
 	int			conf_low_speed_limit;

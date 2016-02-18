@@ -34,29 +34,39 @@ DLPipeline_ReleaseCallback(ResourceReleasePhase phase, bool isCommit, bool isTop
 {
 	DownloadPipeline *dp = (DownloadPipeline *) arg;
 
-	if (dp->current_fetcher->state == FETCHER_RUNNING)
+	while (dp->active_fetchers != NIL)
 	{
-		/*
-		 * At commit, all the fetcher's should've been closed gracefully
-		 * already.
-		 */
-		if (isCommit)
-			elog(WARNING, "HTTPFetcher leaked");
+		HTTPFetcher *f;
 
-		HTTPFetcher_destroy(dp->current_fetcher);
-		dp->current_fetcher = NULL;
+		f = linitial(dp->active_fetchers);
+		dp->active_fetchers = list_delete_first(dp->active_fetchers);
+
+		if (f->state == FETCHER_RUNNING)
+		{
+			/*
+			 * At commit, all the fetcher's should've been closed gracefully
+			 * already.
+			 */
+			if (isCommit)
+				elog(WARNING, "HTTPFetcher leaked");
+
+			HTTPFetcher_destroy(f);
+		}
 	}
 }
 
 DownloadPipeline *
-DLPipeline_create(void)
+DLPipeline_create(int nconnections)
 {
 	DownloadPipeline *dp;
 
 	dp = palloc0(sizeof(DownloadPipeline));
-	dp->current_fetcher = NULL;
+	dp->active_fetchers = NIL;
 	dp->pending_fetchers = NIL;
 	dp->curl_mhandle = NULL;
+
+	Assert(nconnections > 0);
+	dp->nconnections = nconnections;
 
 	/* Register with the resource owner */
 	dp->owner = CurrentResourceOwner;
@@ -70,68 +80,110 @@ DLPipeline_create(void)
 }
 
 /*
+ * If there are less than the requested number of downloads active currently,
+ * launch more from the pending list.
+ */
+static void
+DLPipeline_launch(DownloadPipeline *dp)
+{
+	while (list_length(dp->active_fetchers) < dp->nconnections)
+	{
+		HTTPFetcher *fetcher;
+
+		/* Get next fetcher from pending list */
+		if (dp->pending_fetchers == NIL)
+			break;
+		fetcher = linitial(dp->pending_fetchers);
+
+		/* Move it to the active list, and start it  */	
+		dp->active_fetchers = lappend(dp->active_fetchers, fetcher);
+		dp->pending_fetchers = list_delete_first(dp->pending_fetchers);
+
+		HTTPFetcher_start(fetcher, dp->curl_mhandle);
+	}
+}
+
+/*
  * Try to get at must buflen bytes from pipeline. Blocks.
  */
 int
 DLPipeline_read(DownloadPipeline *dp, char *buf, int buflen, bool *eof_p)
 {
-	HTTPFetcher *fetcher;
-	int r;
+	HTTPFetcher *current_fetcher;
+	int			r;
 	bool		eof;
 
 	for (;;)
 	{
-		if (dp->current_fetcher == NULL)
+		/* launch more connections if needed */
+		DLPipeline_launch(dp);
+
+		if (dp->active_fetchers == NIL)
 		{
-			/* Get next fetcher from list. */
-			if (dp->pending_fetchers == NIL)
-			{
-				*eof_p = true;
-				return 0;
-			}
-
-			dp->current_fetcher = linitial(dp->pending_fetchers);
-			dp->pending_fetchers = list_delete_first(dp->pending_fetchers);
-
-			/* Start up this fetcher */
-			HTTPFetcher_start(dp->current_fetcher, dp->curl_mhandle);
+			/*
+			 * DLPipeline_launch() should've launched at least one fetcher,
+			 * if there were any still pending.
+			 */
+			Assert(dp->pending_fetchers == NIL);
+			elog(DEBUG1, "all downloads completed");
+			*eof_p = true;
+			return 0;
 		}
-		fetcher = dp->current_fetcher;
+		current_fetcher = (HTTPFetcher *) linitial(dp->active_fetchers);
 
 		/* Try to read from the current fetcher */
-		r = HTTPFetcher_get(fetcher, buf, buflen, &eof);
+		r = HTTPFetcher_get(current_fetcher, buf, buflen, &eof);
 		if (eof)
 		{
-			HTTPFetcher_destroy(fetcher);
-			dp->current_fetcher = NULL;
+			Assert(r == 0);
+			HTTPFetcher_destroy(current_fetcher);
+			dp->active_fetchers = list_delete_first(dp->active_fetchers);
 			continue;
 		}
 
-		if (r == 0 && fetcher->state == FETCHER_FAILED)
+		if (r > 0)
+		{
+			/* got some data */
+			*eof_p = false;
+			return r;
+		}
+
+		/*
+		 * Consider restarting any failed fetchers.
+		 * TODO: right now, we only look at the first in the queue, not the
+		 * prefetching ones. Hopefully requests don't fail often enough for that to
+		 * matter.
+		 */
+		if (current_fetcher->state == FETCHER_FAILED)
 		{
 			long		secs;
 			int	   		microsecs;
-			/* Consider restarting this */
 
-			TimestampDifference(fetcher->failed_at, GetCurrentTimestamp(),
+			TimestampDifference(current_fetcher->failed_at, GetCurrentTimestamp(),
 								&secs, &microsecs);
 			if (secs > FETCH_RETRY_DELAY)
 			{
-				elog(INFO, "retrying now");
-				HTTPFetcher_start(dp->current_fetcher, dp->curl_mhandle);
+				elog(DEBUG1, "retrying now");
+				HTTPFetcher_start(current_fetcher, dp->curl_mhandle);
 			}
-			return -1;
 		}
-		else if (!eof && r == 0)
+
 		{
 			int		running_handles;
 			struct CURLMsg *m;
+			CURLMcode mres;
 
 			/* Got nothing. Wait until something happens */
-			curl_multi_wait(dp->curl_mhandle, NULL, 0, 1000, NULL);
+			mres = curl_multi_wait(dp->curl_mhandle, NULL, 0, 1000, NULL);
+			if (mres != CURLM_OK)
+				elog(ERROR, "curl_multi_perform returned error: %s",
+					 curl_multi_strerror(mres));
 
-			curl_multi_perform(dp->curl_mhandle, &running_handles);
- 
+			mres = curl_multi_perform(dp->curl_mhandle, &running_handles);
+			if (mres != CURLM_OK)
+				elog(ERROR, "curl_multi_perform returned error: %s",
+					 curl_multi_strerror(mres));
+
 			do
 			{
 				int			msgq = 0;
@@ -139,18 +191,29 @@ DLPipeline_read(DownloadPipeline *dp, char *buf, int buflen, bool *eof_p)
 
 				if (m && (m->msg == CURLMSG_DONE))
 				{
-					Assert(m->easy_handle == fetcher->curl);
+					/* find the fetcher this belongs to */
+					ListCell   *lc;
+					bool		found = false;
 
-					HTTPFetcher_handleResult(fetcher, m->data.result);
+					Assert(m->easy_handle != NULL);
+
+					foreach(lc, dp->active_fetchers)
+					{
+						HTTPFetcher *f = (HTTPFetcher *) lfirst(lc);
+
+						if (f->curl == m->easy_handle)
+						{
+							found = true;
+							HTTPFetcher_handleResult(f, m->data.result);
+							break;
+						}
+					}
+					if (!found)
+						elog(ERROR, "got CURL result code for a fetcher that's not active");
 				}
 			} while(m);
 
 			continue;
-		}
-		else
-		{
-			*eof_p = eof;
-			return r;
 		}
 	}
 }
@@ -164,10 +227,14 @@ DLPipeline_add(DownloadPipeline *dp, HTTPFetcher *fetcher)
 void
 DLPipeline_destroy(DownloadPipeline *dp)
 {
-	if (dp->current_fetcher)
+	while (dp->active_fetchers != NIL)
 	{
-		HTTPFetcher_destroy(dp->current_fetcher);
-		dp->current_fetcher = NULL;
+		HTTPFetcher *f;
+
+		f = linitial(dp->active_fetchers);
+		dp->active_fetchers = list_delete_first(dp->active_fetchers);
+
+		HTTPFetcher_destroy(f);
 	}
 	if (dp->curl_mhandle)
 		curl_multi_cleanup(dp->curl_mhandle);

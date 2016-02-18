@@ -112,32 +112,82 @@ S3Reader_SetupPipeline(S3ExtBase *base, ListBucketResult *keylist)
 {
 	int			i;
 	StringInfoData hoststr;
+	int64		chunksize;
+	int			bufsize;
+
+	/*
+	 * If we're going to use multiple connections, divide the file into
+	 * chunks. Otherwise fetch the whole file as one transfer.
+	 *
+	 * If we're downloading in chunks, use a buffer that's large enough
+	 * to hold whole chunk. A buffer larger than 128 MB doesn't seem
+	 * reasonable though (1 GB is a hard limit, as we allocate the buffer
+	 * with one palloc() call)
+	 */
+	if (base->conf_nconnections > 1)
+	{
+		chunksize = base->conf_chunksize;
+		if (chunksize > 128 * 1024 * 1024)
+			bufsize = 128 * 1024 * 1024;
+		else
+			bufsize = chunksize;
+	}
+	else
+	{
+		chunksize = -1;
+		bufsize = -1;
+	}
 
 	initStringInfo(&hoststr);
 	appendStringInfo(&hoststr, "%s.%s", base->bucket, base->host);
-	
-	base->pipeline = DLPipeline_create();
-	
+
+	base->pipeline = DLPipeline_create(base->conf_nconnections);
+
 	/*
 	 * Create a pipeline that will download all the contents 
 	 *
 	 *  for now, every segment downloads its assigned files(mod)
 	 * better to build a workqueue in case not all segments are available
 	 */
+#if DEBUGS3
+	/* for debugging purposes, force all downloads to happen on segment 0 */
+	if (base->segid != 0)
+		return;
+	base->segnum = 1;
+#endif
 	for (i = base->segid; i < keylist->ncontents; i += base->segnum)
 	{
 		BucketContent *c = &keylist->contents[i];
 		HTTPFetcher *fetcher;
 		StringInfoData urlbuf;
+		uint64		offset;
+		int64		len;
 
 		initStringInfo(&urlbuf);
 		appendStringInfo(&urlbuf, "%s://%s/%s",
 						 base->schema, base->endpoint, c->key);
-		
-		fetcher = HTTPFetcher_create(urlbuf.data, hoststr.data, base->bucket, base->path, &base->cred, 0, -1);
+
 		elog(DEBUG1, "key: %s, size: " UINT64_FORMAT, urlbuf.data, c->size);
 
-		DLPipeline_add(base->pipeline, fetcher);
+		/*
+		 * Divide the file into chunks of requested size.
+		 */
+		offset = 0;
+		do
+		{
+			if (chunksize == -1 || offset + chunksize > c->size)
+			{
+				/* last chunk */
+				len = -1;
+			}
+			else
+				len = chunksize;
+
+			fetcher = HTTPFetcher_create(urlbuf.data, hoststr.data, base->bucket, &base->cred,
+										 bufsize, offset, len);
+			DLPipeline_add(base->pipeline, fetcher);
+			offset += len;
+		} while (len != -1);
 	}
 }
 
@@ -315,7 +365,8 @@ ReadConfig(S3ExtBase *base, const char *conf_path)
             ereport(ERROR,
 					(errmsg("secret is empty")));
 
-		base->conf_chunksize = conf_int_get(inifile, "default", "chunksize", 64 * 1024 * 1024);
+		base->conf_chunksize = conf_int_get(inifile, "default", "chunksize", 1 * 1024 * 1024);
+		base->conf_nconnections = conf_int_get(inifile, "default", "connections", 2);
 		base->conf_low_speed_limit = conf_int_get(inifile, "default", "low_speed_limit", 10240);
 		base->conf_low_speed_time = conf_int_get(inifile, "default", "low_speed_time", 60);
 
@@ -326,13 +377,8 @@ ReadConfig(S3ExtBase *base, const char *conf_path)
 
 		base->conf_endpoint = conf_str_get(inifile, "default", "endpoint", "");
 
-#ifdef DEBUGS3
-		base->segid = 0;
-		base->segnum = 1;
-#else
 		base->segid = GpIdentity.segindex;
 		base->segnum = GpIdentity.numsegments;
-#endif
 
 		if (inifile)
 			ini_free(inifile);

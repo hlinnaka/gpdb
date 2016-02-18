@@ -37,7 +37,12 @@ WriterCallback(void *contents, size_t size, size_t nmemb, void *userp)
 		}
 
 		if (realsize > fetcher->bufsize - fetcher->nused)
+		{
+			fetcher->paused = true;
+			elog(DEBUG2, "paused %s (%d bytes in buffer, size %d)", fetcher->url,
+				 (int) fetcher->nused, (int) fetcher->bufsize);
 			return CURL_WRITEFUNC_PAUSE;
+		}
 	}
 
 	memcpy(fetcher->readbuf + fetcher->nused, contents, realsize);
@@ -46,17 +51,19 @@ WriterCallback(void *contents, size_t size, size_t nmemb, void *userp)
 }
 
 HTTPFetcher *
-HTTPFetcher_create(const char *url, const char *host, const char *bucket, const char *path,
-				   S3Credential *cred, int offset, int len)
+HTTPFetcher_create(const char *url, const char *host, const char *bucket,
+				   S3Credential *cred, int bufsize, uint64 offset, int len)
 {
 	HTTPFetcher *fetcher;
 
+	elog(DEBUG1, "created fetcher for %s, " UINT64_FORMAT " for %d bytes)", url, offset, len);
+
 	fetcher = palloc0(sizeof(HTTPFetcher));
 	fetcher->state = FETCHER_INIT;
+	fetcher->conf_bufsize = bufsize;
 	fetcher->url = url;
 	fetcher->bucket = bucket;
 	fetcher->host = host;
-	fetcher->path = path;
 	fetcher->cred = cred;
 	fetcher->offset = offset;
 	fetcher->len = len;
@@ -77,11 +84,12 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 	CURL	   *curl;
 	char	   *path;
 	StringInfoData sbuf;
+	HeaderContent headers = { NIL };
 
 	if (!fetcher->readbuf)
 	{
-		fetcher->readbuf = palloc(CURL_MAX_WRITE_SIZE);
-		fetcher->bufsize = CURL_MAX_WRITE_SIZE;
+		fetcher->bufsize = Max(CURL_MAX_WRITE_SIZE, fetcher->conf_bufsize);
+		fetcher->readbuf = palloc(fetcher->bufsize);
 	}
 
 	if (fetcher->state != FETCHER_INIT && fetcher->state != FETCHER_FAILED)
@@ -91,13 +99,16 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
     if (!curl)
         elog(ERROR, "could not create curl handle");
 
-	// curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+	curl_multi_add_handle(curl_mhandle, fetcher->curl);
+	fetcher->parent = curl_mhandle;
+
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	// curl_easy_setopt(curl, CURLOPT_PROXY, "127.0.0.1:8080");
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriterCallback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *) fetcher);
 	curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
-	HeaderContent_Add(&fetcher->headers, HOST, fetcher->host);
+	HeaderContent_Add(&headers, HOST, fetcher->host);
 
 	curl_easy_setopt(curl, CURLOPT_URL, fetcher->url);
 
@@ -105,11 +116,10 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 	//curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, s3ext_low_speed_limit);
 	//curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, s3ext_low_speed_time);
 
-	elog(DEBUG2, "HTTPFetcher starting; offset: %lu, bytes_done %lu, len %lu", fetcher->offset, fetcher->bytes_done, fetcher->len);
 	if (fetcher->offset + fetcher->bytes_done > 0 || fetcher->len >= 0)
 	{
 		uint64 offset = fetcher->offset + fetcher->bytes_done;
-		uint64 len = fetcher->len;
+		int64 len = fetcher->len;
 		char		rangebuf[128];
 
 		if (len >= 0)
@@ -126,7 +136,7 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 					 "bytes=" UINT64_FORMAT "-",
 					 offset);
 		}
-		HeaderContent_Add(&fetcher->headers, RANGE, rangebuf);
+		HeaderContent_Add(&headers, RANGE, rangebuf);
 	}
 
 	s3_parse_url(fetcher->url,
@@ -137,17 +147,18 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 
 	initStringInfo(&sbuf);
 	appendStringInfo(&sbuf, "/%s%s", fetcher->bucket, path);
-	SignGETv2(&fetcher->headers, sbuf.data, fetcher->cred);
+	SignGETv2(&headers, sbuf.data, fetcher->cred);
 	pfree(sbuf.data);
 	pfree(path);
 
-	fetcher->httpheaders = HeaderContent_GetList(&fetcher->headers);
+	fetcher->httpheaders = HeaderContent_GetList(&headers);
 	curl_easy_setopt(fetcher->curl, CURLOPT_HTTPHEADER, fetcher->httpheaders);
-
-	curl_multi_add_handle(curl_mhandle, fetcher->curl);
-	fetcher->parent = curl_mhandle;
+	HeaderContent_Destroy(&headers);
 
 	fetcher->state = FETCHER_RUNNING;
+
+	elog(DEBUG1, "starting download from %s (off " UINT64_FORMAT ", len %d)",
+		 fetcher->url, fetcher->offset, fetcher->len);
 }
 
 static void
@@ -192,8 +203,10 @@ HTTPFetcher_fail(HTTPFetcher *fetcher)
 	HTTPFetcher_cleanup(fetcher);
 	fetcher->state = FETCHER_FAILED;
 	fetcher->nfailures++;
-
 	fetcher->failed_at = GetCurrentTimestamp();
+
+	elog(DEBUG1, "download from %s (off " UINT64_FORMAT ", len %d) failed",
+		 fetcher->url, fetcher->offset, fetcher->len);
 }
 
 /*
@@ -206,6 +219,9 @@ HTTPFetcher_done(HTTPFetcher *fetcher)
 {
 	HTTPFetcher_cleanup(fetcher);
 	fetcher->state = FETCHER_DONE;
+
+	elog(DEBUG1, "download from %s (off " UINT64_FORMAT ", len %d) is complete",
+		 fetcher->url, fetcher->offset, fetcher->len);
 }
 
 /*
@@ -217,19 +233,35 @@ HTTPFetcher_get(HTTPFetcher *fetcher, char *buf, int buflen, bool *eof)
 {
 	int			avail;
 
+retry:
 	avail = fetcher->nused - fetcher->readoff;
 	if (avail > 0)
 	{
 		if (avail >  buflen)
 			avail = buflen;
-		memcpy(buf, fetcher->readbuf + fetcher->offset, avail);
+		memcpy(buf, fetcher->readbuf + fetcher->readoff, avail);
 		fetcher->readoff += avail;
 		fetcher->bytes_done += avail;
+		*eof = false;
 		return avail;
+	}
+
+	if (fetcher->paused)
+	{
+		elog(DEBUG2, "unpaused %s", fetcher->url);
+		fetcher->paused = false;
+		curl_easy_pause(fetcher->curl, CURLPAUSE_CONT);
+		/*
+		 * curl_easy_pause() will typically call the write callback immediately,
+		 * so loop back to see if we have more data now.
+		 */
+		goto retry;
 	}
 
 	if (fetcher->state == FETCHER_DONE)
 	{
+		elog(DEBUG2, "EOF from %s (off " UINT64_FORMAT ", len %d)",
+			 fetcher->url, fetcher->offset, fetcher->len);
 		*eof = true;
 		return 0;
 	}
@@ -246,29 +278,18 @@ HTTPFetcher_get(HTTPFetcher *fetcher, char *buf, int buflen, bool *eof)
 void
 HTTPFetcher_handleResult(HTTPFetcher *fetcher, CURLcode res)
 {
-	if (res == CURLE_OPERATION_TIMEDOUT)
-	{
-		elog(WARNING, "net speed is too slow");
-		HTTPFetcher_fail(fetcher);
-		return;
-	}
-
-	if (res != CURLE_OK)
-	{
-		elog(WARNING, "curl_multi_perform() failed: %s",
-			 curl_easy_strerror(res));
-		HTTPFetcher_fail(fetcher);
-		return;
-	}
-	else
+	Assert(fetcher->curl);
+	if (res == CURLE_OK)
 	{
 		long		respcode;
+		CURLcode	eres;
 
-		curl_easy_getinfo(fetcher->curl, CURLINFO_RESPONSE_CODE, &respcode);
-		elog(DEBUG1, "fetched " UINT64_FORMAT", " UINT64_FORMAT " - " UINT64_FORMAT ", response code is %ld",
-			 fetcher->len, fetcher->offset, fetcher->offset + fetcher->len - 1,
-			 respcode);
+		eres = curl_easy_getinfo(fetcher->curl, CURLINFO_RESPONSE_CODE, &respcode);
+		if (eres != CURLE_OK)
+			elog(ERROR, "could not get response code from handle %p: %s", fetcher->curl,
+				 curl_easy_strerror(eres));
 
+		Assert(respcode != 0);
 		if ((respcode != 200) && (respcode != 206))
 		{
 //                elog(WARNING,
@@ -276,12 +297,22 @@ HTTPFetcher_handleResult(HTTPFetcher *fetcher, CURLcode res)
                 //bi.len = -1;
 			elog(WARNING, "received HTTP code %ld", respcode);
 			HTTPFetcher_fail(fetcher);
-			return;
 		}
 		else
 		{
 			/* Success! Note: We might still have unread data in the fetcher buffer */
 			HTTPFetcher_done(fetcher);
 		}
+	}
+	else if (res == CURLE_OPERATION_TIMEDOUT)
+	{
+		elog(WARNING, "net speed is too slow");
+		HTTPFetcher_fail(fetcher);
+	}
+	else
+	{
+		elog(WARNING, "curl_multi_perform() failed: %s",
+			 curl_easy_strerror(res));
+		HTTPFetcher_fail(fetcher);
 	}
 }

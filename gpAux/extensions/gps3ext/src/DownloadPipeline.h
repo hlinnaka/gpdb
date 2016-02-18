@@ -31,6 +31,8 @@ typedef struct
 	FetcherState state;
 	
     CURL	   *curl;
+	bool		paused;
+
 	struct curl_slist *httpheaders;
 	CURLM	   *parent;
 	ResourceOwner *owner;
@@ -38,12 +40,13 @@ typedef struct
     const char *url;
 	const char *bucket; 		/* bucket name, used to create AWS signature */
 	const char *host;
-	const char *path;
 
 	S3Credential *cred;
 
+	int			conf_bufsize;	/* requested buffer size */
+
 	uint64		offset;
-	int64		len;
+	int			len;
 
 	uint64		bytes_done;		/* Returned this many bytes to caller (allows retrying from where we left */
 	
@@ -60,9 +63,8 @@ typedef struct
 	TimestampTz failed_at;		/* timestamp of last failure */
 } HTTPFetcher;
 
-extern HTTPFetcher *HTTPFetcher_create(const char *url, const char *host, const char * bucket,
-									   const char *path,
-									   S3Credential *cred, int offset, int len);
+extern HTTPFetcher *HTTPFetcher_create(const char *url, const char *host, const char *bucket,
+									   S3Credential *cred, int bufsize, uint64 offset, int len);
 extern void HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle);
 extern int HTTPFetcher_get(HTTPFetcher *fetcher, char *buf, int buflen, bool *eof);
 extern void HTTPFetcher_destroy(HTTPFetcher *fetcher);
@@ -74,9 +76,16 @@ extern void HTTPFetcher_handleResult(HTTPFetcher *fetcher, CURLcode res);
  */
 typedef struct
 {
-	HTTPFetcher *current_fetcher;
+	/*
+	 * Fetchers that have been started. The first one in the list is
+	 * the one we use to return data to the caller in DLPipeline_read().
+	 * The rest are doing pre-fetching.
+	 */
+	List	   *active_fetchers;
+	List	   *pending_fetchers;	/* fetchers not started yet */
 
-	List	   *pending_fetchers;
+	/* number of active connections to use */
+	int			nconnections;
 
 	/* Multi-handle that contains the currently active fetcher's CURL handle */
 	CURLM	   *curl_mhandle;
@@ -85,7 +94,7 @@ typedef struct
 } DownloadPipeline;
 
 
-extern DownloadPipeline *DLPipeline_create(void);
+extern DownloadPipeline *DLPipeline_create(int nconnections);
 extern int DLPipeline_read(DownloadPipeline *dp, char *buf, int buflen, bool *eof);
 extern void DLPipeline_add(DownloadPipeline *dp, HTTPFetcher *fetcher);
 extern void DLPipeline_destroy(DownloadPipeline *dp);

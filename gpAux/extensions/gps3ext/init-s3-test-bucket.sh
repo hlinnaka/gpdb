@@ -75,4 +75,6 @@ bash upload.sh /tmp/mostly_numbers $bucketname "mostly_numbers"
 # Create Huge bucket with one 1 GB file
 perl -e 'for my $i (1..10000000) { print "$i\tfooxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx$i\n" };' > /tmp/1gb_file
 
+perl -e 'for my $i (1..1000000) { print "$i\tfooxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx$i\n" };' > /tmp/100mb_file
+
 bash upload.sh /tmp/1gb_file hugebucket "1gb_file"
