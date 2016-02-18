@@ -49,12 +49,8 @@ cat >/tmp/mostly_numbers <<EOF
 EOF
 
 
-
 rm -f /tmp/1_mil_file
-for ((i = 0; i < 1000000; i++))
-do
-    echo -e "$i\tfoo$i" >> /tmp/1_mil_file
-done
+perl -e 'for my $i (1..1000000) { print "$i\tfoo$i\n" };' > /tmp/1_mil_file
 
 # Create 5 small files, and one completely empty one, in bucket "smallbucket".
 
@@ -72,3 +68,11 @@ bash upload.sh /tmp/1_mil_file $bucketname "largefile"
 
 # Upload the mostly_numbers file
 bash upload.sh /tmp/mostly_numbers $bucketname "mostly_numbers"
+
+
+
+
+# Create Huge bucket with one 1 GB file
+perl -e 'for my $i (1..10000000) { print "$i\tfooxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx$i\n" };' > /tmp/1gb_file
+
+bash upload.sh /tmp/1gb_file hugebucket "1gb_file"
