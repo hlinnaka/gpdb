@@ -23,6 +23,8 @@ typedef struct
 	int			ncontents;
 } ListBucketResult;
 
+extern void reportAWSerror(int loglevel, int http_response_code,
+			   char *response_body, int body_size);
 
 extern BucketContent *CreateBucketContentItem(char *key, uint64 size);
 

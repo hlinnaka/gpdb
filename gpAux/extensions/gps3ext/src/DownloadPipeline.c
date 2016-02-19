@@ -12,7 +12,7 @@
  */
 #include "postgres.h"
 
-#include "S3Downloader.h"
+#include "s3operations.h"
 #include "DownloadPipeline.h"
 
 #include "utils.h"
@@ -158,6 +158,11 @@ DLPipeline_read(DownloadPipeline *dp, char *buf, int buflen, bool *eof_p)
 		{
 			long		secs;
 			int	   		microsecs;
+
+			if (current_fetcher->nfailures >= MAX_FETCH_RETRIES)
+				ereport(ERROR,
+						(errmsg("could not download \"%s\", %d failed attempts",
+								current_fetcher->url, current_fetcher->nfailures)));
 
 			TimestampDifference(current_fetcher->failed_at, GetCurrentTimestamp(),
 								&secs, &microsecs);

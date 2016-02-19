@@ -108,7 +108,12 @@ HeaderContent_Destroy(HeaderContent *h)
 }
 
 /*
- * Extract certain fields from URL.
+ * Parse an S3 protocol URL, the one that was given in the CREATE EXTERNAL
+ * TABLE command.
+ *
+ * The URL is of form:
+ *
+ * s3://S3_endpoint/<bucket_name>/[folder/][folder/][...] [config=config_file]
  */
 void
 s3_parse_url(const char *url, char **schema, char **host, char **path, char **fullurl)
@@ -151,27 +156,6 @@ extract_field(const char *url, const struct http_parser_url *u,
 		ret[u->field_data[i].len] = 0;
     }
     return ret;
-}
-
-uint64_t
-ParserCallback(void *contents, uint64_t size, uint64_t nmemb,
-			   void *userp) {
-    uint64_t realsize = size * nmemb;
-    int res;
-    // printf("%.*s",realsize, (char*)contents);
-    XMLInfo *pxml = (XMLInfo *) userp;
-
-    if (!pxml->ctxt)
-	{
-        pxml->ctxt = xmlCreatePushParserCtxt(NULL, NULL, (const char *)contents,
-                                             realsize, "resp.xml");
-        return realsize;
-    }
-	else
-	{
-        res = xmlParseChunk(pxml->ctxt, (const char *)contents, realsize, 0);
-    }
-    return realsize;
 }
 
 char *

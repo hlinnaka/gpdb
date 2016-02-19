@@ -6,7 +6,7 @@
  */
 #include "postgres.h"
 
-#include "S3Downloader.h"
+#include "s3operations.h"
 #include "DownloadPipeline.h"
 
 #include "utils.h"
@@ -14,12 +14,55 @@
 
 static void HTTPFetcher_fail(HTTPFetcher *fetcher);
 
-/* CURL callback that places incoming data in the buffer. */
+/*
+ * CURL callback that places incoming data in the buffer.
+ *
+ * NB: Do not do anything here that might throw an error. No palloc(),
+ * ereport(), etc. This runs as a callback from libcurl, and it might
+ * get its internal state messed up if we longjmp out in the middle of
+ * an operation.
+ */
 static size_t
 WriterCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
 	size_t		realsize = size * nmemb;
 	HTTPFetcher *fetcher = (HTTPFetcher *) userp;
+
+	if (realsize == 0)
+		return 0;
+
+	/*
+	 * If this is the first call to the callback, check HTTP response code
+	 *
+	 * XXX: The curl documentation says that the response fields can be
+	 * read with curl_easy_getinfo(), after the transfer has completed. We
+	 * make the assumption here that the response code is available before
+	 * that. When the write-callback is called, curl must've received the
+	 * headers and the response line already, so it seems pretty safe to
+	 * assume that the response code is available to us already.
+	 *
+	 * See discussion: https://curl.haxx.se/mail/lib-2003-04/0014.html.
+	 * AFAICS, the situation hasn't changed since that thread: this should
+	 * work as the code stands, but it's undocumented behaviour.
+	 */
+	if (fetcher->http_response_code == -1)
+	{
+		long		respcode;
+		CURLcode	eres;
+
+		eres = curl_easy_getinfo(fetcher->curl, CURLINFO_RESPONSE_CODE, &respcode);
+		if (eres != CURLE_OK)
+		{
+			/*
+			 * Ignore errors here. Getting the response code isn't critical, and
+			 * ereporting in curl callback function doesn't seem wise.
+			 */
+		}
+		else
+		{
+			fetcher->http_response_code = respcode;
+		}
+	}
 
 	if (fetcher->nused == fetcher->readoff)
 		fetcher->readoff = fetcher->nused = 0;
@@ -39,8 +82,6 @@ WriterCallback(void *contents, size_t size, size_t nmemb, void *userp)
 		if (realsize > fetcher->bufsize - fetcher->nused)
 		{
 			fetcher->paused = true;
-			elog(DEBUG2, "paused %s (%d bytes in buffer, size %d)", fetcher->url,
-				 (int) fetcher->nused, (int) fetcher->bufsize);
 			return CURL_WRITEFUNC_PAUSE;
 		}
 	}
@@ -156,6 +197,7 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 	HeaderContent_Destroy(&headers);
 
 	fetcher->state = FETCHER_RUNNING;
+	fetcher->http_response_code = -1;
 
 	elog(DEBUG1, "starting download from %s (off " UINT64_FORMAT ", len %d)",
 		 fetcher->url, fetcher->offset, fetcher->len);
@@ -233,6 +275,25 @@ HTTPFetcher_get(HTTPFetcher *fetcher, char *buf, int buflen, bool *eof)
 {
 	int			avail;
 
+	if (fetcher->http_response_code != 200 &&
+		fetcher->http_response_code != 206 &&
+		fetcher->http_response_code != -1)
+	{
+		/*
+		 * The transfer failed. The content probably contains an XML document
+		 * document the error, rather than real data. Don't pass the error
+		 * XML string to the caller, the backend would try to parse it as
+		 * COPY-formatted data otherwise, and most likely throw a highly
+		 * confusing error message about "missing data for column" or
+		 * something.
+		 */
+		if (fetcher->state == FETCHER_DONE)
+			*eof = true;
+		else
+			*eof = false;
+		return 0;
+	}
+
 retry:
 	avail = fetcher->nused - fetcher->readoff;
 	if (avail > 0)
@@ -290,12 +351,19 @@ HTTPFetcher_handleResult(HTTPFetcher *fetcher, CURLcode res)
 				 curl_easy_strerror(eres));
 
 		Assert(respcode != 0);
-		if ((respcode != 200) && (respcode != 206))
+		if (respcode != 200 && respcode != 206)
 		{
-//                elog(WARNING,
-//					 (errmsg("get %.*s, retry", (int) bi.len, data)));
-                //bi.len = -1;
-			elog(WARNING, "received HTTP code %ld", respcode);
+			/*
+			 * We may have an XML error document sitting in the buffer. Parse it, and
+			 * report the error.
+			 */
+			if (fetcher->bytes_done == 0)
+				reportAWSerror(WARNING, respcode, fetcher->readbuf, fetcher->nused);
+			else
+				reportAWSerror(WARNING, respcode, NULL, 0);
+
+			/* Don't return the error message to the caller */
+			fetcher->nused = fetcher->readoff = 0;
 			HTTPFetcher_fail(fetcher);
 		}
 		else

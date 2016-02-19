@@ -1,3 +1,7 @@
+/*
+ * This is the main entry point for the S3 protocol.
+ */
+
 #include "postgres.h"
 
 #include "lib/stringinfo.h"
@@ -10,7 +14,7 @@
 
 #include "gps3ext.h"
 
-static bool ValidateURL(S3ExtBase *base);
+static bool ParseProtocolURL(S3ExtBase *base);
 static void ReadConfig(S3ExtBase *bas, const char *conf_path);
 
 static void S3Reader_SetupPipeline(S3ExtBase *base, ListBucketResult *keylist);
@@ -20,17 +24,19 @@ S3ExtBase_create(const char *url, const char *conf_path)
 {
 	S3ExtBase *base;
 	StringInfoData sstr;
-    int			nfailures = 0;
 	ListBucketResult *keylist;
 
 	base = (S3ExtBase *) palloc(sizeof(S3ExtBase));
 	
 	ReadConfig(base, conf_path);
 
+	base->cred.keyid = base->conf_accessid;
+	base->cred.secret = base->conf_secret;
+
 	base->url = pstrdup(url);
 	
-    // Validate url first
-    if (!ValidateURL(base))
+    // Parse the url first.
+    if (!ParseProtocolURL(base))
 		ereport(ERROR,
 				(errmsg("given s3 URL \"%s\" is not valid",
 						base->url)));
@@ -50,52 +56,19 @@ S3ExtBase_create(const char *url, const char *conf_path)
 	elog(DEBUG1, "Host url is %s (endpoint %s)", sstr.data, base->endpoint);
 
 	/*
-	 * Copy the credentials into the S3Credential object, for passing around more
-	 * easily.
-	 */
-	base->cred.keyid = base->conf_accessid;
-	base->cred.secret = base->conf_secret;
-
-	/*
 	 * Now get the list of objects in the bucket from the server.
-	 *
-	 * If this fails, we retry a few times (MAX_FETCH_RETRIES)
 	 */
-retry:
 	keylist = ListBucket(base->schema, sstr.data,
 						 base->bucket, base->prefix, &base->cred, base->endpoint);
-	if (!keylist)
-	{
-		nfailures++;
 
-		if (nfailures >= MAX_FETCH_RETRIES)
-			ereport(ERROR,
-					(errmsg("could not list contents of bucket \"%s\"",
-						base->bucket)));
-		else
-		{
-			elog(INFO, "could not list contents for bucket, retrying");
-			goto retry;
-		}
-	}
 
 	/*
-	 * FIXME: Is it really reasonable to retry, if the bucket is empty? Surely
-	 * it's not going to suddenly be non-empty if we just try again?
+	 * FIXME: the error message is a bit misleading if a prefix was used; the
+	 * bucket as whole might not be empty, just the folder
 	 */
 	if (keylist->ncontents == 0)
-	{
-		nfailures++;
-
-		if (nfailures >= MAX_FETCH_RETRIES)
-			ereport(ERROR,
-					(errmsg("bucket is empty")));
-		else
-		{
-			elog(INFO, "bucket is empty, retrying");
-			goto retry;
-		}
-	}
+		ereport(ERROR,
+				(errmsg("bucket is empty")));
 
 	elog(INFO, "got %d files to download", keylist->ncontents);
 	S3Reader_SetupPipeline(base, keylist);
@@ -214,13 +187,15 @@ S3Reader_destroy(S3ExtBase *base)
 }
 
 /*
- * Note: This not only checks that the URL is valid, but also extracts some fields
- * from it into fields in 'base'.
+ * Parse an S3 protocol URL, the one that was given in the CREATE EXTERNAL
+ * TABLE command. Sets the fields
  *
- * XXX: What exactly is the format of the url? Comment, please!
+ * The URL is of form:
+ *
+ * s3://S3_endpoint/<bucket_name>/[folder/][folder/][...] [config=config_file]
  */
 static bool
-ValidateURL(S3ExtBase *base)
+ParseProtocolURL(S3ExtBase *base)
 {
     const char *awsdomain = ".amazonaws.com";
 	char		*s_awsdomain;
@@ -355,7 +330,6 @@ ReadConfig(S3ExtBase *base, const char *conf_path)
 	{
 		base->conf_accessid = conf_str_get(inifile, "default", "accessid", "");
 		base->conf_secret = conf_str_get(inifile, "default", "secret", "");
-		base->conf_token = conf_str_get(inifile, "default", "token", "");
 
         if (strcmp(base->conf_accessid, "") == 0)
             ereport(ERROR,

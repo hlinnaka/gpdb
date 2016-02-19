@@ -58,7 +58,9 @@ typedef struct
 	size_t		nused;			/* amount of valid data in buffer */
 	size_t		readoff;		/* how much of the valid data has been consumed */
 
-	/* TODO: Retry support */
+	/* HTTP response code received. Filled in at first call to Write callback */
+	long		http_response_code;
+
 	int			nfailures;		/* how many times have we failed at connecting? */
 	TimestampTz failed_at;		/* timestamp of last failure */
 } HTTPFetcher;

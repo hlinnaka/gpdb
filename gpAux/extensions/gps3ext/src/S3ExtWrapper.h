@@ -1,14 +1,16 @@
 #ifndef __S3_EXT_WRAPPER__
 #define __S3_EXT_WRAPPER__
 
-#include "S3Downloader.h"
+#include "s3operations.h"
 #include "DownloadPipeline.h"
 #include "S3Common.h"
 
 typedef struct
 {
+	/* This is the protocol URL (e.g. s3://s3.amazonaws.com/...) */
     char	   *url;
 
+	/* These are extracted parts from the protocol URL */
     char	   *schema;
     char	   *host;
 	char	   *path;
@@ -18,12 +20,9 @@ typedef struct
 
 	char	   *endpoint;		/* same as conf_endpoint, if set, otherwise derived from url */
 
-	S3Credential cred;
-
 	/* Configurable parameters */
 	char	   *conf_accessid;
 	char	   *conf_secret;
-	char	   *conf_token;
 
 	char	   *conf_endpoint;
 
@@ -35,9 +34,12 @@ typedef struct
 
 	bool		conf_encryption;
 
+	/* copy of accessid and secret in convenient form */
+	S3Credential cred;
+
 	/* segment layout */
-    int			segid;
-    int			segnum;
+	int			segid;
+	int			segnum;
 
 	/* for readers */
 	DownloadPipeline *pipeline;
