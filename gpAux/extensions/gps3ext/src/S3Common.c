@@ -3,11 +3,6 @@
 #include "S3Common.h"
 #include "utils.h"
 
-#include "lib/http_parser.h"
-
-static char *extract_field(const char *url, const struct http_parser_url *u, enum http_parser_url_fields i);
-
-	
 void
 SignGETv2(HeaderContent *h, const char *path_with_query,
 		  const S3Credential *cred)
@@ -105,57 +100,6 @@ void
 HeaderContent_Destroy(HeaderContent *h)
 {
 	list_free_deep(h->fields);
-}
-
-/*
- * Parse an S3 protocol URL, the one that was given in the CREATE EXTERNAL
- * TABLE command.
- *
- * The URL is of form:
- *
- * s3://S3_endpoint/<bucket_name>/[folder/][folder/][...] [config=config_file]
- */
-void
-s3_parse_url(const char *url, char **schema, char **host, char **path, char **fullurl)
-{
-    struct http_parser_url u;
-    int			len;
-	int			result;
-
-    if (!url)
-		elog(ERROR, "no URL given"); /* shouldn't happen */
-
-    len = strlen(url);
-	if (fullurl)
-		*fullurl = pstrdup(url);
-
-    // only parse len, no need to memset this->fullurl
-    result = http_parser_parse_url(url, len, false, &u);
-    if (result != 0)
-		elog(ERROR, "could not parse URL \"%s\": error code %d\n", url, result);
-
-	if (schema)
-		*schema = extract_field(url, &u, UF_SCHEMA);
-	if (host)
-		*host = extract_field(url, &u, UF_HOST);
-	if (path)
-		*path = extract_field(url, &u, UF_PATH);
-}
-
-static char *
-extract_field(const char *url, const struct http_parser_url *u,
-			  enum http_parser_url_fields i)
-{
-    char *ret = NULL;
-
-    if ((u->field_set & (1 << i)) != 0)
-	{
-        ret = (char *) palloc(u->field_data[i].len + 1);
-		memcpy(ret, url + u->field_data[i].off,
-			   u->field_data[i].len);
-		ret[u->field_data[i].len] = 0;
-    }
-    return ret;
 }
 
 char *

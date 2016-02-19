@@ -29,7 +29,7 @@ typedef enum
 typedef struct
 {
 	FetcherState state;
-	
+
     CURL	   *curl;
 	bool		paused;
 
@@ -39,6 +39,7 @@ typedef struct
 
     const char *url;
 	const char *bucket; 		/* bucket name, used to create AWS signature */
+	const char *path;			/* path component of the url, e.g. "/foo" */
 	const char *host;
 
 	S3Credential *cred;
@@ -49,7 +50,7 @@ typedef struct
 	int			len;
 
 	uint64		bytes_done;		/* Returned this many bytes to caller (allows retrying from where we left */
-	
+
 	HeaderContent headers;
 
 	/* TODO: a ring buffer would be more efficient */
@@ -66,6 +67,7 @@ typedef struct
 } HTTPFetcher;
 
 extern HTTPFetcher *HTTPFetcher_create(const char *url, const char *host, const char *bucket,
+									   const char *path,
 									   S3Credential *cred, int bufsize, uint64 offset, int len);
 extern void HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle);
 extern int HTTPFetcher_get(HTTPFetcher *fetcher, char *buf, int buflen, bool *eof);
@@ -74,7 +76,7 @@ extern void HTTPFetcher_handleResult(HTTPFetcher *fetcher, CURLcode res);
 
 /*
  * Represents a list of URLs, which together form the stream to return to the
- * caller of the "external table". 
+ * caller of the "external table".
  */
 typedef struct
 {

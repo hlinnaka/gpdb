@@ -135,12 +135,16 @@ S3Reader_SetupPipeline(S3ExtBase *base, ListBucketResult *keylist)
 		StringInfoData urlbuf;
 		uint64		offset;
 		int64		len;
+		char	   *path;
 
 		initStringInfo(&urlbuf);
 		appendStringInfo(&urlbuf, "%s://%s/%s",
 						 base->schema, base->endpoint, c->key);
 
 		elog(DEBUG1, "key: %s, size: " UINT64_FORMAT, urlbuf.data, c->size);
+
+		path = palloc(strlen(c->key) + 1 + 1);
+		sprintf(path, "/%s", c->key);
 
 		/*
 		 * Divide the file into chunks of requested size.
@@ -156,8 +160,8 @@ S3Reader_SetupPipeline(S3ExtBase *base, ListBucketResult *keylist)
 			else
 				len = chunksize;
 
-			fetcher = HTTPFetcher_create(urlbuf.data, hoststr.data, base->bucket, &base->cred,
-										 bufsize, offset, len);
+			fetcher = HTTPFetcher_create(urlbuf.data, hoststr.data, base->bucket, path,
+										 &base->cred, bufsize, offset, len);
 			DLPipeline_add(base->pipeline, fetcher);
 			offset += len;
 		} while (len != -1);

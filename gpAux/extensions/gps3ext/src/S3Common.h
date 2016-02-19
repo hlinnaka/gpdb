@@ -2,7 +2,6 @@
 #define __S3_COMMON_H__
 
 #include <curl/curl.h>
-#include "http_parser.h"
 
 #include "nodes/pg_list.h"
 
@@ -32,8 +31,6 @@ typedef struct
 {
 	List *fields;
 } HeaderContent;
-
-extern void s3_parse_url(const char *url, char **schema, char **host, char **path, char **fullurl);
 
 extern bool HeaderContent_Add(HeaderContent *h, HeaderField f, const char *value);
 extern struct curl_slist *HeaderContent_GetList(HeaderContent *h);

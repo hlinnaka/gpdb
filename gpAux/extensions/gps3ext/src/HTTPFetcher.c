@@ -92,7 +92,7 @@ WriterCallback(void *contents, size_t size, size_t nmemb, void *userp)
 }
 
 HTTPFetcher *
-HTTPFetcher_create(const char *url, const char *host, const char *bucket,
+HTTPFetcher_create(const char *url, const char *host, const char *bucket, const char *path,
 				   S3Credential *cred, int bufsize, uint64 offset, int len)
 {
 	HTTPFetcher *fetcher;
@@ -104,6 +104,7 @@ HTTPFetcher_create(const char *url, const char *host, const char *bucket,
 	fetcher->conf_bufsize = bufsize;
 	fetcher->url = url;
 	fetcher->bucket = bucket;
+	fetcher->path = path;
 	fetcher->host = host;
 	fetcher->cred = cred;
 	fetcher->offset = offset;
@@ -123,7 +124,6 @@ void
 HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 {
 	CURL	   *curl;
-	char	   *path;
 	StringInfoData sbuf;
 	HeaderContent headers = { NIL };
 
@@ -180,17 +180,10 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 		HeaderContent_Add(&headers, RANGE, rangebuf);
 	}
 
-	s3_parse_url(fetcher->url,
-				 NULL /* schema */,
-				 NULL /* host */,
-				 &path,
-				 NULL /* fullurl */);
-
 	initStringInfo(&sbuf);
-	appendStringInfo(&sbuf, "/%s%s", fetcher->bucket, path);
+	appendStringInfo(&sbuf, "/%s%s", fetcher->bucket, fetcher->path);
 	SignGETv2(&headers, sbuf.data, fetcher->cred);
 	pfree(sbuf.data);
-	pfree(path);
 
 	fetcher->httpheaders = HeaderContent_GetList(&headers);
 	curl_easy_setopt(fetcher->curl, CURLOPT_HTTPHEADER, fetcher->httpheaders);

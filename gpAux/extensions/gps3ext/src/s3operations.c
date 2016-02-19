@@ -179,7 +179,6 @@ ParserCallback(void *contents, uint64_t size, uint64_t nmemb, void *userp)
 {
     uint64_t	realsize = size * nmemb;
     int			res;
-    // printf("%.*s",realsize, (char*)contents);
     XMLInfo	   *pxml = (XMLInfo *) userp;
 
     if (!pxml->ctxt)
@@ -206,7 +205,6 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 	StringInfoData hostbuf;
     ListBucketResult *result;
 	CURL	   *curl;
-	char	   *path;
 	volatile XMLInfo xml = { NULL };
 	struct curl_slist *chunk;
 	StringInfoData urlbuf;
@@ -223,9 +221,10 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 	appendStringInfo(&hostbuf, "%s.%s", bucket, host);
 
 	/*
-	 * This is the URL we pass to curl. The 'endpoint' part here specifies the host
-	 * that we connect to. Normally, it's just "s3.amazonaws.com", or one of the
-	 * region-specific hostnames, but it can also be e.g. "localhost" for testing.
+	 * This is the URL we pass to curl. The 'endpoint' part here specifies the
+	 * host that we connect to. Normally, it's just "s3.amazonaws.com", or one
+	 * of the region-specific hostnames, but it can also be e.g. "localhost"
+	 * for testing.
 	 */
 	initStringInfo(&urlbuf);
 	appendStringInfo(&urlbuf, "%s://%s/", schema, endpoint);
@@ -246,16 +245,8 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 
 		HeaderContent_Add(&headers, HOST, hostbuf.data);
 
-		s3_parse_url(urlbuf.data,
-					 NULL /* schema */,
-					 NULL /* host */,
-					 &path,
-					 NULL /* fullurl */);
-
-		elog(INFO, "PATH: %s", path);
-
 		initStringInfo(&sbuf);
-		appendStringInfo(&sbuf, "/%s%s", bucket, path);
+		appendStringInfo(&sbuf, "/%s/", bucket);
 		SignGETv2(&headers, sbuf.data, cred);
 		pfree(sbuf.data);
 
