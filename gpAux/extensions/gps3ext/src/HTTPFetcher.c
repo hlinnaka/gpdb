@@ -124,8 +124,8 @@ void
 HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 {
 	CURL	   *curl;
-	StringInfoData sbuf;
-	HeaderContent headers = { NIL };
+	HeaderContent headers = { 0 };
+	char	   *auth_header;
 
 	if (!fetcher->readbuf)
 	{
@@ -180,10 +180,19 @@ HTTPFetcher_start(HTTPFetcher *fetcher, CURLM *curl_mhandle)
 		HeaderContent_Add(&headers, RANGE, rangebuf);
 	}
 
-	initStringInfo(&sbuf);
-	appendStringInfo(&sbuf, "/%s%s", fetcher->bucket, fetcher->path);
-	SignGETv2(&headers, sbuf.data, fetcher->cred);
-	pfree(sbuf.data);
+	auth_header = SignRequestV4("GET",			/* method */
+								fetcher->path,	/* path */
+								"",				/* query string */
+								&headers,
+								NULL,			/* payload */
+								"s3",			/* service */
+								"us-east-1",	/* region */
+								NULL,			/* timestamp */
+								fetcher->cred->keyid,	/* accessid */
+								fetcher->cred->secret	/* secret */
+		);
+	pfree(auth_header);
+	HeaderContent_Add(&headers, X_AMZ_CONTENT_SHA256, "UNSIGNED-PAYLOAD");
 
 	fetcher->httpheaders = HeaderContent_GetList(&headers);
 	curl_easy_setopt(fetcher->curl, CURLOPT_HTTPHEADER, fetcher->httpheaders);

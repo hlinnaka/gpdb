@@ -1,59 +1,278 @@
+/*
+ * Utility functions for calculating Authentication signatures etc. for S3.
+ */
 #include "postgres.h"
+
+#define INCLUDE_S3_DEBUG_FUNCS
 
 #include "S3Common.h"
 #include "utils.h"
 
-void
-SignGETv2(HeaderContent *h, const char *path_with_query,
-		  const S3Credential *cred)
+#ifdef INCLUDE_S3_DEBUG_FUNCS
+#include "fmgr.h"
+#include "utils/builtins.h"
+#include "utils/array.h"
+#endif
+
+static const char *GetCanonicalizedFieldString(HeaderField f);
+
+/*
+ * Helper function to canonicalize a heea
+ */
+static void
+appendCanonicalHeader(StringInfo buf, HeaderField f, const char *val)
 {
-    char		timebuf[65];
-    char		tmpbuf[20];  // SHA_DIGEST_LENGTH is 20
-    struct tm tm_info;
-    time_t t;
-	StringInfoData sstr;
+	const char *vp;
 
-    /* CONTENT_LENGTH is not a part of StringToSign */
-    HeaderContent_Add(h, CONTENTLENGTH, "0");
+	appendStringInfo(buf, "%s:", GetCanonicalizedFieldString(f));
 
-	/* DATE header */
+	/*
+	 * Output header value in canonical form: strip leading and trailing space, and
+	 * convert sequential spaces to a single space
+	 */
+	vp = val;
 
-    t = time(NULL);
-    localtime_r(&t, &tm_info);
-    strftime(timebuf, sizeof(timebuf), "%a, %d %b %Y %H:%M:%S %z", &tm_info);
-    HeaderContent_Add(h, DATE, timebuf);
+	/* strip leading spaces */
+	while (*vp == ' ')
+		vp++;
 
-	initStringInfo(&sstr);
-	appendStringInfo(&sstr, "GET\n\n\n%s\n%s", timebuf, path_with_query);
+	while (*vp)
+	{
+		if (vp[0] == ' ' && vp[1] == ' ')
+		{
+			vp++; /* skip double spaces */
+			continue;
+		}
+		if (vp[0] == ' ' && vp[1] == '\0')
+		{
+			/* skip trailing space */
+			break;
+		}
 
-    sha1hmac(sstr.data, tmpbuf, cred->secret);
+		/* we're now located at a non-space character, output it */
+		appendStringInfoChar(buf, *vp);
 
-    // S3DEBUG("%s", sstr.str().c_str());
-    char *signature = Base64Encode(tmpbuf, 20);  // SHA_DIGEST_LENGTH is 20
-    // S3DEBUG("%s", signature);
-	resetStringInfo(&sstr);
-	appendStringInfo(&sstr, "AWS %s:%s", cred->keyid, signature);
+		vp++;
 
-	pfree(signature);
-    // S3DEBUG("%s", sstr.str().c_str());
-    HeaderContent_Add(h, AUTHORIZATION, sstr.data);
+		continue;
+	}
+
+	appendStringInfoChar(buf, '\n');
+}
+
+/*
+ * date must be on YYYYMMDD format.
+ */
+static void
+DeriveSigningKey(const char *secret, const char *date, const char *region, const char *service,
+				 unsigned char output[S3_SHA256_DIGEST_LENGTH])
+{
+	char	   *kSecret;
+	int			kSecretLen;
+	unsigned char kDate[S3_SHA256_DIGEST_LENGTH];
+	unsigned char kRegion[S3_SHA256_DIGEST_LENGTH];
+	unsigned char kService[S3_SHA256_DIGEST_LENGTH];
+
+	/*
+	 * Derive the signing key
+	 *
+	 * kSecret = Your AWS Secret Access Key
+	 * kDate = HMAC("AWS4" + kSecret, Date)
+	 * kRegion = HMAC(kDate, Region)
+	 * kService = HMAC(kRegion, Service)
+	 * kSigning = HMAC(kService, "aws4_request")
+	 */
+	kSecretLen = 4 + strlen(secret);
+	kSecret = palloc(kSecretLen + 1);
+	snprintf(kSecret, kSecretLen + 1, "AWS4%s", secret);
+
+	sha256hmac(kDate, date, kSecret, kSecretLen);
+	sha256hmac(kRegion, region, (char *) kDate, S3_SHA256_DIGEST_LENGTH);
+	sha256hmac(kService, service, (char *) kRegion, S3_SHA256_DIGEST_LENGTH);
+	sha256hmac(output, "aws4_request", (char *) kService, S3_SHA256_DIGEST_LENGTH);
+
+	pfree(kSecret);
+}
+
+/*
+ * Add an S3 Authorization header to a curl request.
+ *
+ * HTTPRequestMethod	"GET", "PUT, or similar
+ * CanonicalURI			path of the URL, up to the question mark, e.g. "/foo"
+ * CanonicalQueryString	part of the URL after question mark
+ * headers				headers to sign.
+ *
+ * See https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html
+ * for details.
+ *
+ * If timestamp_str is NULL, uses the current timestamp, and also adds
+ * an x-amz-date header to the request.
+ *
+ * Returns the value to put in the Authorization header. Also adds the
+ * fully-constructed  Authorization header to 'headers', as well as an
+ * 'x-amz-date' header with the same timestamp as was used in the signing
+ * process.
+ *
+ * If 'payload' is NULL, the "UNSIGNED-PAYLOAD" is used instead of the
+ * Canonical hash.
+ *
+ * FIXME: The query string would need to be normalized, by percent-encoding.
+ * That has not been implemented yet. We only use query strings in the 'prefix',
+ * so as long as you stick to ascii-only prefixes, we don't need it.
+ */
+char *
+SignRequestV4(const char *HTTPRequestMethod,
+			  const char *CanonicalURI,
+			  const char *CanonicalQueryString,
+			  HeaderContent *headers,
+			  const char *payload,
+			  const char *service,
+			  const char *region,
+			  const char *timestamp_str, /* 20150830T123600Z */
+			  const char *accessid,
+			  const char *secret)
+{
+	StringInfoData CanonicalRequest;
+	StringInfoData SignedHeaders;
+	StringInfoData StringToSign;
+	StringInfoData authbuf;
+	char		HashedCanonicalRequest[65];
+	char		signatureHex[65];
+	unsigned char signatureDigest[S3_SHA256_DIGEST_LENGTH];
+	char		payloadhash[65];
+	unsigned char signingkey[S3_SHA256_DIGEST_LENGTH];
+	int			i;
+	char		date_str[9];
+	char		timestamp_buf[17];
+
+	if (timestamp_str == NULL)
+	{
+		time_t		t;
+		struct tm	tm_info;
+
+		/* YYYYMMDD'T'HHMMSS'Z' */
+		t = time(NULL);
+		gmtime_r(&t, &tm_info);
+		strftime(timestamp_buf, 17, "%Y%m%dT%H%M%SZ", &tm_info);
+		timestamp_str = timestamp_buf;
+
+		HeaderContent_Add(headers, X_AMZ_DATE, timestamp_str);
+	}
+	else if (strlen(timestamp_str) != 16)
+		elog(ERROR, "invalid timestamp argument to SignRequestV4");
+	memcpy(date_str, timestamp_str, 8);
+	date_str[8] = '\0';
+
+	initStringInfo(&CanonicalRequest);
+	appendStringInfo(&CanonicalRequest, "%s\n", HTTPRequestMethod);
+	/* FIXME: the URI should be percent-encoded */
+	appendStringInfo(&CanonicalRequest, "%s\n", CanonicalURI);
+	appendStringInfo(&CanonicalRequest, "%s\n", CanonicalQueryString);
+
+	/* append CanonicalHeaders */
+	for (i = 0; i < headers->nheaders; i++)
+	{
+		appendCanonicalHeader(&CanonicalRequest,
+							  headers->keys[i],
+							  headers->values[i]);
+	}
+	appendStringInfoChar(&CanonicalRequest, '\n');
+
+	/* Calculate SignedHeaders and append it */
+	initStringInfo(&SignedHeaders);
+	for (i = 0; i < headers->nheaders; i++)
+	{
+		if (i > 0)
+			appendStringInfoChar(&SignedHeaders, ';');
+		appendStringInfoString(&SignedHeaders,
+							   GetCanonicalizedFieldString(headers->keys[i]));
+
+	}
+
+	appendStringInfo(&CanonicalRequest, "%s\n", SignedHeaders.data);
+
+	/* Append HexEncode(Hash(RequestPayload)) */
+	if (payload)
+		sha256(payload, payloadhash);
+	else
+		snprintf(payloadhash, sizeof(payloadhash), "UNSIGNED-PAYLOAD");
+	appendStringInfo(&CanonicalRequest, "%s", payloadhash);
+
+	elog(DEBUG2, "CanonicalRequest:\n%s", CanonicalRequest.data);
+
+	/* Hash the whole of the whole CanonicalRequest */
+	sha256(CanonicalRequest.data, HashedCanonicalRequest);
+
+	/*
+	 * Great! Now let's calculate StringToSign:
+	 *
+	 * StringToSign  =
+	 * Algorithm + '\n' +
+	 * RequestDate + '\n' +
+	 * CredentialScope + '\n' +
+	 * HashedCanonicalRequest))
+	 */
+	initStringInfo(&StringToSign);
+	appendStringInfoString(&StringToSign, "AWS4-HMAC-SHA256\n");
+	appendStringInfo(&StringToSign, "%s\n", timestamp_str);
+
+	/* Credential scope, e.g. "20150830/us-east-1/iam/aws4_request\n" */
+	appendStringInfo(&StringToSign, "%s/%s/%s/aws4_request\n",
+					 date_str, region, service);
+	appendStringInfo(&StringToSign, "%s", HashedCanonicalRequest);
+
+	elog(DEBUG2, "StringToSign:\n%s", StringToSign.data);
+
+	/*
+	 * Derive the signing key
+	 */
+	DeriveSigningKey(secret, date_str, region, service, signingkey);
+
+	/* Finally, calculate the signature */
+	sha256hmac(signatureDigest, StringToSign.data, (char *) signingkey, S3_SHA256_DIGEST_LENGTH);
+	for (i = 0; i < S3_SHA256_DIGEST_LENGTH; i++)
+        sprintf(signatureHex + (i * 2), "%02x", signatureDigest[i]);
+
+	/*
+	 * Now construct Authorization header:
+	 *
+	 * Authorization: algorithm Credential=access key ID/credential scope, SignedHeaders=SignedHeaders, Signature=signature
+	 *
+	 * Example:
+	 * Authorization: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7
+	 */
+	initStringInfo(&authbuf);
+
+	appendStringInfo(&authbuf, "AWS4-HMAC-SHA256 Credential=%s/%s/%s/%s/aws4_request, SignedHeaders=%s, Signature=%s",
+					 accessid, date_str, region, service, SignedHeaders.data, signatureHex);
+
+
+	/* Add headers */
+	HeaderContent_Add(headers, AUTHORIZATION, authbuf.data);
+
+	/* clean up */
+	pfree(CanonicalRequest.data);
+	pfree(StringToSign.data);
+
+	return authbuf.data;
 }
 
 const char *
 GetFieldString(HeaderField f)
 {
-    switch (f) {
+    switch (f)
+	{
         case HOST:
             return "Host";
         case RANGE:
             return "Range";
         case DATE:
             return "Date";
-        case CONTENTLENGTH:
+        case CONTENT_LENGTH:
             return "Content-Length";
-        case CONTENTMD5:
+        case CONTENT_MD5:
             return "Content-MD5";
-        case CONTENTTYPE:
+        case CONTENT_TYPE:
             return "Content-Type";
         case EXPECT:
             return "Expect";
@@ -61,6 +280,42 @@ GetFieldString(HeaderField f)
             return "Authorization";
         case ETAG:
             return "ETag";
+		case X_AMZ_DATE:
+			return "X-Amz-Date";
+		case X_AMZ_CONTENT_SHA256:
+			return "x-amz-content-sha256";
+        default:
+            return "unknown";
+    }
+}
+
+static const char *
+GetCanonicalizedFieldString(HeaderField f)
+{
+    switch (f)
+	{
+        case HOST:
+            return "host";
+        case RANGE:
+            return "range";
+        case DATE:
+            return "date";
+        case CONTENT_LENGTH:
+            return "content-length";
+        case CONTENT_MD5:
+            return "content-md5";
+        case CONTENT_TYPE:
+            return "content-type";
+        case EXPECT:
+            return "expect";
+        case AUTHORIZATION:
+            return "authorization";
+        case ETAG:
+            return "etag";
+		case X_AMZ_DATE:
+			return "x-amz-date";
+		case X_AMZ_CONTENT_SHA256:
+			return "x-amz-content-sha256";
         default:
             return "unknown";
     }
@@ -71,14 +326,16 @@ HeaderContent_Add(HeaderContent *h, HeaderField f, const char *v)
 {
 	if (strcmp(v, "") != 0)
     {
-		StringInfoData sinfo;
+		if (h->nheaders >= MAX_HEADERS)
+			elog(ERROR, "too many headers");
 
-		initStringInfo(&sinfo);
-		appendStringInfo(&sinfo, "%s: %s", GetFieldString(f), v);
-		h->fields = lappend(h->fields, pstrdup(sinfo.data));
-		pfree(sinfo.data);
+		h->keys[h->nheaders] = f;
+		h->values[h->nheaders] = pstrdup(v);
+		h->nheaders++;
 		return true;
-    } else {
+    }
+	else
+	{
         return false;
     }
 }
@@ -86,20 +343,36 @@ HeaderContent_Add(HeaderContent *h, HeaderField f, const char *v)
 struct curl_slist *
 HeaderContent_GetList(HeaderContent *h)
 {
-    struct curl_slist *chunk = NULL;
-	ListCell *lc;
+	struct curl_slist *chunk = NULL;
+	int			i;
+	StringInfoData sbuf;
 
-	foreach(lc, h->fields)
+	initStringInfo(&sbuf);
+
+	for (i = 0; i < h->nheaders; i++)
 	{
-        chunk = curl_slist_append(chunk, (char *) lfirst(lc));
+		resetStringInfo(&sbuf);
+
+		appendStringInfo(&sbuf, "%s: %s",
+						 GetFieldString(h->keys[i]),
+						 h->values[i]);
+
+        chunk = curl_slist_append(chunk, pstrdup(sbuf.data));
 	}
-    return chunk;
+	pfree(sbuf.data);
+
+	return chunk;
 }
 
 void
 HeaderContent_Destroy(HeaderContent *h)
 {
-	list_free_deep(h->fields);
+	int			i;
+
+	for (i = 0; i < h->nheaders; i++)
+		pfree(h->values[i]);
+
+	h->nheaders = 0;
 }
 
 char *
@@ -183,3 +456,107 @@ truncate_options(const char *url_with_options)
 
     return url;
 }
+
+
+
+#ifdef INCLUDE_S3_DEBUG_FUNCS
+/*
+ * Expose the signing function to SQL level, for debugging purposes.
+ *
+ * The signatures ar:
+ *
+ * CREATE FUNCTION test_signrequestv4(method text, path text, querystring text, headers text[], payload text, service text, region text, date_time text, accessid text, secret text) RETURNS text AS '$libdir/gps3ext.so', 's3_test_signv4' LANGUAGE C STRICT;
+ *
+ * CREATE FUNCTION test_derivesigningkey(secret text, date_s text, region text, service text) RETURNS text AS '$libdir/gps3ext.so', 's3_test_derivesigningkey' LANGUAGE C STRICT;
+
+ *
+ */
+PG_FUNCTION_INFO_V1(s3_test_signv4);
+PG_FUNCTION_INFO_V1(s3_test_derivesigningkey);
+
+Datum s3_test_signv4(PG_FUNCTION_ARGS);
+Datum s3_test_derivesigningkey(PG_FUNCTION_ARGS);
+
+Datum
+s3_test_signv4(PG_FUNCTION_ARGS)
+{
+	char	   *method = TextDatumGetCString(PG_GETARG_DATUM(0));
+	char	   *path = TextDatumGetCString(PG_GETARG_DATUM(1));
+	char	   *querystring = TextDatumGetCString(PG_GETARG_DATUM(2));
+	ArrayType  *header_array = PG_GETARG_ARRAYTYPE_P(3);
+	char	   *payload = TextDatumGetCString(PG_GETARG_DATUM(4));
+	char	   *service = TextDatumGetCString(PG_GETARG_DATUM(5));
+	char	   *region = TextDatumGetCString(PG_GETARG_DATUM(6));
+	char	   *timestamp = TextDatumGetCString(PG_GETARG_DATUM(7));
+	char	   *accessid = TextDatumGetCString(PG_GETARG_DATUM(8));
+	char	   *secret = TextDatumGetCString(PG_GETARG_DATUM(9));
+	char	   *auth_header;
+	HeaderContent headers = { 0 };
+	Datum	   *elems;
+	int			nelems;
+	int			i;
+
+	deconstruct_array(header_array, TEXTOID, -1, false, 'i',
+					  &elems, NULL, &nelems);
+
+	if (nelems % 2 != 0)
+		elog(ERROR, "headers argument must contain an even number of elements");
+
+	for (i = 0; i < nelems; i+=2)
+	{
+		HeaderField f;
+		char	   *h = TextDatumGetCString(elems[i]);
+		char	   *v = TextDatumGetCString(elems[i + 1]);
+
+		/*
+		 * we don't bother to support every header type here, just a
+		 * a few we will use in testing
+		 */
+		if (strcmp(h, "Host") == 0)
+			f = HOST;
+		else if (strcmp(h, "Range") == 0)
+			f = RANGE;
+		else if (strcmp(h, "Content-Length") == 0)
+			f = CONTENT_LENGTH;
+		else if (strcmp(h, "Content-MD5") == 0)
+			f = CONTENT_MD5;
+		else if (strcmp(h, "Content-Type") == 0)
+			f = CONTENT_TYPE;
+		else if (strcmp(h, "X-Amz-Date") == 0)
+			f = X_AMZ_DATE;
+		else
+			elog(ERROR, "unknown header field %s", h);
+
+		HeaderContent_Add(&headers, f, v);
+	}
+
+	auth_header = SignRequestV4(method, path, querystring, &headers,
+								payload, service, region, timestamp, accessid, secret);
+
+	PG_RETURN_DATUM(CStringGetTextDatum(auth_header));
+}
+
+Datum
+s3_test_derivesigningkey(PG_FUNCTION_ARGS)
+{
+	char	   *secret = TextDatumGetCString(PG_GETARG_DATUM(0));
+	char	   *date = TextDatumGetCString(PG_GETARG_DATUM(1));
+	char	   *region = TextDatumGetCString(PG_GETARG_DATUM(2));
+	char	   *service = TextDatumGetCString(PG_GETARG_DATUM(3));
+	StringInfoData sbuf;
+	unsigned char digest[S3_SHA256_DIGEST_LENGTH];
+	int			i;
+
+	DeriveSigningKey(secret, date, region, service, digest);
+
+	initStringInfo(&sbuf);
+	for (i = 0; i < S3_SHA256_DIGEST_LENGTH; i++)
+	{
+		if (i > 0)
+			appendStringInfoString(&sbuf, ", ");
+		appendStringInfo(&sbuf, "%u", (unsigned int) digest[i]);
+	}
+
+	PG_RETURN_DATUM(CStringGetTextDatum(sbuf.data));
+}
+#endif

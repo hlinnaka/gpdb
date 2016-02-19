@@ -208,11 +208,12 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 	volatile XMLInfo xml = { NULL };
 	struct curl_slist *chunk;
 	StringInfoData urlbuf;
-	HeaderContent headers = { NIL };
-	StringInfoData sbuf;
+	HeaderContent headers = { 0 };
 	CURLcode res;
 	xmlNode *root_element = NULL;
 	int			respcode;
+	char	   *queryString;
+	char	   *auth_header;
 
 	/*
 	 * We use S3 "virtual host" style URLs. This is what we send in the Host: field.
@@ -229,7 +230,13 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 	initStringInfo(&urlbuf);
 	appendStringInfo(&urlbuf, "%s://%s/", schema, endpoint);
     if (strcmp(prefix, "") != 0)
+	{
+		int			prefixoff = urlbuf.len;
 		appendStringInfo(&urlbuf, "?prefix=%s", prefix);
+		queryString = &urlbuf.data[prefixoff + 1];
+	}
+	else
+		queryString = "";
 
 	curl = curl_easy_init();
 	if (!curl)
@@ -245,10 +252,20 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 
 		HeaderContent_Add(&headers, HOST, hostbuf.data);
 
-		initStringInfo(&sbuf);
-		appendStringInfo(&sbuf, "/%s/", bucket);
-		SignGETv2(&headers, sbuf.data, cred);
-		pfree(sbuf.data);
+		auth_header = SignRequestV4("GET",		/* method */
+									"/",	/* path */
+									queryString,	/* query string */
+									&headers,
+									NULL,			/* payload */
+									"s3",			/* service */
+									"us-east-1",	/* region */
+									NULL,			/* timestamp */
+									cred->keyid,	/* accessid */
+									cred->secret	/* secret */
+			);
+		pfree(auth_header);
+
+		HeaderContent_Add(&headers, X_AMZ_CONTENT_SHA256, "UNSIGNED-PAYLOAD");
 
 		chunk = HeaderContent_GetList(&headers);
 
@@ -285,7 +302,6 @@ ListBucket(const char *schema, const char *host, const char *bucket,
 		curl_slist_free_all(chunk);
 		chunk = NULL;
 		HeaderContent_Destroy(&headers);
-
 
 		result = palloc0(sizeof(ListBucketResult));
 		if (!extractContent(result, root_element))

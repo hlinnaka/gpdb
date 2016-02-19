@@ -3,7 +3,7 @@ OBJS =  src/gps3ext.o src/S3ExtWrapper.o src/S3Common.o src/s3operations.o \
 	src/HTTPFetcher.o src/DownloadPipeline.o src/utils.o \
 	lib/ini.o
 
-REGRESS = s3read
+REGRESS = signing s3read 
 
 
 # Note: we require curl 7.17 higher (why? What's the limiting factor?)

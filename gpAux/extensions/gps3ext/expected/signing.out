@@ -1,0 +1,50 @@
+/*
+ * Unit tests for the AWS V4 signing protocol.
+ *
+ * The test requests below have been copied from official AWS documentation.
+ */
+CREATE FUNCTION test_signrequestv4(method text, path text, querystring text, headers text[], payload text, service text, region text, date_time text, accessid text, secret text) RETURNS text AS '$libdir/gps3ext.so', 's3_test_signv4' LANGUAGE C STRICT;
+CREATE FUNCTION test_derivesigningkey(secret text, date_s text, region text, service text) RETURNS text AS '$libdir/gps3ext.so', 's3_test_derivesigningkey' LANGUAGE C STRICT;
+SELECT test_derivesigningkey('wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY', '20150830', 'us-east-1', 'iam');
+                                                             test_derivesigningkey                                                              
+------------------------------------------------------------------------------------------------------------------------------------------------
+ 196, 175, 177, 204, 87, 113, 216, 113, 118, 58, 57, 62, 68, 183, 3, 87, 27, 85, 204, 40, 66, 77, 26, 94, 134, 218, 110, 211, 193, 84, 164, 185
+(1 row)
+
+/*
+GET / HTTP/1.1
+Host:example.amazonaws.com
+X-Amz-Date:20150830T123600Z
+*/
+SELECT test_signrequestv4('GET', '/', '',
+       ARRAY['Host', 'example.amazonaws.com',
+             'X-Amz-Date', '20150830T123600Z'],
+       '',	/* payload */
+       'service',/* service */
+       'us-east-1', /* region */
+       '20150830T123600Z',
+       'AKIDEXAMPLE',
+       'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY');
+                                                                                     test_signrequestv4                                                                                     
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31
+(1 row)
+
+--
+-- Query with parameters.
+-- FIXME: Not implemented correctly yet. Fortunately, we don't issue
+-- queries like this at the moment.
+--
+/*
+GET /?Param1=value2&Param1=Value1 HTTP/1.1
+Host:example.amazonaws.com
+X-Amz-Date:20150830T123600Z
+*/
+/*
+SELECT test_signrequestv4('GET', '/', 'Param1=value2&Param1=value1',
+       '{Host, example.amazonaws.com, X-Amz-Date, 20150830T123600Z}',
+       '',	/* payload */
+       's3',	/* service */
+       'us-east-1', /* region */
+       'secret');
+*/
