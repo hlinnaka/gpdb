@@ -664,7 +664,7 @@ b64_dec_len(const char *src, unsigned srclen)
 	return (srclen * 3) >> 2;
 }
 
-static const unsigned char _base64[] =
+static const char _base64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static const char b64lookup[128] = {
@@ -679,7 +679,7 @@ static const char b64lookup[128] = {
 };
 
 char *
-DataToBase64(char *pszIn, unsigned int InLen)
+DataToBase64(const char *pszIn, unsigned int InLen)
 {
 	char	   *p;
 	const char *s;
@@ -700,7 +700,7 @@ DataToBase64(char *pszIn, unsigned int InLen)
 
 	while (s < end)
 	{
-		buf |= *s << (pos << 3);
+		buf |= (unsigned char) *s << (pos << 3);
 		pos--;
 		s++;
 
@@ -728,12 +728,12 @@ DataToBase64(char *pszIn, unsigned int InLen)
 }
 
 char *
-Base64ToData(char *pszIn, unsigned int *pOutLen)
+Base64ToData(const char *pszIn, unsigned int *pOutLen)
 {
 	const char *srcend;
 	const char *s;
 	char	   *p;
-	unsigned	c;
+	char		c;
 	int			b = 0;
 	uint32		buf = 0;
 	int			pos = 0,
@@ -752,7 +752,6 @@ Base64ToData(char *pszIn, unsigned int *pOutLen)
 	srcend = pszIn + InLen;
 	s = pszIn;
 	p = pszOut;
-
 
 	while (s < srcend)
 	{
@@ -783,7 +782,7 @@ Base64ToData(char *pszIn, unsigned int *pOutLen)
 		{
 			b = -1;
 			if (c > 0 && c < 127)
-				b = b64lookup[c];
+				b = b64lookup[(unsigned char) c];
 			if (b < 0)
 			{
 				assert(false);
@@ -813,6 +812,7 @@ Base64ToData(char *pszIn, unsigned int *pOutLen)
 		return NULL;
 	}
 
+	*pOutLen = p - pszOut;
 	return pszOut;
 }
 
