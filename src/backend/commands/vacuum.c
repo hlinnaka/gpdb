@@ -183,6 +183,11 @@ typedef struct ExecContextData
 
 typedef ExecContextData *ExecContext;
 
+typedef struct VacuumStatsContext
+{
+	List *updated_stats;
+} VacuumStatsContext;
+
 /*
  * State information used during the (full)
  * vacuum of indexes on append-only tables
@@ -1205,10 +1210,7 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
 		 */
 		if (Gp_role == GP_ROLE_DISPATCH)
 		{
-			stats_context.ctx = vac_context;
-			stats_context.onerel = onerel;
 			stats_context.updated_stats = NIL;
-			stats_context.vac_stats = NULL;
 
 			/* Generate extra oids for relfilenodes to be used in
 			 * bitmap indexes if any. */
