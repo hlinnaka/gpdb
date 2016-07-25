@@ -745,7 +745,7 @@ main(int argc, char **argv)
 	 * death.
 	 */
 	g_conn = ConnectDatabase(g_fout, dbname, pghost, pgport,
-							 username, prompt_password);
+							 username, prompt_password, binary_upgrade);
 
 	/* Set the client encoding if requested */
 	if (dumpencoding)
@@ -9383,8 +9383,12 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 
 		/* START MPP ADDITION */
 
-		/* dump distributed by clause */
-		if (dumpPolicy)
+		/*
+		 * Dump distributed by clause. We skip this in binary-upgrade mode,
+		 * because that runs against a single segment server, and we don't
+		 * store the distribution policy information in segments.
+		 */
+		if (dumpPolicy && !binary_upgrade)
 			addDistributedBy(q, tbinfo, actual_atts);
 
 		/*
