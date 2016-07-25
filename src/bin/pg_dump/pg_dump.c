@@ -2084,18 +2084,40 @@ binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
 	 "SELECT binary_upgrade.set_next_pg_type_oid('%u'::pg_catalog.oid);\n\n",
 					  pg_type_oid);
 
-	/* we only support old >= 8.3 for binary upgrades */
-	appendPQExpBuffer(upgrade_query,
-					  "SELECT typarray "
-					  "FROM pg_catalog.pg_type "
-					  "WHERE pg_type.oid = '%u'::pg_catalog.oid;",
-					  pg_type_oid);
+	if (g_fout->remoteVersion >= 80300)
+	{
+		appendPQExpBuffer(upgrade_query,
+						  "SELECT typarray "
+						  "FROM pg_catalog.pg_type "
+						  "WHERE pg_type.oid = '%u'::pg_catalog.oid;",
+						  pg_type_oid);
+	}
+	else
+	{
+		/* XXX: How do you figure out the array type of a type in older versions? */
+		appendPQExpBuffer(upgrade_query,
+						  "SELECT arr.oid as typarray "
+						  "FROM pg_catalog.pg_type base, pg_catalog.pg_type arr "
+						  "WHERE base.oid = '%u'::pg_catalog.oid "
+						  "AND arr.typnamespace = base.typnamespace "
+						  "AND arr.typname = '_' || base.typname;",
+						  pg_type_oid);
+	}
 
 	upgrade_res = PQexec(g_conn, upgrade_query->data);
 	check_sql_result(upgrade_res, g_conn, upgrade_query->data, PGRES_TUPLES_OK);
 
 	/* Expecting a single result only */
 	ntups = PQntuples(upgrade_res);
+	if (ntups == 0 && g_fout->remoteVersion < 80300)
+	{
+		appendPQExpBuffer(upgrade_buffer,
+						  "\n-- XXX: No array type found for type %u\n",
+						  pg_type_oid);
+		PQclear(upgrade_res);
+		destroyPQExpBuffer(upgrade_query);
+		return;
+	}
 	if (ntups != 1)
 	{
 		write_msg(NULL, ngettext("query returned %d row instead of one: %s\n",
@@ -2131,6 +2153,9 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 	bool		toast_set = false;
 
 	/* we only support old >= 8.3 for binary upgrades */
+	if (g_fout->remoteVersion >= 80300)
+		return false;
+
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltype AS crel, t.reltype AS trel "
 					  "FROM pg_catalog.pg_class c "
