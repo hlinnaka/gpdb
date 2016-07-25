@@ -80,6 +80,7 @@ typedef struct
 	/* atts[] is of allocated length RelationGetNumberOfAttributes(rel) */
 } RelToCheck;
 
+Oid binary_upgrade_next_pg_type_array_oid = InvalidOid;
 
 static Oid	findTypeInputFunction(List *procname, Oid typeOid);
 static Oid	findTypeOutputFunction(List *procname, Oid typeOid);
@@ -134,7 +135,22 @@ DefineType(List *names, List *parameters, Oid newOid, Oid newArrayOid)
 	Oid			resulttype;
 	Datum		typoptions = 0;
 	List	   *encoding = NIL;
-	Relation	pg_type;
+
+	/*
+	 * As of Postgres 8.4, we require superuser privilege to create a base
+	 * type.  This is simple paranoia: there are too many ways to mess up the
+	 * system with an incorrect type definition (for instance, representation
+	 * parameters that don't match what the C code expects).  In practice it
+	 * takes superuser privilege to create the I/O functions, and so the
+	 * former requirement that you own the I/O functions pretty much forced
+	 * superuserness anyway.  We're just making doubly sure here.
+	 *
+	 * XXX re-enable NOT_USED code sections below if you remove this test.
+	 */
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to create a base type")));
 
 	/* Convert list of names to a name and namespace */
 	typeNamespace = QualifiedNameGetCreationNamespace(names, &typeName);
@@ -444,13 +460,9 @@ DefineType(List *names, List *parameters, Oid newOid, Oid newArrayOid)
 					   NameListToString(analyzeName));
 
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
-	pg_type = heap_open(TypeRelationId, AccessShareLock);
 	array_oid = newArrayOid;
 	if (!OidIsValid(array_oid))
-	{
-		array_oid = GetNewOid(pg_type);
-	}
-	heap_close(pg_type, AccessShareLock);
+		array_oid = AssignTypeArrayOid();
 
 	/*
 	 * now have TypeCreate do all the real work.
@@ -1100,7 +1112,6 @@ DefineEnum(CreateEnumStmt *stmt)
 	AclResult	aclresult;
 	Oid			old_type_oid;
 	Oid			enumArrayOid;
-	Relation	pg_type;
 
 	/* Convert list of names to a name and namespace */
 	enumNamespace = QualifiedNameGetCreationNamespace(stmt->typeName,
@@ -1129,12 +1140,10 @@ DefineEnum(CreateEnumStmt *stmt)
 	}
 
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
-	pg_type = heap_open(TypeRelationId, AccessShareLock);
 	if (OidIsValid(stmt->enumArrayOid))
 		enumArrayOid = stmt->enumArrayOid;
 	else
-		enumArrayOid = GetNewOid(pg_type);
-	heap_close(pg_type, AccessShareLock);
+		enumArrayOid = AssignTypeArrayOid();
 
 	/* Create the pg_type entry */
 	enumTypeOid =
@@ -1475,6 +1484,33 @@ findTypeAnalyzeFunction(List *procname, Oid typeOid)
 					 NameListToString(procname))));
 
 	return procOid;
+}
+
+/*
+ *	AssignTypeArrayOid
+ *
+ *	Pre-assign the type's array OID for use in pg_type.typarray
+ */
+Oid
+AssignTypeArrayOid(void)
+{
+	Oid		type_array_oid;
+
+	/* Pre-assign the type's array OID for use in pg_type.typarray */
+	if (OidIsValid(binary_upgrade_next_pg_type_array_oid))
+	{
+		type_array_oid = binary_upgrade_next_pg_type_array_oid;
+		binary_upgrade_next_pg_type_array_oid = InvalidOid;
+	}
+	else
+	{
+		Relation	pg_type = heap_open(TypeRelationId, AccessShareLock);
+
+		type_array_oid = GetNewOid(pg_type);
+		heap_close(pg_type, AccessShareLock);
+	}
+
+	return type_array_oid;
 }
 
 

@@ -101,12 +101,12 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					char relkind,
 					char relstorage,
 					Datum reloptions);
-static Oid AddNewRelationType(Oid new_type_oid,
-				   const char *typeName,
+static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
 				   char new_rel_kind,
 				   Oid ownerid,
+				   Oid new_row_type,
 				   Oid new_array_type);
 static void RelationRemoveInheritance(Oid relid);
 static Oid StoreRelCheck(Relation rel, char *ccname, char *ccbin, Oid conoid);
@@ -1189,16 +1189,16 @@ AddNewRelationTuple(Relation pg_class_desc,
  * --------------------------------
  */
 static Oid
-AddNewRelationType(Oid new_type_oid,
-				   const char *typeName,
+AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
 				   char new_rel_kind,
 				   Oid ownerid,
+				   Oid new_row_type,
 				   Oid new_array_type)
 {
 	return
-		TypeCreate(new_type_oid,	/* can have a predetermined OID in bootstrap */
+		TypeCreate(new_row_type,	/* optional predetermined OID */
 				   typeName,		/* type name */
 				   typeNamespace,	/* type namespace */
 				   new_rel_oid, 	/* relation oid */
@@ -1381,6 +1381,7 @@ heap_create_with_catalog(const char *relname,
 						 Oid relnamespace,
 						 Oid reltablespace,
 						 Oid relid,
+						 Oid reltypeid,
 						 Oid ownerid,
 						 TupleDesc tupdesc,
 						 Oid relam,
@@ -1419,8 +1420,7 @@ heap_create_with_catalog(const char *relname,
 	 * knows what it is.
 	 */
 	rowtype_already_exists =
-		(IsBootstrapProcessingMode() &&
-		 (PointerIsValid(comptypeOid) && OidIsValid(*comptypeOid)));
+		(IsBootstrapProcessingMode() && OidIsValid(reltypeid));
 
 	if (PointerIsValid(comptypeArrayOid))
 	{
@@ -1617,13 +1617,7 @@ heap_create_with_catalog(const char *relname,
 							  relkind == RELKIND_COMPOSITE_TYPE) &&
 		relnamespace != PG_BITMAPINDEX_NAMESPACE &&
 		!OidIsValid(new_array_oid))
-	{
-		/* OK, so pre-assign a type OID for the array type */
-		Relation	pg_type = heap_open(TypeRelationId, AccessShareLock);
-
-		new_array_oid = GetNewOid(pg_type);
-		heap_close(pg_type, AccessShareLock);
-	}
+		new_array_oid = AssignTypeArrayOid();
 
 	/*
 	 * Since defining a relation also defines a complex type, we add a new
@@ -1634,15 +1628,15 @@ heap_create_with_catalog(const char *relname,
 	 * we checked for a duplicate name above.
 	 */
 	if (rowtype_already_exists)
-		new_type_oid = *comptypeOid;
+		new_type_oid = reltypeid;
 	else
 	{
-		new_type_oid = AddNewRelationType(comptypeOid ? *comptypeOid : InvalidOid,
-										  relname,
+		new_type_oid = AddNewRelationType(relname,
 										  relnamespace,
 										  relid,
 										  relkind,
 										  ownerid,
+										  reltypeid,
 										  new_array_oid);
 		if (comptypeOid)
 			*comptypeOid = new_type_oid;

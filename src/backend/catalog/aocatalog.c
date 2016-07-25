@@ -111,6 +111,7 @@ CreateAOAuxiliaryTable(
 											     PG_AOSEGMENT_NAMESPACE,
 											     rel->rd_rel->reltablespace,
 											     aoauxiliaryOid,
+											     aoauxiliaryComptypeOid ? *aoauxiliaryComptypeOid : InvalidOid,
 											     rel->rd_rel->relowner,
 											     tupledesc,
 											     /* relam */ InvalidOid,

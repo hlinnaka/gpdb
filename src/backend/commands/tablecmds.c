@@ -708,6 +708,7 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage)
 										  namespaceId,
 										  tablespaceId,
 										  stmt->oidInfo.relOid,
+										  stmt->oidInfo.comptypeOid,
 										  stmt->ownerid,
 										  descriptor,
 										  /* relam */ InvalidOid,
