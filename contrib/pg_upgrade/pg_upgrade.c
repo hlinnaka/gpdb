@@ -411,7 +411,7 @@ create_new_objects(migratorContext *ctx)
 
 	prep_status(ctx, "Restoring database schema to new cluster");
 	exec_prog(ctx, true,
-			  SYSTEMQUOTE "\"%s/psql\" --set ON_ERROR_STOP=on "
+			  SYSTEMQUOTE "PGOPTIONS='-c gp_session_role=utility' \"%s/psql\" --set ON_ERROR_STOP=on "
 			  "--no-psqlrc --port %d --username \"%s\" "
 			  "-f \"%s/%s\" --dbname template1 >> \"%s\"" SYSTEMQUOTE,
 			  ctx->new.bindir, ctx->new.port, ctx->user, ctx->cwd,
