@@ -327,7 +327,7 @@ prepare_new_cluster(migratorContext *ctx)
 	 */
 	prep_status(ctx, "Analyzing all rows in the new cluster");
 	exec_prog(ctx, true,
-			  SYSTEMQUOTE "\"%s/vacuumdb\" --port %d --username \"%s\" "
+			  SYSTEMQUOTE "PGOPTIONS='-c gp_session_role=utility' \"%s/vacuumdb\" --port %d --username \"%s\" "
 			  "--all --analyze >> \"%s\" 2>&1" SYSTEMQUOTE,
 			  ctx->new.bindir, ctx->new.port, ctx->user,
 #ifndef WIN32
@@ -346,7 +346,7 @@ prepare_new_cluster(migratorContext *ctx)
 	 */
 	prep_status(ctx, "Freezing all rows on the new cluster");
 	exec_prog(ctx, true,
-			  SYSTEMQUOTE "\"%s/vacuumdb\" --port %d --username \"%s\" "
+			  SYSTEMQUOTE "PGOPTIONS='-c gp_session_role=utility' \"%s/vacuumdb\" --port %d --username \"%s\" "
 			  "--all --freeze >> \"%s\" 2>&1" SYSTEMQUOTE,
 			  ctx->new.bindir, ctx->new.port, ctx->user,
 #ifndef WIN32
@@ -381,7 +381,7 @@ prepare_new_databases(migratorContext *ctx)
 	 */
 	prep_status(ctx, "Creating databases in the new cluster");
 	exec_prog(ctx, true,
-			  SYSTEMQUOTE "\"%s/psql\" --set ON_ERROR_STOP=on "
+			  SYSTEMQUOTE "PGOPTIONS='-c gp_session_role=utility' \"%s/psql\" --set ON_ERROR_STOP=on "
 			  /* --no-psqlrc prevents AUTOCOMMIT=off */
 			  "--no-psqlrc --port %d --username \"%s\" "
 			  "-f \"%s/%s\" --dbname template1 >> \"%s\"" SYSTEMQUOTE,
@@ -509,6 +509,18 @@ set_frozenxids(migratorContext *ctx)
 
 	conn_template1 = connectToServer(ctx, "template1", CLUSTER_NEW);
 
+	/*
+	 * GPDB doesn't allow hacking the catalogs without setting
+	 * allow_system_table_mods first.
+	 */
+	PQclear(executeQueryOrDie(ctx, conn_template1,
+							  "set allow_system_table_mods='dml'"));
+
+	PQclear(executeQueryOrDie(ctx, conn_template1,
+							  "UPDATE pg_catalog.pg_database "
+							  "SET	datfrozenxid = '%u'",
+							  ctx->old.controldata.chkpnt_nxtxid));
+
 	/* set pg_database.datfrozenxid */
 	PQclear(executeQueryOrDie(ctx, conn_template1,
 							  "UPDATE pg_catalog.pg_database "
@@ -543,6 +555,13 @@ set_frozenxids(migratorContext *ctx)
 									  "WHERE datname = '%s'", datname));
 
 		conn = connectToServer(ctx, datname, CLUSTER_NEW);
+
+		/*
+		 * GPDB doesn't allow hacking the catalogs without setting
+		 * allow_system_table_mods first.
+		 */
+		PQclear(executeQueryOrDie(ctx, conn,
+								  "set allow_system_table_mods='dml'"));
 
 		/* set pg_class.relfrozenxid */
 		PQclear(executeQueryOrDie(ctx, conn,
