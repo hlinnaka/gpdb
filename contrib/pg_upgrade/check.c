@@ -103,7 +103,14 @@ check_old_cluster(migratorContext *ctx, bool live_check,
 	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803)
 	{
 		old_8_3_check_for_name_data_type_usage(ctx, CLUSTER_OLD);
+		/*
+		 * This tsquery check has been disabled in GPDB, since we're using
+		 * this to upgrade only to 8.3. Needs to be removed when we merge
+		 * with PostgreSQL 8.4.
+		 */
+#ifdef GPDB_84MERGE_FIXME
 		old_8_3_check_for_tsquery_usage(ctx, CLUSTER_OLD);
+#endif
 		old_8_3_check_ltree_usage(ctx, CLUSTER_OLD);
 		if (ctx->check)
 		{
@@ -248,8 +255,8 @@ check_cluster_versions(migratorContext *ctx)
 
 	/* We allow migration from/to the same major version for beta upgrades */
 
-	if (GET_MAJOR_VERSION(ctx->old.major_version) < 803)
-		pg_log(ctx, PG_FATAL, "This utility can only upgrade from PostgreSQL version 8.3 and later.\n");
+	if (GET_MAJOR_VERSION(ctx->old.major_version) < 802)
+		pg_log(ctx, PG_FATAL, "This utility can only upgrade from Greenplum version 4.3.XX and later.\n");
 
 	/* Only current PG version is supported as a target */
 	if (GET_MAJOR_VERSION(ctx->new.major_version) != GET_MAJOR_VERSION(PG_VERSION_NUM))
@@ -668,8 +675,16 @@ check_for_reg_data_type_usage(migratorContext *ctx, Cluster whichCluster)
 					i_attname;
 		DbInfo	   *active_db = &active_cluster->dbarr.dbs[dbnum];
 		PGconn	   *conn = connectToServer(ctx, active_db->db_name, whichCluster);
+		char		query[QUERY_ALLOC];
+		char	   *pg83_atts_str;
 
-		res = executeQueryOrDie(ctx, conn,
+		if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802)
+			pg83_atts_str = "0";
+		else
+			pg83_atts_str =		"'pg_catalog.regconfig'::pg_catalog.regtype, "
+								"			'pg_catalog.regdictionary'::pg_catalog.regtype) AND ";
+
+		snprintf(query, sizeof(query),
 								"SELECT n.nspname, c.relname, a.attname "
 								"FROM	pg_catalog.pg_class c, "
 								"		pg_catalog.pg_namespace n, "
@@ -683,11 +698,15 @@ check_for_reg_data_type_usage(migratorContext *ctx, Cluster whichCluster)
 								"			'pg_catalog.regoperator'::pg_catalog.regtype, "
 /*	allow						"			'pg_catalog.regclass'::pg_catalog.regtype, " */
 								/* regtype.oid is preserved, so 'regtype' is OK */
-								"			'pg_catalog.regconfig'::pg_catalog.regtype, "
-								"			'pg_catalog.regdictionary'::pg_catalog.regtype) AND "
+								"			%s "
+								"			) AND "
 								"		c.relnamespace = n.oid AND "
 							  "		n.nspname != 'pg_catalog' AND "
-						 "		n.nspname != 'information_schema'");
+								"		n.nspname != 'information_schema'",
+				 pg83_atts_str);
+
+		
+		res = executeQueryOrDie(ctx, conn, query);
 
 		ntups = PQntuples(res);
 		i_nspname = PQfnumber(res, "nspname");

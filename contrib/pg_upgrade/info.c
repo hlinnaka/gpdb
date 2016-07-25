@@ -360,8 +360,9 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 "	AND relkind IN ('r','t', 'i'%s) "
 			 /* pg_dump only dumps valid indexes;  testing indisready is
 			 * necessary in 9.2, and harmless in earlier/later versions. */
-			 " AND i.indisvalid IS DISTINCT FROM false AND "
-			 " i.indisready IS DISTINCT FROM false "
+			 /* GPDB 4.3 (based on PostgreSQL 8.2), however, doesn't have indisvalid
+			  * nor indisready. */
+			 " %s "
 			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode,"
 			 "			c.reltoastrelid, c.reltablespace, t.spclocation, "
 			 "			n.nspname "
@@ -372,7 +373,10 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 "" : ", 'pg_largeobject_metadata', 'pg_largeobject_metadata_oid_index'",
 	/* see the comment at the top of old_8_3_create_sequence_script() */
 			 (GET_MAJOR_VERSION(ctx->old.major_version) <= 803) ?
-			 "" : ", 'S'");
+			 "" : ", 'S'",
+			 (GET_MAJOR_VERSION(ctx->old.major_version) <= 802) ?
+			 "" : " AND i.indisvalid IS DISTINCT FROM false AND i.indisready IS DISTINCT FROM false "
+		);
 
 	res = executeQueryOrDie(ctx, conn, query);
 
