@@ -806,7 +806,8 @@ main(int argc, char **argv)
 	 * If synchronized scanning is supported, disable it, to prevent
 	 * unpredictable changes in row ordering across a dump and reload.
 	 */
-	do_sql_command(g_conn, "SET synchronize_seqscans TO off");
+	if (g_fout->remoteVersion >= 80300)
+		do_sql_command(g_conn, "SET synchronize_seqscans TO off");
 
 	/*
 	 * Start serializable transaction to dump consistent data.
@@ -2215,18 +2216,35 @@ getTypes(int *numTypes)
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
 
-	appendPQExpBuffer(query, "SELECT tableoid, oid, typname, "
-					  "typnamespace, "
-					  "(%s typowner) as rolname, "
-					  "typinput::oid as typinput, "
-					  "typoutput::oid as typoutput, typelem, typrelid, "
-					  "CASE WHEN typrelid = 0 THEN ' '::\"char\" "
-					  "ELSE (SELECT relkind FROM pg_class WHERE oid = typrelid) END as typrelkind, "
-					  "typtype, typisdefined, "
-					  "typname[0] = '_' AND typelem != 0 AND "
-					  "(SELECT typarray FROM pg_type te WHERE oid = pg_type.typelem) = oid AS isarray "
-					  "FROM pg_type",
-					  username_subquery);
+	if (g_fout->remoteVersion >= 80300)
+	{
+		appendPQExpBuffer(query, "SELECT tableoid, oid, typname, "
+						  "typnamespace, "
+						  "(%s typowner) as rolname, "
+						  "typinput::oid as typinput, "
+						  "typoutput::oid as typoutput, typelem, typrelid, "
+						  "CASE WHEN typrelid = 0 THEN ' '::\"char\" "
+						  "ELSE (SELECT relkind FROM pg_class WHERE oid = typrelid) END as typrelkind, "
+						  "typtype, typisdefined, "
+						  "typname[0] = '_' AND typelem != 0 AND "
+						  "(SELECT typarray FROM pg_type te WHERE oid = pg_type.typelem) = oid AS isarray "
+						  "FROM pg_type",
+						  username_subquery);
+	}
+	else
+	{
+         appendPQExpBuffer(query, "SELECT tableoid, oid, typname, "
+						   "typnamespace, "
+						   "(%s typowner) as rolname, "
+						   "typinput::oid as typinput, "
+						   "typoutput::oid as typoutput, typelem, typrelid, "
+						   "CASE WHEN typrelid = 0 THEN ' '::\"char\" "
+						   "ELSE (SELECT relkind FROM pg_class WHERE oid = typrelid) END as typrelkind, "
+						   "typtype, typisdefined, "
+						   "typname[0] = '_' AND typelem != 0 AS isarray "
+						   "FROM pg_type",
+						   username_subquery);
+	}
 
 	res = PQexec(g_conn, query->data);
 	check_sql_result(res, g_conn, query->data, PGRES_TUPLES_OK);
