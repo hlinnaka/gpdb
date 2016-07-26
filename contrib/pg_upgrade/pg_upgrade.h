@@ -73,6 +73,22 @@
 #define TABLE_SPACE_SUBDIRS 201001111
 
 /*
+ * Extra information stored for each Append-only table.
+ * This is used to transfer the information from the auxiliary
+ * aosegments table to the new cluster.
+ */
+typedef struct
+{
+	int			segno;
+	int64		eof;
+	int64		tupcount;
+	int64		varblockcount;
+	int64		eofuncompressed;
+	int64		modcount;
+	int16		state;
+} AOSegInfo;
+
+/*
  * Each relation is represented by a relinfo structure.
  */
 typedef struct
@@ -80,10 +96,15 @@ typedef struct
 	char		nspname[NAMEDATALEN];	/* namespace name */
 	char		relname[NAMEDATALEN];	/* relation name */
 	Oid			reloid;			/* relation oid				 */
+	char		relstorage;
 	Oid			relfilenode;	/* relation relfile node	 */
 	Oid			toastrelid;		/* oid of the toast relation */
 	/* relation tablespace path, or "" for the cluster default */
-	char		tablespace[MAXPGPATH];	
+	char		tablespace[MAXPGPATH];
+
+	/* Extra information for append-only tables */
+	AOSegInfo  *aosegments;
+	int			naosegments;
 } RelInfo;
 
 typedef struct
@@ -357,6 +378,8 @@ void		get_pg_database_relfilenode(migratorContext *ctx, Cluster whichCluster);
 const char *transfer_all_new_dbs(migratorContext *ctx, DbInfoArr *olddb_arr,
 				   DbInfoArr *newdb_arr, char *old_pgdata, char *new_pgdata);
 
+/* aotable.c */
+void		restore_aosegment_tables(migratorContext *ctx);
 
 /* tablespace.c */
 

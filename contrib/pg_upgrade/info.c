@@ -318,13 +318,16 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	int			num_rels = 0;
 	char	   *nspname = NULL;
 	char	   *relname = NULL;
+	char		relstorage;
 	int			i_spclocation = -1;
 	int			i_nspname = -1;
 	int			i_relname = -1;
+	int			i_relstorage = -1;
 	int			i_oid = -1;
 	int			i_relfilenode = -1;
 	int			i_reltablespace = -1;
 	int			i_reltoastrelid = -1;
+	int			i_segrelid = -1;
 	char		query[QUERY_ALLOC];
 
 	/*
@@ -337,8 +340,9 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	 */
 
 	snprintf(query, sizeof(query),
-			 "SELECT DISTINCT c.oid, n.nspname, c.relname, "
+			 "SELECT DISTINCT c.oid, n.nspname, c.relname, c.relstorage, "
 			 "	c.relfilenode, c.reltoastrelid, c.reltablespace, t.spclocation "
+			 " ,ao.segrelid "
 			 "FROM pg_catalog.pg_class c JOIN "
 			 "		pg_catalog.pg_namespace n "
 			 "	ON c.relnamespace = n.oid "
@@ -346,12 +350,15 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 "	   ON c.oid = i.indexrelid "
 			 "   LEFT OUTER JOIN pg_catalog.pg_tablespace t "
 			 "	ON c.reltablespace = t.oid "
+			 "   LEFT OUTER JOIN pg_catalog.pg_appendonly ao "
+			 "	ON c.oid = ao.relid "
 			 "WHERE (( "
 			 /* exclude pg_catalog and pg_temp_ (could be orphaned tables) */
 			 "    n.nspname != 'pg_catalog' "
 			 "    AND n.nspname !~ '^pg_temp_' "
 			 "    AND n.nspname !~ '^pg_toast_temp_' "
 			 "	  AND n.nspname != 'information_schema' "
+			 "	  AND n.nspname != 'pg_aoseg' "
 			 "	  AND c.oid >= %u "
 			 "	) OR ( "
 			 "	n.nspname = 'pg_catalog' "
@@ -363,7 +370,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 /* GPDB 4.3 (based on PostgreSQL 8.2), however, doesn't have indisvalid
 			  * nor indisready. */
 			 " %s "
-			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode,"
+			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode, c.relstorage, ao.segrelid, "
 			 "			c.reltoastrelid, c.reltablespace, t.spclocation, "
 			 "			n.nspname "
 			 "ORDER BY n.nspname, c.relname;",
@@ -387,10 +394,12 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	i_oid = PQfnumber(res, "oid");
 	i_nspname = PQfnumber(res, "nspname");
 	i_relname = PQfnumber(res, "relname");
+	i_relstorage = PQfnumber(res, "relstorage");
 	i_relfilenode = PQfnumber(res, "relfilenode");
 	i_reltoastrelid = PQfnumber(res, "reltoastrelid");
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_spclocation = PQfnumber(res, "spclocation");
+	i_segrelid = PQfnumber(res, "segrelid");
 
 	for (relnum = 0; relnum < ntups; relnum++)
 	{
@@ -416,6 +425,48 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			tblspace = dbinfo->db_tblspace;
 
 		strlcpy(curr->tablespace, tblspace, sizeof(curr->tablespace));
+
+		/* Collect extra information about append-only tables */
+		relstorage = PQgetvalue(res, relnum, i_relstorage) [0];
+		curr->relstorage = relstorage;
+
+		if (relstorage == 'a')  /* RELSTORAGE_AOROWS */
+		{
+			Oid			segrelid = atooid(PQgetvalue(res, relnum, i_segrelid));
+			char		aosegquery[QUERY_ALLOC];
+			PGresult   *aosegres;
+			int			naosegs;
+			int			j;
+			AOSegInfo *aosegs;
+
+			snprintf(aosegquery, sizeof(aosegquery),
+					 "SELECT segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state "
+					 "FROM pg_aoseg.pg_aoseg_%u",
+					 curr->reloid);
+			aosegres = executeQueryOrDie(ctx, conn, aosegquery);
+
+			naosegs = PQntuples(aosegres);
+
+			aosegs = (AOSegInfo *) pg_malloc(ctx, sizeof(AOSegInfo) * ntups);
+
+			for (j = 0; j < naosegs; j++)
+			{
+				aosegs[j].segno = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "segno")));
+				aosegs[j].eof = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "eof")));
+				aosegs[j].tupcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "tupcount")));
+				aosegs[j].varblockcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "varblockcount")));
+				aosegs[j].eofuncompressed = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "eofuncompressed")));
+				aosegs[j].modcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "modcount")));
+				aosegs[j].state = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "state")));
+			}
+			curr->aosegments = aosegs;
+			curr->naosegments = naosegs;
+		}
+		else
+		{
+			curr->aosegments = NULL;
+			curr->naosegments = 0;
+		}
 	}
 	PQclear(res);
 

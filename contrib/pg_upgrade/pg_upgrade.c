@@ -430,6 +430,9 @@ create_new_objects(migratorContext *ctx)
 
 	uninstall_support_functions(ctx);
 
+	/* Restore contents of AO auxiliary tables */
+	restore_aosegment_tables(ctx);
+
 	stop_postmaster(ctx, false, false);
 }
 
