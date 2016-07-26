@@ -20,6 +20,9 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 
+/* Potentially set by contrib/pg_upgrade_support functions */
+Oid			binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_aosegments_pg_type_oid = InvalidOid;
 
 void
 AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
@@ -165,6 +168,20 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	classObjectId[0] = INT4_BTREE_OPS_OID;
 
 	coloptions[0] = 0;
+
+	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
+	if (OidIsValid(binary_upgrade_next_aosegments_pg_class_oid))
+	{
+		Assert(newOid == InvalidOid);
+		newOid = binary_upgrade_next_aosegments_pg_class_oid;
+		binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
+	}
+	if (OidIsValid(binary_upgrade_next_aosegments_pg_type_oid))
+	{
+		Assert(*comptypeOid == InvalidOid);
+		*comptypeOid = binary_upgrade_next_aosegments_pg_type_oid;
+		binary_upgrade_next_aosegments_pg_type_oid = InvalidOid;
+	}
 
 	(void) CreateAOAuxiliaryTable(rel, prefix, RELKIND_AOSEGMENTS,
 								  newOid, newIndexOid, comptypeOid,

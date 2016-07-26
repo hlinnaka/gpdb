@@ -83,6 +83,18 @@
 
 #include "utils/guc.h"
 
+
+/* Potentially set by contrib/pg_upgrade_support functions */
+Oid			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+/*
+ * binary_upgrade_next_aosegments_pg_class_oid,
+ * binary_upgrade_next_aoblockdir_pg_class_oid, and
+ * binary_upgrade_next_aovisimap_pg_class_oid are defined in aoseg.c, aoblockdir.c and
+ * aovisimap.c, respectively. They are handled in by upper level functions, in those files,
+ * rather than here.
+ */
+
 static void MetaTrackAddUpdInternal(cqContext  *pcqCtx,
 									Oid			classid,
 									Oid			objoid,
@@ -114,9 +126,6 @@ static Node* cookConstraint (ParseState *pstate,
 							 Node 		*raw_constraint,
 							 char		*relname);
 static List *insert_ordered_unique_oid(List *list, Oid datum);
-
-Oid binary_upgrade_next_heap_relfilenode = InvalidOid;
-Oid binary_upgrade_next_toast_relfilenode = InvalidOid;
 
 
 /* ----------------------------------------------------------------
@@ -1533,28 +1542,34 @@ heap_create_with_catalog(const char *relname,
 					 errmsg("only shared relations can be placed in pg_global tablespace")));
 	}
 
-	if ((relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE) &&
-		OidIsValid(binary_upgrade_next_heap_relfilenode))
+	/*
+	 * Allocate an OID for the relation, unless we were told what to use.
+	 *
+	 * The OID will be the relfilenode as well, so make sure it doesn't
+	 * collide with either pg_class OIDs or existing physical files.
+	 */
+	if (!OidIsValid(relid))
 	{
-		relid = binary_upgrade_next_heap_relfilenode;
-		binary_upgrade_next_heap_relfilenode = InvalidOid;
-	}
-	else if (relkind == RELKIND_TOASTVALUE &&
-		OidIsValid(binary_upgrade_next_toast_relfilenode))
-	{
-		relid = binary_upgrade_next_toast_relfilenode;
-		binary_upgrade_next_toast_relfilenode = InvalidOid;
-	}
-	else if (!OidIsValid(relid))
-	{
+		if (OidIsValid(binary_upgrade_next_heap_pg_class_oid) &&
+			(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
+			 relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
+		{
+			relid = binary_upgrade_next_heap_pg_class_oid;
+			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
+		}
+		else if (OidIsValid(binary_upgrade_next_toast_pg_class_oid) &&
+				 relkind == RELKIND_TOASTVALUE)
+		{
+			relid = binary_upgrade_next_toast_pg_class_oid;
+			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+		}
 		/*
-		 * Allocate an OID for the relation, unless we were told what to use.
-		 *
-		 * The OID will be the relfilenode as well, so make sure it doesn't
-		 * collide with either pg_class OIDs or existing physical files.
+		 * AO segment, blockdir, and visimap tables are handled in upper level,
+		 * see AlterTableCreateAoSegTableWithOid() and friends
 		 */
-		relid = GetNewRelFileNode(reltablespace, shared_relation,
-								  pg_class_desc);
+		else
+			relid = GetNewRelFileNode(reltablespace, shared_relation,
+									  pg_class_desc);
 	}
 	else if (IsUnderPostmaster)
 	{

@@ -73,6 +73,13 @@
 #include "cdb/cdbmirroredfilesysobj.h"
 #include "cdb/cdbpersistentfilesysobj.h"
 
+/* Potentially set by contrib/pg_upgrade_support functions */
+Oid			binary_upgrade_next_index_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_aoblockdir_index_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
+
 /* state info for validate_index bulkdelete callback */
 typedef struct
 {
@@ -82,9 +89,6 @@ typedef struct
 			itups,
 			tups_inserted;
 } v_i_state;
-
-/* For simple relation creation, this is the toast index relfilenode */
-Oid binary_upgrade_next_index_relfilenode = InvalidOid;
 
 /* non-export function prototypes */
 static TupleDesc ConstructTupleDescriptor(Relation heapRelation,
@@ -552,6 +556,7 @@ index_create(Oid heapRelationId,
 	Oid			namespaceId;
 	int			i;
 	LOCKMODE	heap_lockmode;
+	char		relkind;
 
 	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
 
@@ -567,7 +572,7 @@ index_create(Oid heapRelationId,
 	 */
 	heap_lockmode = (concurrent ? ShareUpdateExclusiveLock : ShareLock);
 	heapRelation = heap_open(heapRelationId, heap_lockmode);
-
+	relkind = heapRelation->rd_rel->relkind;
 
 	/*
 	 * The index will be in the same namespace as its parent table, and is
@@ -641,21 +646,55 @@ index_create(Oid heapRelationId,
 											indexInfo,
 											classObjectId);
 
-	if (OidIsValid(binary_upgrade_next_index_relfilenode))
-	{
-		indexRelationId = binary_upgrade_next_index_relfilenode;
-		binary_upgrade_next_index_relfilenode = InvalidOid;
-	}
-	else if (!OidIsValid(indexRelationId))
+	/*
+	 * Allocate an OID for the index, unless we were told what to use.
+	 *
+	 * The OID will be the relfilenode as well, so make sure it doesn't
+	 * collide with either pg_class OIDs or existing physical files.
+	 */
+	if (!OidIsValid(indexRelationId))
 	{
 		/*
-		 * Allocate an OID for the index, unless we were told what to use.
-		 *
-		 * The OID will be the relfilenode as well, so make sure it doesn't
-		 * collide with either pg_class OIDs or existing physical files.
+		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
+		 * supplied.
 		 */
-		indexRelationId = GetNewRelFileNode(tableSpaceId, shared_relation,
-											pg_class);
+		char		relkind = heapRelation->rd_rel->relkind;
+
+		if (relkind == RELKIND_RELATION &&
+			OidIsValid(binary_upgrade_next_index_pg_class_oid))
+		{
+			indexRelationId = binary_upgrade_next_index_pg_class_oid;
+			binary_upgrade_next_index_pg_class_oid = InvalidOid;
+		}
+		else if (relkind == RELKIND_TOASTVALUE &&
+			OidIsValid(binary_upgrade_next_toast_index_pg_class_oid))
+		{
+			indexRelationId = binary_upgrade_next_toast_index_pg_class_oid;
+			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
+		}
+		else if (relkind == RELKIND_AOSEGMENTS &&
+			OidIsValid(binary_upgrade_next_aosegments_index_pg_class_oid))
+		{
+			indexRelationId = binary_upgrade_next_aosegments_index_pg_class_oid;
+			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
+		}
+		else if (relkind == RELKIND_AOBLOCKDIR &&
+			OidIsValid(binary_upgrade_next_aoblockdir_index_pg_class_oid))
+		{
+			indexRelationId = binary_upgrade_next_aoblockdir_index_pg_class_oid;
+			binary_upgrade_next_aoblockdir_index_pg_class_oid = InvalidOid;
+		}
+		else if (relkind == RELKIND_AOVISIMAP &&
+			OidIsValid(binary_upgrade_next_aovisimap_index_pg_class_oid))
+		{
+			indexRelationId = binary_upgrade_next_aovisimap_index_pg_class_oid;
+			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
+		}
+		else
+		{
+			indexRelationId = GetNewRelFileNode(tableSpaceId, shared_relation,
+												pg_class);
+		}
 	}
 	else if (IsUnderPostmaster)
 	{

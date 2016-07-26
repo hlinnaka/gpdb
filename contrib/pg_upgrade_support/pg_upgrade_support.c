@@ -14,41 +14,69 @@
 #include "catalog/dependency.h"
 #include "catalog/pg_class.h"
 
-/* THIS IS USED ONLY FOR PG >= 9.0 */
-
-/*
- * Cannot include "catalog/pg_enum.h" here because we might
- * not be compiling against PG 9.0.
- */
-extern void EnumValuesCreate(Oid enumTypeOid, List *vals,
-				 Oid binary_upgrade_next_pg_enum_oid);
-
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
 #endif
 
 extern PGDLLIMPORT Oid binary_upgrade_next_pg_type_oid;
-extern PGDLLIMPORT Oid binary_upgrade_next_pg_type_array_oid;
-extern PGDLLIMPORT Oid binary_upgrade_next_pg_type_toast_oid;
-extern PGDLLIMPORT Oid binary_upgrade_next_heap_relfilenode;
-extern PGDLLIMPORT Oid binary_upgrade_next_toast_relfilenode;
-extern PGDLLIMPORT Oid binary_upgrade_next_index_relfilenode;
+extern PGDLLIMPORT Oid binary_upgrade_next_array_pg_type_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_toast_pg_type_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aosegments_pg_type_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aoblockdir_pg_type_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aovisimap_pg_type_oid;
+
+extern PGDLLIMPORT Oid binary_upgrade_next_heap_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_index_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_toast_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_toast_index_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aosegments_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aosegments_index_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aoblockdir_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aoblockdir_index_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aovisimap_pg_class_oid;
+extern PGDLLIMPORT Oid binary_upgrade_next_aovisimap_index_pg_class_oid;
+
+extern PGDLLIMPORT Oid binary_upgrade_next_pg_authid_oid;
 
 Datum		set_next_pg_type_oid(PG_FUNCTION_ARGS);
-Datum		set_next_pg_type_array_oid(PG_FUNCTION_ARGS);
-Datum		set_next_pg_type_toast_oid(PG_FUNCTION_ARGS);
-Datum		set_next_heap_relfilenode(PG_FUNCTION_ARGS);
-Datum		set_next_toast_relfilenode(PG_FUNCTION_ARGS);
-Datum		set_next_index_relfilenode(PG_FUNCTION_ARGS);
-Datum		add_pg_enum_label(PG_FUNCTION_ARGS);
+Datum		set_next_array_pg_type_oid(PG_FUNCTION_ARGS);
+Datum		set_next_toast_pg_type_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aosegments_pg_type_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aoblockdir_pg_type_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aovisimap_pg_type_oid(PG_FUNCTION_ARGS);
+
+Datum		set_next_heap_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_index_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_toast_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aosegments_index_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aoblockdir_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aoblockdir_index_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aovisimap_pg_class_oid(PG_FUNCTION_ARGS);
+Datum		set_next_aovisimap_index_pg_class_oid(PG_FUNCTION_ARGS);
+
+Datum		set_next_pg_authid_oid(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(set_next_pg_type_oid);
-PG_FUNCTION_INFO_V1(set_next_pg_type_array_oid);
-PG_FUNCTION_INFO_V1(set_next_pg_type_toast_oid);
-PG_FUNCTION_INFO_V1(set_next_heap_relfilenode);
-PG_FUNCTION_INFO_V1(set_next_toast_relfilenode);
-PG_FUNCTION_INFO_V1(set_next_index_relfilenode);
-PG_FUNCTION_INFO_V1(add_pg_enum_label);
+PG_FUNCTION_INFO_V1(set_next_array_pg_type_oid);
+PG_FUNCTION_INFO_V1(set_next_toast_pg_type_oid);
+PG_FUNCTION_INFO_V1(set_next_aosegments_pg_type_oid);
+PG_FUNCTION_INFO_V1(set_next_aoblockdir_pg_type_oid);
+PG_FUNCTION_INFO_V1(set_next_aovisimap_pg_type_oid);
+
+PG_FUNCTION_INFO_V1(set_next_heap_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_index_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_toast_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_toast_index_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_aosegments_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_aosegments_index_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_aoblockdir_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_aoblockdir_index_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_aovisimap_pg_class_oid);
+PG_FUNCTION_INFO_V1(set_next_aovisimap_index_pg_class_oid);
+
+PG_FUNCTION_INFO_V1(set_next_pg_authid_oid);
 
 Datum
 set_next_pg_type_oid(PG_FUNCTION_ARGS)
@@ -61,64 +89,168 @@ set_next_pg_type_oid(PG_FUNCTION_ARGS)
 }
 
 Datum
-set_next_pg_type_array_oid(PG_FUNCTION_ARGS)
+set_next_array_pg_type_oid(PG_FUNCTION_ARGS)
 {
 	Oid			typoid = PG_GETARG_OID(0);
 
-	binary_upgrade_next_pg_type_array_oid = typoid;
+	binary_upgrade_next_array_pg_type_oid = typoid;
 
 	PG_RETURN_VOID();
 }
 
 Datum
-set_next_pg_type_toast_oid(PG_FUNCTION_ARGS)
+set_next_toast_pg_type_oid(PG_FUNCTION_ARGS)
 {
 	Oid			typoid = PG_GETARG_OID(0);
 
-	binary_upgrade_next_pg_type_toast_oid = typoid;
+	binary_upgrade_next_toast_pg_type_oid = typoid;
 
 	PG_RETURN_VOID();
 }
 
 Datum
-set_next_heap_relfilenode(PG_FUNCTION_ARGS)
+set_next_aosegments_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			relfilenode = PG_GETARG_OID(0);
+	Oid			typoid = PG_GETARG_OID(0);
 
-	binary_upgrade_next_heap_relfilenode = relfilenode;
+	binary_upgrade_next_aosegments_pg_type_oid = typoid;
 
 	PG_RETURN_VOID();
 }
 
 Datum
-set_next_toast_relfilenode(PG_FUNCTION_ARGS)
+set_next_aoblockdir_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			relfilenode = PG_GETARG_OID(0);
+	Oid			typoid = PG_GETARG_OID(0);
 
-	binary_upgrade_next_toast_relfilenode = relfilenode;
+	binary_upgrade_next_aoblockdir_pg_type_oid = typoid;
 
 	PG_RETURN_VOID();
 }
 
 Datum
-set_next_index_relfilenode(PG_FUNCTION_ARGS)
+set_next_aovisimap_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			relfilenode = PG_GETARG_OID(0);
+	Oid			typoid = PG_GETARG_OID(0);
 
-	binary_upgrade_next_index_relfilenode = relfilenode;
+	binary_upgrade_next_aovisimap_pg_type_oid = typoid;
+
+	PG_RETURN_VOID();
+}
+
+
+Datum
+set_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_heap_pg_class_oid = reloid;
 
 	PG_RETURN_VOID();
 }
 
 Datum
-add_pg_enum_label(PG_FUNCTION_ARGS)
+set_next_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	Oid			enumoid = PG_GETARG_OID(0);
-	Oid			typoid = PG_GETARG_OID(1);
-	Name		label = PG_GETARG_NAME(2);
+	Oid			reloid = PG_GETARG_OID(0);
 
-	EnumValuesCreate(typoid, list_make1(makeString(NameStr(*label))),
-					 enumoid);
+	binary_upgrade_next_index_pg_class_oid = reloid;
 
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_toast_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_toast_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * In PostgreSQL, we use set_next_index_pg_class_oid() to set the
+ * index OID for a toast index. In GPDB, we couldn't do that for
+ * aosegments, aoblockidr and aovisimap, because you could have all
+ * of those in addition to the toast table. For clarity, we have
+ * a separate function for the toast index in GPDB as well.
+ */
+Datum
+set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_toast_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_aosegments_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_aosegments_index_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_aosegments_index_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_aoblockdir_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_aoblockdir_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_aoblockdir_index_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_aoblockdir_index_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_aovisimap_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_aovisimap_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_aovisimap_index_pg_class_oid(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_aovisimap_index_pg_class_oid = reloid;
+
+	PG_RETURN_VOID();
+}
+
+Datum
+set_next_pg_authid_oid(PG_FUNCTION_ARGS)
+{
+	Oid			authoid = PG_GETARG_OID(0);
+
+	binary_upgrade_next_pg_authid_oid = authoid;
 	PG_RETURN_VOID();
 }
