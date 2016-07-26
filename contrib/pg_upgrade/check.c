@@ -100,17 +100,16 @@ check_old_cluster(migratorContext *ctx, bool live_check,
 	check_for_isn_and_int8_passing_mismatch(ctx, CLUSTER_OLD);
 
 	/* old = PG 8.3 checks? */
-	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803)
+	/*
+	 * All of these checks have been disabled in GPDB, since we're using
+	 * this to upgrade only to 8.3. Needs to be removed when we merge
+	 * with PostgreSQL 8.4.
+	 */
+#ifdef GPDB_84MERGE_FIXME
+	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803) &&
 	{
 		old_8_3_check_for_name_data_type_usage(ctx, CLUSTER_OLD);
-		/*
-		 * This tsquery check has been disabled in GPDB, since we're using
-		 * this to upgrade only to 8.3. Needs to be removed when we merge
-		 * with PostgreSQL 8.4.
-		 */
-#ifdef GPDB_84MERGE_FIXME
 		old_8_3_check_for_tsquery_usage(ctx, CLUSTER_OLD);
-#endif
 		old_8_3_check_ltree_usage(ctx, CLUSTER_OLD);
 		if (ctx->check)
 		{
@@ -128,10 +127,13 @@ check_old_cluster(migratorContext *ctx, bool live_check,
 			*sequence_script_file_name =
 				old_8_3_create_sequence_script(ctx, CLUSTER_OLD);
 	}
+#endif
 
+#ifdef GPDB_90MERGE_FIXME
 	/* Pre-PG 9.0 had no large object permissions */
 	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 804)
 		new_9_0_populate_pg_largeobject_metadata(ctx, true, CLUSTER_OLD);
+#endif
 
 	/*
 	 * While not a check option, we do this now because this is the only time
@@ -187,6 +189,7 @@ void
 issue_warnings(migratorContext *ctx, char *sequence_script_file_name)
 {
 	/* old = PG 8.3 warnings? */
+#ifdef GPDB_84MERGE_FIXME
 	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803)
 	{
 		start_postmaster(ctx, CLUSTER_NEW, true);
@@ -210,7 +213,9 @@ issue_warnings(migratorContext *ctx, char *sequence_script_file_name)
 		old_8_3_invalidate_bpchar_pattern_ops_indexes(ctx, false, CLUSTER_NEW);
 		stop_postmaster(ctx, false, true);
 	}
+#endif
 
+#ifdef GPDB_90MERGE_FIXME
 	/* Create dummy large object permissions for old < PG 9.0? */
 	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 804)
 	{
@@ -218,6 +223,7 @@ issue_warnings(migratorContext *ctx, char *sequence_script_file_name)
 		new_9_0_populate_pg_largeobject_metadata(ctx, false, CLUSTER_NEW);
 		stop_postmaster(ctx, false, true);
 	}
+#endif
 }
 
 
