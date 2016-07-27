@@ -64,11 +64,8 @@ NewAOCSFileSegInfo(int4 segno, int4 nvp)
 	seginfo->vpinfo.nEntry = nvp;
 	seginfo->state = AOSEG_STATE_DEFAULT;
 
-	/*
-	 * New segments are created in the latest format. For testing purposes,
-	 * though, you can force a different version, by settting this GUC.
-	 */
-	seginfo->formatversion = test_appendonly_version_default;
+	/* New segments are always created in the latest format */
+	seginfo->formatversion = AORelationVersion_GetLatest();
 
 	return seginfo;
 }
@@ -82,11 +79,8 @@ void InsertInitialAOCSFileSegInfo(Oid segrelid, int4 segno, int4 nvp)
 	Relation segrel;
 	int16		formatVersion;
 
-	/*
-	 * New segments are created in the latest format. For testing purposes,
-	 * though, you can force a different version, by settting this GUC.
-	 */
-	formatVersion = test_appendonly_version_default;
+	/* New segments are always created in the latest format */
+	formatVersion = AORelationVersion_GetLatest();
 
     segrel = heap_open(segrelid, RowExclusiveLock);
 
@@ -648,7 +642,7 @@ ClearAOCSFileSegInfo(Relation prel, AppendOnlyEntry *aoEntry, int segno, FileSeg
 	repl[Anum_pg_aocs_varblockcount-1] = true;
 
 	/* When the segment is later recreated, it will be in new format */
-	d[Anum_pg_aocs_formatversion-1] = Int16GetDatum(test_appendonly_version_default);
+	d[Anum_pg_aocs_formatversion-1] = Int16GetDatum(AORelationVersion_GetLatest());
 	repl[Anum_pg_aocs_formatversion-1] = true;
 
 	/* We do not reset the modcount here */
