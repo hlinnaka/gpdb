@@ -56,10 +56,6 @@ InsertAppendOnlyEntry(Oid relid,
 	cqContext	cqc;
 	cqContext  *pcqCtx;
 
-	/* these are hardcoded for now. in the future should get passed in */
-	const int	majorversion = 1;
-	const int	minorversion = 1;
-
     /*
      * Open and lock the pg_appendonly catalog.
      */
@@ -78,8 +74,6 @@ InsertAppendOnlyEntry(Oid relid,
 	values[Anum_pg_appendonly_blocksize - 1] = Int32GetDatum(blocksize);
 	values[Anum_pg_appendonly_safefswritesize - 1] = Int32GetDatum(safefswritesize);
 	values[Anum_pg_appendonly_compresslevel - 1] = Int32GetDatum(compresslevel);
-	values[Anum_pg_appendonly_majorversion - 1] = Int32GetDatum(majorversion);
-	values[Anum_pg_appendonly_minorversion - 1] = Int32GetDatum(minorversion);
 	values[Anum_pg_appendonly_checksum - 1] = BoolGetDatum(checksum);
 	values[Anum_pg_appendonly_columnstore - 1] = BoolGetDatum(columnstore);
 	values[Anum_pg_appendonly_segrelid - 1] = ObjectIdGetDatum(segrelid);
@@ -334,8 +328,6 @@ GetAppendOnlyEntryFromTuple(
 				safefswritesize,
 				compresslevel,
 				compresstype,
-				majorversion,
-				minorversion,
                 checksum,
 				columnstore,
 				segrelid,
@@ -396,28 +388,6 @@ GetAppendOnlyEntryFromTuple(
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("got invalid compresslevel value: NULL")));	
 
-	/* get the majorversion */
-	majorversion = heap_getattr(tuple, 
-								 Anum_pg_appendonly_majorversion, 
-								 pg_appendonly_dsc, 
-								 &isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid major version value: NULL")));	
-
-	/* get the minorversion */
-	minorversion = heap_getattr(tuple, 
-								Anum_pg_appendonly_minorversion, 
-								pg_appendonly_dsc, 
-								&isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid minor version value: NULL")));	
-	
 	checksum = heap_getattr(tuple, 
 							Anum_pg_appendonly_checksum, 
 							pg_appendonly_dsc, 
@@ -526,8 +496,6 @@ GetAppendOnlyEntryFromTuple(
 	aoentry->blocksize = DatumGetInt32(blocksize);
 	aoentry->safefswritesize = DatumGetInt32(safefswritesize);
 	aoentry->compresslevel = DatumGetInt16(compresslevel);
-	aoentry->majorversion = DatumGetInt16(majorversion);
-	aoentry->minorversion = DatumGetInt16(minorversion);
 	aoentry->checksum = DatumGetBool(checksum);
     aoentry->columnstore = DatumGetBool(columnstore);
     aoentry->segrelid = DatumGetObjectId(segrelid);

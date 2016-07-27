@@ -1574,7 +1574,6 @@ appendonly_beginrangescan_internal(Relation relation,
 	scan = (AppendOnlyScanDesc) palloc0(sizeof(AppendOnlyScanDescData));
 
 	scan->aoEntry = aoentry;
-	Assert(aoentry->majorversion == 1 && aoentry->minorversion == 1);
 
 	/*
 	 * initialize the scan descriptor
@@ -2502,7 +2501,6 @@ appendonly_delete_init(Relation rel, Snapshot appendOnlyMetaDataSnapshot)
 	 */
 	AppendOnlyEntry *aoentry = GetAppendOnlyEntry(RelationGetRelid(rel),
 			appendOnlyMetaDataSnapshot);
-	Assert(aoentry && aoentry->majorversion == 1 && aoentry->minorversion == 1);
 	Assert(!IsXactIsoLevelSerializable);
 
 	AppendOnlyDeleteDesc aoDeleteDesc = palloc0(sizeof(AppendOnlyDeleteDescData));
@@ -2673,7 +2671,6 @@ appendonly_insert_init(Relation rel, Snapshot appendOnlyMetaDataSnapshot, int se
 	 * Get the pg_appendonly information for this table
 	 */
 	aoentry = GetAppendOnlyEntry(RelationGetRelid(rel), appendOnlyMetaDataSnapshot);
-	Assert(aoentry->majorversion == 1 && aoentry->minorversion == 1);
 
 	/*
 	 * allocate and initialize the insert descriptor
