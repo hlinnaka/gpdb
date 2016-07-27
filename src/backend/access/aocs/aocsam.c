@@ -74,7 +74,8 @@ static void open_datumstreamread_segfile(
 	Assert(strlen(fn) + 1 <= MAXPGPATH);
 
 	Assert(ds);
-	datumstreamread_open_file(ds, fn, e->eof, e->eof_uncompressed, node, fileSegNo);
+	datumstreamread_open_file(ds, fn, e->eof, e->eof_uncompressed, node, fileSegNo,
+							  segInfo->formatversion);
 }
 
 /*
@@ -102,7 +103,7 @@ static void open_all_datumstreamread_segfiles(Relation rel,
     for(i=0; i<nvp; ++i)
     {
         if (proj[i])
-	{
+		{
 			open_datumstreamread_segfile(basepath, rel->rd_node, segInfo, ds[i], i);
 			datumstreamread_block(ds[i]);
 
@@ -126,7 +127,7 @@ static void open_all_datumstreamread_segfiles(Relation rel,
  */
 static void
 open_ds_write(Relation rel, DatumStreamWrite **ds, TupleDesc relationTupleDesc,
-			  bool *proj, AORelationVersion version, bool checksum)
+			  bool *proj, bool checksum)
 {
 	int		nvp = relationTupleDesc->natts;
 	StdRdOptions 	**opts = RelationGetAttributeOptions(rel);
@@ -164,7 +165,6 @@ open_ds_write(Relation rel, DatumStreamWrite **ds, TupleDesc relationTupleDesc,
 									checksum,
 									/* safeFSWriteSize */ 0,	// UNDONE: Need to wire down pg_appendonly column?
 									blksz,
-									version,
 									attr,
 									RelationGetRelationName(rel),
 									/* title */ titleBuf.data);
@@ -178,7 +178,7 @@ open_ds_write(Relation rel, DatumStreamWrite **ds, TupleDesc relationTupleDesc,
  */
 static void
 open_ds_read(Relation rel, DatumStreamRead **ds, TupleDesc relationTupleDesc,
-			 bool *proj, AORelationVersion version, bool checksum)
+			 bool *proj, bool checksum)
 {
 	int		nvp = relationTupleDesc->natts;
 	StdRdOptions 	**opts = RelationGetAttributeOptions(rel);
@@ -218,7 +218,6 @@ open_ds_read(Relation rel, DatumStreamRead **ds, TupleDesc relationTupleDesc,
 										checksum,
 										/* safeFSWriteSize */ false,	// UNDONE: Need to wire down pg_appendonly column
 										blksz,
-										version,
 										attr,
 										RelationGetRelationName(rel),
 										/* title */ titleBuf.data);
@@ -265,7 +264,7 @@ static void aocs_initscan(AOCSScanDesc scan)
     scan->cur_seg_row = 0;
 
     open_ds_read(scan->aos_rel, scan->ds, scan->relationTupleDesc,
-				 scan->proj, scan->aoEntry->version, scan->aoEntry->checksum);
+				 scan->proj, scan->aoEntry->checksum);
 
     pgstat_count_heap_scan(scan->aos_rel);
 }
@@ -684,11 +683,10 @@ static void OpenAOCSDatumStreams(AOCSInsertDesc desc)
 								/* dontWait */ false);
 
 	open_ds_write(desc->aoi_rel, desc->ds, tupdesc, NULL,
-				  desc->aoEntry->version, desc->aoEntry->checksum);
+				  desc->aoEntry->checksum);
 
 	/* Now open seg info file and get eof mark. */
-	seginfo = GetAOCSFileSegInfo(
-								 desc->aoi_rel,
+	seginfo = GetAOCSFileSegInfo(desc->aoi_rel,
 								 desc->aoEntry,
 								 desc->appendOnlyMetaDataSnapshot,
 								 desc->cur_segno);
@@ -745,8 +743,8 @@ static void OpenAOCSDatumStreams(AOCSInsertDesc desc)
 		Assert(strlen(fn) + 1 <= MAXPGPATH);
 
 		datumstreamwrite_open_file(desc->ds[i], fn, e->eof, e->eof_uncompressed,
-				desc->aoi_rel->rd_node,
-				fileSegNo);
+								   desc->aoi_rel->rd_node,
+								   fileSegNo, seginfo->formatversion);
 	}
 
 	pfree(basepath);
@@ -1275,7 +1273,6 @@ aocs_fetch_init(Relation relation,
 								   aoentry->checksum,
 									/* safeFSWriteSize */ false,	// UNDONE: Need to wire down pg_appendonly column
 								   blksz,
-								   aoentry->version,
 								   tupleDesc->attrs[colno],
 								   relation->rd_rel->relname.data,
 								   /* title */ titleBuf.data);
@@ -1748,7 +1745,6 @@ aocs_begin_headerscan(Relation rel,
 	ao_attr.compressLevel = 0;
 	ao_attr.overflowSize = 0;
 	ao_attr.safeFSWriteSize = 0;
-	ao_attr.version = aoentry->version;
 	hdesc = palloc(sizeof(AOCSHeaderScanDescData));
 	AppendOnlyStorageRead_Init(&hdesc->ao_read,
 							   NULL, // current memory context
@@ -1777,7 +1773,8 @@ void aocs_headerscan_opensegfile(AOCSHeaderScanDesc hdesc,
 							hdesc->colno, &fileSegNo, fn);
 	Assert(strlen(fn) + 1 <= MAXPGPATH);
 	vpe = getAOCSVPEntry(seginfo, hdesc->colno);
-	AppendOnlyStorageRead_OpenFile(&hdesc->ao_read, fn, vpe->eof);
+	AppendOnlyStorageRead_OpenFile(&hdesc->ao_read, fn, seginfo->formatversion,
+								   vpe->eof);
 }
 
 bool aocs_get_nextheader(AOCSHeaderScanDesc hdesc)
@@ -1839,7 +1836,7 @@ aocs_addcol_init(Relation rel,
 		blksz = opts[iattr]->blocksize;
 		desc->dsw[i] = create_datumstreamwrite(
 				ct, clvl, aoentry->checksum, 0, blksz /* safeFSWriteSize */,
-				aoentry->version, attr, RelationGetRelationName(rel),
+				attr, RelationGetRelationName(rel),
 				titleBuf.data);
 	}
 	return desc;
@@ -1874,12 +1871,18 @@ void aocs_addcol_newsegfile(AOCSAddColumnDesc desc,
 			true /* isAOCol */);
 	for (i = 0; i < desc->num_newcols; ++i, ++colno)
 	{
+		int version;
+
+		/* Always write in the latest format */
+		version = AORelationVersion_GetLatest();
+
 		FormatAOSegmentFileName(basepath, seginfo->segno, colno,
 								&fileSegNo, fn);
 		Assert(strlen(fn) + 1 <= MAXPGPATH);
 		datumstreamwrite_open_file(desc->dsw[i], fn,
 								   0 /* eof */, 0 /* eof_uncompressed */,
-								   relfilenode, fileSegNo);
+								   relfilenode, fileSegNo,
+								   version);
 		desc->dsw[i]->blockFirstRowNum = 1;
 	}
 	desc->cur_segno = seginfo->segno;

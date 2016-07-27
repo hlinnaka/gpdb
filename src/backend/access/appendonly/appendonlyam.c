@@ -60,6 +60,7 @@
 #include "pgstat.h"
 #include "storage/procarray.h"
 #include "storage/gp_compress.h"
+#include "utils/datum.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -205,6 +206,7 @@ SetNextFileSegForRead(AppendOnlyScanDesc scan)
 	Relation		reln = scan->aos_rd;
 	int				segno = -1;
 	int64			eof = 0;
+	int				formatversion = -1;
 	bool			finished_all_files = true; /* assume */
 	int32			fileSegNo;
 
@@ -280,6 +282,7 @@ SetNextFileSegForRead(AppendOnlyScanDesc scan)
 		/* still have more segment files to read. get info of the next one */
 		FileSegInfo *fsinfo = scan->aos_segfile_arr[scan->aos_segfiles_processed];
 		segno = fsinfo->segno;
+		formatversion = fsinfo->formatversion;
 		eof = (int64)fsinfo->eof;
 
 		scan->aos_segfiles_processed++;
@@ -349,6 +352,7 @@ SetNextFileSegForRead(AppendOnlyScanDesc scan)
 	AppendOnlyStorageRead_OpenFile(
 						&scan->storageRead,
 						scan->aos_filenamepath,
+						formatversion,
 						eof);
 
 	AppendOnlyExecutionReadBlock_SetSegmentFileNum(
@@ -440,7 +444,7 @@ errdetail_appendonly_insert_block_header(AppendOnlyInsertDesc aoInsertDesc)
 
 	usingChecksum = aoInsertDesc->usingChecksum;
 
-	return errdetail_appendonly_storage_content_header(header, usingChecksum, aoInsertDesc->storageAttributes.version);
+	return errdetail_appendonly_storage_content_header(header, usingChecksum, aoInsertDesc->storageWrite.formatVersion);
 }
 
 /*
@@ -601,6 +605,7 @@ SetCurrentFileSegForWrite(AppendOnlyInsertDesc aoInsertDesc)
 	AppendOnlyStorageWrite_OpenFile(
 							&aoInsertDesc->storageWrite,
 							aoInsertDesc->appendFilePathName,
+							aoInsertDesc->fsInfo->formatversion,
 							eof,
 							eof_uncompressed,
 							&aoInsertDesc->aoi_rel->rd_node,
@@ -1002,7 +1007,7 @@ AppendOnlyExecutorReadBlock_ProcessTuple(
 		 * is problematic and then create a clone of the tuple with properly aligned
 		 * bindings to be used by the executor.
 		 */
-		if (!IsAOBlockAndMemtupleAlignmentFixed(executorReadBlock->storageRead->storageAttributes.version) &&
+		if (!IsAOBlockAndMemtupleAlignmentFixed(executorReadBlock->storageRead->formatVersion) &&
 			memtuple_has_misaligned_attribute(tuple, slot->tts_mt_bind))
 		{
 			/*
@@ -1613,9 +1618,6 @@ appendonly_beginrangescan_internal(Relation relation,
 	attr->compressLevel     = aoentry->compresslevel;
 	attr->checksum			= aoentry->checksum;
 	attr->safeFSWriteSize	= aoentry->safefswritesize;
-	attr->version			= aoentry->version;
-
-	AORelationVersion_CheckValid(attr->version);
 
 	/*
 	 * Adding a NOTOAST table attribute in 3.3.3 would require a catalog change,
@@ -1887,6 +1889,7 @@ openFetchSegmentFile(
 	if (!AppendOnlyStorageRead_TryOpenFile(
 						&aoFetchDesc->storageRead,
 						aoFetchDesc->segmentFileName,
+						fsInfo->formatversion,
 						logicalEof))
 		return false;
 
@@ -2169,9 +2172,6 @@ appendonly_fetch_init(
 	attr->compressLevel = aoentry->compresslevel;
 	attr->checksum			= aoentry->checksum;
 	attr->safeFSWriteSize	= aoentry->safefswritesize;
-	attr->version			= aoentry->version;
-
-	AORelationVersion_CheckValid(attr->version);
 
 	aoFetchDesc->usableBlockSize =
 				AppendOnlyStorage_GetUsableBlockSize(aoentry->blocksize);
@@ -2729,9 +2729,6 @@ appendonly_insert_init(Relation rel, Snapshot appendOnlyMetaDataSnapshot, int se
 	attr->compressLevel	= aoentry->compresslevel;
 	attr->checksum			= aoentry->checksum;
 	attr->safeFSWriteSize	= aoentry->safefswritesize;
-	attr->version			= aoentry->version;
-
-	AORelationVersion_CheckValid(attr->version);
 
 	fns = get_funcs_for_compression(aoentry->compresstype);
 
@@ -2948,7 +2945,7 @@ appendonly_insert_init(Relation rel, Snapshot appendOnlyMetaDataSnapshot, int se
 	 * problematic and then create a clone of the tuple with the old (misaligned) bindings
 	 * to preserve consistency.
 	 */
-	if (!IsAOBlockAndMemtupleAlignmentFixed(aoInsertDesc->storageAttributes.version) &&
+	if (!IsAOBlockAndMemtupleAlignmentFixed(aoInsertDesc->storageWrite.formatVersion) &&
 		memtuple_has_misaligned_attribute(tup, aoInsertDesc->mt_bind))
 	{
 		/* Create a clone of the memtuple using misaligned bindings. */

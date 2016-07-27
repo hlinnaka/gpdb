@@ -47,7 +47,7 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		prefix = "pg_aoseg";
 
 		/* this is pretty painful...  need a tuple descriptor */
-		tupdesc = CreateTemplateTupleDesc(7, false);
+		tupdesc = CreateTemplateTupleDesc(8, false);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1,
 						"segno",
 						INT4OID,
@@ -73,6 +73,10 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 						INT8OID,
 						-1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 7,
+						"formatversion",
+						INT2OID,
+						-1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 8,
 						"state",
 						INT2OID,
 						-1, 0);
@@ -111,7 +115,7 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		 * state (smallint)         -- state of the segment file
 		 */
 
-		tupdesc = CreateTemplateTupleDesc(6, false);
+		tupdesc = CreateTemplateTupleDesc(7, false);
 
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1,
 						   "segno",
@@ -134,6 +138,10 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 						INT8OID,
 						-1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 6,
+						   "formatversion",
+						   INT2OID,
+						   -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 7,
 						   "state",
 						   INT2OID,
 						   -1, 0);

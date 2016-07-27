@@ -33,7 +33,6 @@
    segidxid         oid, 
    blkdirrelid      oid, 
    blkdiridxid      oid, 
-   version          integer,
    visimaprelid     oid,
    visimapidxid     oid
    );
@@ -60,7 +59,6 @@ CATALOG(pg_appendonly,6105) BKI_WITHOUT_OIDS
     Oid             segidxid;           /* if aoseg table, OID of segno index */
     Oid             blkdirrelid;        /* OID of aoblkdir table; 0 if none */
     Oid             blkdiridxid;        /* if aoblkdir table, OID of aoblkdir index */
-    int4            version;            /* version of MemTuples and block layout for this table */
 	Oid             visimaprelid;		/* OID of the aovisimap table */
 	Oid             visimapidxid;		/* OID of aovisimap index */
 } FormData_pg_appendonly;
@@ -73,7 +71,7 @@ CATALOG(pg_appendonly,6105) BKI_WITHOUT_OIDS
 */
 typedef FormData_pg_appendonly *Form_pg_appendonly;
 
-#define Natts_pg_appendonly					14
+#define Natts_pg_appendonly					13
 #define Anum_pg_appendonly_relid			1
 #define Anum_pg_appendonly_blocksize		2
 #define Anum_pg_appendonly_safefswritesize	3
@@ -85,9 +83,8 @@ typedef FormData_pg_appendonly *Form_pg_appendonly;
 #define Anum_pg_appendonly_segidxid         9
 #define Anum_pg_appendonly_blkdirrelid      10
 #define Anum_pg_appendonly_blkdiridxid      11
-#define Anum_pg_appendonly_version          12
-#define Anum_pg_appendonly_visimaprelid      13
-#define Anum_pg_appendonly_visimapidxid      14
+#define Anum_pg_appendonly_visimaprelid      12
+#define Anum_pg_appendonly_visimapidxid      13
 
 /*
  * pg_appendonly table values for FormData_pg_attribute.
@@ -107,9 +104,8 @@ typedef FormData_pg_appendonly *Form_pg_appendonly;
 { AppendOnlyRelationId, {"segidxid"},				26, -1, 4, 9, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }, \
 { AppendOnlyRelationId, {"blkdirrelid"},			26, -1, 4, 10, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }, \
 { AppendOnlyRelationId, {"blkdiridxid"},			26, -1, 4, 11, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }, \
-{ AppendOnlyRelationId, {"version"},				23, -1, 4, 12, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }, \
-{ AppendOnlyRelationId, {"visimaprelid"},			26, -1, 4, 13, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }, \
-{ AppendOnlyRelationId, {"visimapidxid"},			26, -1, 4, 14, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }
+{ AppendOnlyRelationId, {"visimaprelid"},			26, -1, 4, 12, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }, \
+{ AppendOnlyRelationId, {"visimapidxid"},			26, -1, 4, 13, 0, -1, -1, true, 'p', 'i', false, false, false, true, 0 }
 
 /*
  * pg_appendonly table values for FormData_pg_class.
@@ -139,7 +135,6 @@ typedef struct AppendOnlyEntry
 	Oid     blkdiridxid;
 	Oid     visimaprelid;
 	Oid     visimapidxid;
-	int4    version;
 } AppendOnlyEntry;
 
 /* No initial contents. */
