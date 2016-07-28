@@ -22,8 +22,8 @@ restore_aosegment_table(migratorContext *ctx, PGconn *conn, RelInfo *rel)
 
 		/* Restore the entry in the AO segment table. */
 		snprintf(query, sizeof(query),
-				 "INSERT INTO pg_aoseg.pg_aoseg_%u (segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state) "
-				 " VALUES (%d, " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", %d)",
+				 "INSERT INTO pg_aoseg.pg_aoseg_%u (segno, eof, tupcount, varblockcount, eofuncompressed, modcount, formatversion, state) "
+				 " VALUES (%d, " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", %d, %d)",
 				 rel->reloid,
 				 seg->segno,
 				 seg->eof,
@@ -31,6 +31,7 @@ restore_aosegment_table(migratorContext *ctx, PGconn *conn, RelInfo *rel)
 				 seg->varblockcount,
 				 seg->eofuncompressed,
 				 seg->modcount,
+				 seg->version,
 				 seg->state);
 
 		PQclear(executeQueryOrDie(ctx, conn, query));

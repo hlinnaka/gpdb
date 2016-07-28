@@ -85,6 +85,7 @@ typedef struct
 	int64		varblockcount;
 	int64		eofuncompressed;
 	int64		modcount;
+	int16		version;
 	int16		state;
 } AOSegInfo;
 

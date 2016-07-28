@@ -992,12 +992,14 @@ upgrade_tuple(MemTuple mtup, MemTupleBinding *pbind, int formatversion, bool *sh
 	TupleDesc	tupdesc = pbind->tupdesc;
 	const int	natts = tupdesc->natts;
 	MemTuple	newtuple;
+	int			i;
 
 	static Datum *values = NULL;
 	static bool *isnull = NULL;
 	static int nallocated = 0;
 
 	bool		convert_alignment = false;
+	bool		convert_numerics = false;
 
 	/*
 	 * MPP-7372: If the AO table was created before the fix for this issue, it may
@@ -1009,7 +1011,24 @@ upgrade_tuple(MemTuple mtup, MemTupleBinding *pbind, int formatversion, bool *sh
 		memtuple_has_misaligned_attribute(mtup, pbind))
 		convert_alignment = true;
 
-	if (!convert_alignment)
+	if (formatversion < AORelationVersion_PG83)
+	{
+		for (i = 0; i < natts; i++)
+		{
+			/*
+			 * FIXME: Need to also convert domains over numeric. But putting
+			 * syscache lookup here would be really slow. Need to cache
+			 * information about numeric columns somewhere
+			 */
+			if (tupdesc->attrs[i]->atttypid == NUMERICOID)
+			{
+				convert_numerics = true;
+				break;
+			}
+		}
+	}
+
+	if (!convert_alignment && !convert_numerics)
 	{
 		/* No conversion required. Return the original tuple unmodified. */
 		*shouldFree = false;
@@ -1043,6 +1062,34 @@ upgrade_tuple(MemTuple mtup, MemTupleBinding *pbind, int formatversion, bool *sh
 		 * make a modifiable copy
 		 */
 		newtuple = memtuple_copy_to(mtup, pbind, NULL, NULL);
+	}
+
+	/*
+	 * NOTE: we do this *after* creating the new tuple, so that we can
+	 * modify the new, copied, tuple in-place.
+	 */
+	if (convert_numerics)
+	{
+		int			i;
+
+		memtuple_deform(newtuple, pbind, values, isnull);
+
+		for (i = 0; i < natts; i++)
+		{
+			if (tupdesc->attrs[i]->atttypid == NUMERICOID)
+			{
+				/*
+				 * Before PostgreSQL 8.3, the n_weight and n_sign_dscale fields
+				 * were the other way 'round.
+				 */
+				char	   *numericdata = VARDATA_ANY(DatumGetPointer(values[i]));
+				uint16		tmp;
+
+				memcpy(&tmp, &numericdata[0], 2);
+				memcpy(&numericdata[0], &numericdata[2], 2);
+				memcpy(&numericdata[2], &tmp, 2);
+			}
+		}
 	}
 
 	*shouldFree = true;

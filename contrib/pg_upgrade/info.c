@@ -342,7 +342,6 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	snprintf(query, sizeof(query),
 			 "SELECT DISTINCT c.oid, n.nspname, c.relname, c.relstorage, "
 			 "	c.relfilenode, c.reltoastrelid, c.reltablespace, t.spclocation "
-			 " ,ao.segrelid "
 			 "FROM pg_catalog.pg_class c JOIN "
 			 "		pg_catalog.pg_namespace n "
 			 "	ON c.relnamespace = n.oid "
@@ -350,8 +349,6 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 "	   ON c.oid = i.indexrelid "
 			 "   LEFT OUTER JOIN pg_catalog.pg_tablespace t "
 			 "	ON c.reltablespace = t.oid "
-			 "   LEFT OUTER JOIN pg_catalog.pg_appendonly ao "
-			 "	ON c.oid = ao.relid "
 			 "WHERE (( "
 			 /* exclude pg_catalog and pg_temp_ (could be orphaned tables) */
 			 "    n.nspname != 'pg_catalog' "
@@ -370,7 +367,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 /* GPDB 4.3 (based on PostgreSQL 8.2), however, doesn't have indisvalid
 			  * nor indisready. */
 			 " %s "
-			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode, c.relstorage, ao.segrelid, "
+			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode, c.relstorage, "
 			 "			c.reltoastrelid, c.reltablespace, t.spclocation, "
 			 "			n.nspname "
 			 "ORDER BY n.nspname, c.relname;",
@@ -432,17 +429,33 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 
 		if (relstorage == 'a')  /* RELSTORAGE_AOROWS */
 		{
-			Oid			segrelid = atooid(PQgetvalue(res, relnum, i_segrelid));
 			char		aosegquery[QUERY_ALLOC];
 			PGresult   *aosegres;
 			int			naosegs;
 			int			j;
 			AOSegInfo *aosegs;
 
-			snprintf(aosegquery, sizeof(aosegquery),
-					 "SELECT segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state "
-					 "FROM pg_aoseg.pg_aoseg_%u",
-					 curr->reloid);
+			/*
+			 * In GPDB 4.3, the append only file format version number was the
+			 * same for all segments, and was stored in pg_appendonly. In 5.0
+			 * and above, it can be different for each segment, and it's stored
+			 * in the aosegment relation.
+			 */
+			if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802 && whichCluster == CLUSTER_OLD)
+			{
+				snprintf(aosegquery, sizeof(aosegquery),
+						 "SELECT segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state, ao.version as formatversion "
+						 "FROM pg_aoseg.pg_aoseg_%u, pg_catalog.pg_appendonly ao "
+						 "WHERE ao.relid = %u /* %s */",
+						 curr->reloid, curr->reloid, relname);
+			}
+			else
+			{
+				snprintf(aosegquery, sizeof(aosegquery),
+						 "SELECT segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state, formatversion "
+						 "FROM pg_aoseg.pg_aoseg_%u",
+						 curr->reloid);
+			}
 			aosegres = executeQueryOrDie(ctx, conn, aosegquery);
 
 			naosegs = PQntuples(aosegres);
@@ -458,6 +471,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 				aosegs[j].eofuncompressed = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "eofuncompressed")));
 				aosegs[j].modcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "modcount")));
 				aosegs[j].state = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "state")));
+				aosegs[j].version = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "formatversion")));
 			}
 			curr->aosegments = aosegs;
 			curr->naosegments = naosegs;
