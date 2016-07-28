@@ -945,10 +945,6 @@ AppendOnlyExecutorReadBlock_Init(
 	oldcontext = MemoryContextSwitchTo(memoryContext);
 	executorReadBlock->uncompressedBuffer = (uint8 *) palloc(usableBlockSize * sizeof(uint8));
 
-	executorReadBlock->mt_bind = create_memtuple_binding(RelationGetDescr(relation));
-
-	ItemPointerSet(&executorReadBlock->cdb_fake_ctid, 0, 0);
-
 	executorReadBlock->storageRead = storageRead;
 
 	MemoryContextSwitchTo(oldcontext);
@@ -966,12 +962,6 @@ AppendOnlyExecutorReadBlock_Finish(
 	{
 		pfree(executorReadBlock->uncompressedBuffer);
 		executorReadBlock->uncompressedBuffer = NULL;
-	}
-
-	if (executorReadBlock->mt_bind)
-	{
-		destroy_memtuple_binding(executorReadBlock->mt_bind);
-		executorReadBlock->mt_bind = NULL;
 	}
 }
 
@@ -1107,7 +1097,8 @@ AppendOnlyExecutorReadBlock_ProcessTuple(
 	TupleTableSlot 					*slot)
 {
 	bool	valid = true;	// Assume for HeapKeyTestUsingSlot define.
-	AOTupleId *aoTupleId = (AOTupleId*)&executorReadBlock->cdb_fake_ctid;
+	ItemPointerData	fake_ctid;
+	AOTupleId *aoTupleId = (AOTupleId*)&fake_ctid;
 	int			formatVersion = executorReadBlock->storageRead->formatVersion;
 
 	AORelationVersion_CheckValid(formatVersion);
@@ -1124,7 +1115,7 @@ AppendOnlyExecutorReadBlock_ProcessTuple(
 		if (formatVersion < AORelationVersion_GetLatest())
 			tuple = upgrade_tuple(tuple, slot->tts_mt_bind, formatVersion, &shouldFree);
 		ExecStoreMinimalTuple(tuple, slot, shouldFree);
-		slot_set_ctid(slot, &(executorReadBlock->cdb_fake_ctid));
+		slot_set_ctid(slot, &fake_ctid);
 	}
 
 
@@ -1139,7 +1130,7 @@ AppendOnlyExecutorReadBlock_ProcessTuple(
 		     AppendOnlyStorageRead_RelationName(executorReadBlock->storageRead),
 		     AOTupleIdToString(aoTupleId),
 		     tupleLen,
-		     memtuple_get_size(tuple, executorReadBlock->mt_bind),
+		     memtuple_get_size(tuple, slot->tts_mt_bind),
 		     executorReadBlock->headerOffsetInFile);
 
 	return valid;
