@@ -232,6 +232,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 		toast_typid = binary_upgrade_next_toast_pg_type_oid;
 		binary_upgrade_next_toast_pg_type_oid = InvalidOid;
 	}
+	else if (comptypeOid)
+		toast_typid = *comptypeOid;
 
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
