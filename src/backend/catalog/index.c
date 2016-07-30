@@ -660,32 +660,37 @@ index_create(Oid heapRelationId,
 		 */
 		char		relkind = heapRelation->rd_rel->relkind;
 
-		if (relkind == RELKIND_RELATION &&
+		if (IsBinaryUpgrade &&
+			relkind == RELKIND_RELATION &&
 			OidIsValid(binary_upgrade_next_index_pg_class_oid))
 		{
 			indexRelationId = binary_upgrade_next_index_pg_class_oid;
 			binary_upgrade_next_index_pg_class_oid = InvalidOid;
 		}
-		else if (relkind == RELKIND_TOASTVALUE &&
-			OidIsValid(binary_upgrade_next_toast_index_pg_class_oid))
+		else if (IsBinaryUpgrade &&
+				 relkind == RELKIND_TOASTVALUE &&
+				 OidIsValid(binary_upgrade_next_toast_index_pg_class_oid))
 		{
 			indexRelationId = binary_upgrade_next_toast_index_pg_class_oid;
 			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
 		}
-		else if (relkind == RELKIND_AOSEGMENTS &&
-			OidIsValid(binary_upgrade_next_aosegments_index_pg_class_oid))
+		else if (IsBinaryUpgrade &&
+				 relkind == RELKIND_AOSEGMENTS &&
+				 OidIsValid(binary_upgrade_next_aosegments_index_pg_class_oid))
 		{
 			indexRelationId = binary_upgrade_next_aosegments_index_pg_class_oid;
 			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
 		}
-		else if (relkind == RELKIND_AOBLOCKDIR &&
-			OidIsValid(binary_upgrade_next_aoblockdir_index_pg_class_oid))
+		else if (IsBinaryUpgrade &&
+				 relkind == RELKIND_AOBLOCKDIR &&
+				 OidIsValid(binary_upgrade_next_aoblockdir_index_pg_class_oid))
 		{
 			indexRelationId = binary_upgrade_next_aoblockdir_index_pg_class_oid;
 			binary_upgrade_next_aoblockdir_index_pg_class_oid = InvalidOid;
 		}
-		else if (relkind == RELKIND_AOVISIMAP &&
-			OidIsValid(binary_upgrade_next_aovisimap_index_pg_class_oid))
+		else if (IsBinaryUpgrade &&
+				 relkind == RELKIND_AOVISIMAP &&
+				 OidIsValid(binary_upgrade_next_aovisimap_index_pg_class_oid))
 		{
 			indexRelationId = binary_upgrade_next_aovisimap_index_pg_class_oid;
 			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;

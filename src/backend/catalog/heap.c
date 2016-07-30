@@ -1550,14 +1550,20 @@ heap_create_with_catalog(const char *relname,
 	 */
 	if (!OidIsValid(relid))
 	{
-		if (OidIsValid(binary_upgrade_next_heap_pg_class_oid) &&
+		/*
+		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
+		 * supplied.
+		 */
+		if (IsBinaryUpgrade &&
+			OidIsValid(binary_upgrade_next_heap_pg_class_oid) &&
 			(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
 			 relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
 		{
 			relid = binary_upgrade_next_heap_pg_class_oid;
 			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
 		}
-		else if (OidIsValid(binary_upgrade_next_toast_pg_class_oid) &&
+		else if (IsBinaryUpgrade &&
+				 OidIsValid(binary_upgrade_next_toast_pg_class_oid) &&
 				 relkind == RELKIND_TOASTVALUE)
 		{
 			relid = binary_upgrade_next_toast_pg_class_oid;

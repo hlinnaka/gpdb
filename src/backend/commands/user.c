@@ -529,7 +529,7 @@ CreateRole(CreateRoleStmt *stmt)
 	 * but just to keep the user OIDs the same between the master and the
 	 * segments.
 	 */
-	if (OidIsValid(binary_upgrade_next_pg_authid_oid))
+	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_authid_oid))
 	{
 		HeapTupleSetOid(tuple, binary_upgrade_next_pg_authid_oid);
 		binary_upgrade_next_pg_authid_oid = InvalidOid;

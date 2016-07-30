@@ -151,7 +151,8 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	 */
 	tup = caql_form_tuple(pcqCtx, values, nulls);
 
-	if (OidIsValid(binary_upgrade_next_pg_type_oid))
+	/* Use binary-upgrade override for pg_type.oid, if supplied. */
+	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
 	{
 		HeapTupleSetOid(tup, binary_upgrade_next_pg_type_oid);
 		binary_upgrade_next_pg_type_oid = InvalidOid;
@@ -395,7 +396,8 @@ TypeCreateWithOptions(Oid newTypeOid,
 			HeapTupleSetOid(tup, newTypeOid);
 		else if (Gp_role == GP_ROLE_EXECUTE)
 			elog(ERROR," newtypeOid NULL");
-		else if (OidIsValid(binary_upgrade_next_pg_type_oid))
+		/* Use binary-upgrade override for pg_type.oid, if supplied. */
+		else if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
 		{
 			HeapTupleSetOid(tup, binary_upgrade_next_pg_type_oid);
 			binary_upgrade_next_pg_type_oid = InvalidOid;

@@ -164,7 +164,8 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	 * Check to see whether the table actually needs a TOAST table.
 	 */
 	if (!RelationNeedsToastTable(rel) &&
-		!OidIsValid(binary_upgrade_next_toast_pg_class_oid))
+		(!IsBinaryUpgrade ||
+		 !OidIsValid(binary_upgrade_next_toast_pg_class_oid)))
 		return false;
 
 	/*
@@ -227,7 +228,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	Oid unusedTypArrayOid = InvalidOid;
 
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (OidIsValid(binary_upgrade_next_toast_pg_type_oid))
+	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_toast_pg_type_oid))
 	{
 		toast_typid = binary_upgrade_next_toast_pg_type_oid;
 		binary_upgrade_next_toast_pg_type_oid = InvalidOid;
