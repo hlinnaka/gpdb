@@ -519,8 +519,6 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 				aovisimap->segno = atoi(PQgetvalue(aores, j, PQfnumber(aores, "segno")));
 				aovisimap->first_row_no = atoll(PQgetvalue(aores, j, PQfnumber(aores, "first_row_no")));
 				aovisimap->visimap = strdup(PQgetvalue(aores, j, PQfnumber(aores, "visimap")));
-				fprintf(stderr, "segno %d, first_row_no %ld visimap: %s\n", aovisimap->segno,
-						aovisimap->first_row_no, aovisimap->visimap);
 			}
 		}
 		else
