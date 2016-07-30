@@ -11,3 +11,9 @@ INSERT INTO upgrade_simple_ao SELECT generate_series(1001, 2000);
 CREATE TABLE upgrade_ao(id int4, n numeric, t text) WITH (appendonly=true);
 INSERT INTO upgrade_ao SELECT g, g::numeric / 100, 't' || g FROM generate_series(1, 1000) g;
 INSERT INTO upgrade_ao SELECT g, g::numeric / 100, 't' || g FROM generate_series(1001, 2000) g;
+
+-- The same, with a domain over numeric, rather than plain numeric.
+CREATE DOMAIN numdomain AS numeric;
+
+CREATE TABLE upgrade_numdomain_ao (t text, n numdomain) WITH (appendonly=true, compresstype=zlib);
+INSERT INTO upgrade_numdomain_ao SELECT 't' || g, g::numeric / 10000 FROM generate_series(1,1000) g;

@@ -20,15 +20,18 @@
 -- Note: Numeric columns need stricter alignment than byteas. Having
 -- an int4 before the numeric should do the trick.
 
+-- also test with a domain over numeric
+CREATE DOMAIN numdomain AS numeric;
+
 -- Construct the table, with the bytea
-CREATE TABLE numeric_ao_upgrade (i int4, numhack numeric, astext text) with (appendonly = true);
+CREATE TABLE numeric_ao_upgrade (astext text, numcol numeric, domcol numdomain) with (appendonly = true);
 
 
 begin;
 create cast (bytea as numeric) without function;
 
 INSERT INTO numeric_ao_upgrade VALUES
-  (1, E'\\000\\000\\004\\000\\322\\004\\056\\026'::bytea::numeric, '1234.5678');
+  ('1234.5678 and 9.876543210', E'\\000\\000\\004\\000\\322\\004\\056\\026'::bytea::numeric, E'\\000\\000\\011\\000\\011\\000\\075\\042\\341\\020'::bytea::numeric);
 
 -- Drop the dangerous cast.
 drop cast (bytea as numeric);
