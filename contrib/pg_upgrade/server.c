@@ -166,8 +166,9 @@ start_postmaster(migratorContext *ctx, Cluster whichCluster, bool quiet)
 	const char *bindir;
 	const char *datadir;
 	unsigned short port;
+	ClusterInfo *cluster;
 #ifndef WIN32
-	char		*output_filename = log_opts.filename;
+	char		*output_filename = ctx->logfile;
 #else
 	char		*output_filename = DEVNULL;
 #endif
@@ -177,12 +178,14 @@ start_postmaster(migratorContext *ctx, Cluster whichCluster, bool quiet)
 		bindir = ctx->old.bindir;
 		datadir = ctx->old.pgdata;
 		port = ctx->old.port;
+		cluster = &ctx->old;
 	}
 	else
 	{
 		bindir = ctx->new.bindir;
 		datadir = ctx->new.pgdata;
 		port = ctx->new.port;
+		cluster = &ctx->new;
 	}
 
 	/*
@@ -198,7 +201,7 @@ start_postmaster(migratorContext *ctx, Cluster whichCluster, bool quiet)
 			 (cluster->controldata.cat_ver >=
 				BINARY_UPGRADE_SERVER_FLAG_CAT_VER) ? "-b" :
 				"-c autovacuum=off -c autovacuum_freeze_max_age=2000000000",
-			 log_opts.filename);
+			 output_filename);
 	exec_prog(ctx, true, "%s", cmd);
 
 	/* wait for the server to start properly */

@@ -170,13 +170,13 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	coloptions[0] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
-	if (OidIsValid(binary_upgrade_next_aosegments_pg_class_oid))
+	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_class_oid))
 	{
 		Assert(newOid == InvalidOid);
 		newOid = binary_upgrade_next_aosegments_pg_class_oid;
 		binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
 	}
-	if (OidIsValid(binary_upgrade_next_aosegments_pg_type_oid))
+	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_type_oid))
 	{
 		Assert(*comptypeOid == InvalidOid);
 		*comptypeOid = binary_upgrade_next_aosegments_pg_type_oid;
