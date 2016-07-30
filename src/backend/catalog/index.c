@@ -76,9 +76,14 @@
 /* Potentially set by contrib/pg_upgrade_support functions */
 Oid			binary_upgrade_next_index_pg_class_oid = InvalidOid;
 Oid			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aoblockdir_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
+
+/*
+ * binary_upgrade_next_aosegments_index_pg_class_oid,
+ * binary_upgrade_next_aoblockdir_index_pg_class_oid, and
+ * binary_upgrade_next_aovisimap_index_pg_class_oid are defined in aoseg.c, aoblockdir.c and
+ * aovisimap.c, respectively. They are handled in by upper level functions, in those files,
+ * rather than here.
+ */
 
 /* state info for validate_index bulkdelete callback */
 typedef struct
@@ -673,27 +678,6 @@ index_create(Oid heapRelationId,
 		{
 			indexRelationId = binary_upgrade_next_toast_index_pg_class_oid;
 			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
-		}
-		else if (IsBinaryUpgrade &&
-				 relkind == RELKIND_AOSEGMENTS &&
-				 OidIsValid(binary_upgrade_next_aosegments_index_pg_class_oid))
-		{
-			indexRelationId = binary_upgrade_next_aosegments_index_pg_class_oid;
-			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
-		}
-		else if (IsBinaryUpgrade &&
-				 relkind == RELKIND_AOBLOCKDIR &&
-				 OidIsValid(binary_upgrade_next_aoblockdir_index_pg_class_oid))
-		{
-			indexRelationId = binary_upgrade_next_aoblockdir_index_pg_class_oid;
-			binary_upgrade_next_aoblockdir_index_pg_class_oid = InvalidOid;
-		}
-		else if (IsBinaryUpgrade &&
-				 relkind == RELKIND_AOVISIMAP &&
-				 OidIsValid(binary_upgrade_next_aovisimap_index_pg_class_oid))
-		{
-			indexRelationId = binary_upgrade_next_aovisimap_index_pg_class_oid;
-			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
 		}
 		else
 		{

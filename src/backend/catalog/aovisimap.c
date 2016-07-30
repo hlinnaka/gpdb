@@ -24,6 +24,7 @@
 
 /* Potentially set by contrib/pg_upgrade_support functions */
 Oid			binary_upgrade_next_aovisimap_pg_class_oid = InvalidOid;
+Oid			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
 Oid			binary_upgrade_next_aovisimap_pg_type_oid = InvalidOid;
 
 void
@@ -104,6 +105,12 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		Assert(newOid == InvalidOid);
 		newOid = binary_upgrade_next_aovisimap_pg_class_oid;
 		binary_upgrade_next_aovisimap_pg_class_oid = InvalidOid;
+	}
+	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aovisimap_index_pg_class_oid))
+	{
+		Assert(newIndexOid == InvalidOid);
+		newIndexOid = binary_upgrade_next_aovisimap_index_pg_class_oid;
+		binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
 	}
 	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aovisimap_pg_type_oid))
 	{
