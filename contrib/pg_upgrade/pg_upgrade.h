@@ -75,8 +75,18 @@
 /*
  * Extra information stored for each Append-only table.
  * This is used to transfer the information from the auxiliary
- * aosegments table to the new cluster.
+ * AO table to the new cluster.
  */
+
+/* To hold contents of pg_visimap_<oid> */
+typedef struct
+{
+	int			segno;
+	int64		first_row_no;
+	char	   *visimap;		/* text representation of the "bit varying" field */
+} AOVisiMapInfo;
+
+/* To hold contents of pg_aoseg_<oid> */
 typedef struct
 {
 	int			segno;
@@ -106,6 +116,8 @@ typedef struct
 	/* Extra information for append-only tables */
 	AOSegInfo  *aosegments;
 	int			naosegments;
+	AOVisiMapInfo *aovisimaps;
+	int			naovisimaps;
 } RelInfo;
 
 typedef struct

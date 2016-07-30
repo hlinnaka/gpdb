@@ -13,14 +13,14 @@
 static void
 restore_aosegment_table(migratorContext *ctx, PGconn *conn, RelInfo *rel)
 {
+	char		query[QUERY_ALLOC];
 	int			i;
 
+	/* Restore the entry in the AO segment table. */
 	for (i = 0; i < rel->naosegments; i++)
 	{
 		AOSegInfo  *seg = &rel->aosegments[i];
-		char		query[QUERY_ALLOC];
 
-		/* Restore the entry in the AO segment table. */
 		snprintf(query, sizeof(query),
 				 "INSERT INTO pg_aoseg.pg_aoseg_%u (segno, eof, tupcount, varblockcount, eofuncompressed, modcount, formatversion, state) "
 				 " VALUES (%d, " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", " INT64_FORMAT ", %d, %d)",
@@ -54,7 +54,31 @@ restore_aosegment_table(migratorContext *ctx, PGconn *conn, RelInfo *rel)
 
 		PQclear(executeQueryOrDie(ctx, conn, query));
 	}
+
+	/* Restore the entries in the AO visimap table. */
+	for (i = 0; i < rel->naovisimaps; i++)
+	{
+		AOVisiMapInfo  *seg = &rel->aovisimaps[i];
+		char	   *visimap_escaped;
+
+		visimap_escaped = PQescapeLiteral(conn, seg->visimap, strlen(seg->visimap));
+		if (visimap_escaped == NULL)
+			pg_log(ctx, PG_FATAL, "%s: out of memory\n", ctx->progname);
+
+		snprintf(query, sizeof(query),
+				 "INSERT INTO pg_aoseg.pg_aovisimap_%u (segno, first_row_no, visimap) "
+				 " VALUES (%d, " INT64_FORMAT ", %s)",
+				 rel->reloid,
+				 seg->segno,
+				 seg->first_row_no,
+				 visimap_escaped);
+		free(visimap_escaped);
+
+		PQclear(executeQueryOrDie(ctx, conn, query));
+	}
 }
+
+
 
 void
 restore_aosegment_tables(migratorContext *ctx)

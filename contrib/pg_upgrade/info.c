@@ -329,6 +329,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	int			i_reltoastrelid = -1;
 	int			i_segrelid = -1;
 	char		query[QUERY_ALLOC];
+	bool		bitmaphack_created = false;
 
 	/*
 	 * pg_largeobject contains user data that does not appear the pg_dumpall
@@ -429,11 +430,11 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 
 		if (relstorage == 'a')  /* RELSTORAGE_AOROWS */
 		{
-			char		aosegquery[QUERY_ALLOC];
-			PGresult   *aosegres;
-			int			naosegs;
+			char		aoquery[QUERY_ALLOC];
+			PGresult   *aores;
 			int			j;
-			AOSegInfo *aosegs;
+
+			/* Get contents of pg_aoseg_<oid> */
 
 			/*
 			 * In GPDB 4.3, the append only file format version number was the
@@ -443,7 +444,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 */
 			if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802 && whichCluster == CLUSTER_OLD)
 			{
-				snprintf(aosegquery, sizeof(aosegquery),
+				snprintf(aoquery, sizeof(aoquery),
 						 "SELECT segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state, ao.version as formatversion "
 						 "FROM pg_aoseg.pg_aoseg_%u, pg_catalog.pg_appendonly ao "
 						 "WHERE ao.relid = %u /* %s */",
@@ -451,35 +452,83 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			}
 			else
 			{
-				snprintf(aosegquery, sizeof(aosegquery),
+				snprintf(aoquery, sizeof(aoquery),
 						 "SELECT segno, eof, tupcount, varblockcount, eofuncompressed, modcount, state, formatversion "
 						 "FROM pg_aoseg.pg_aoseg_%u",
 						 curr->reloid);
 			}
-			aosegres = executeQueryOrDie(ctx, conn, aosegquery);
+			aores = executeQueryOrDie(ctx, conn, aoquery);
 
-			naosegs = PQntuples(aosegres);
+			curr->naosegments = PQntuples(aores);
+			curr->aosegments = (AOSegInfo *) pg_malloc(ctx, sizeof(AOSegInfo) * curr->naosegments);
 
-			aosegs = (AOSegInfo *) pg_malloc(ctx, sizeof(AOSegInfo) * ntups);
-
-			for (j = 0; j < naosegs; j++)
+			for (j = 0; j < curr->naosegments; j++)
 			{
-				aosegs[j].segno = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "segno")));
-				aosegs[j].eof = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "eof")));
-				aosegs[j].tupcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "tupcount")));
-				aosegs[j].varblockcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "varblockcount")));
-				aosegs[j].eofuncompressed = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "eofuncompressed")));
-				aosegs[j].modcount = atoll(PQgetvalue(aosegres, j, PQfnumber(aosegres, "modcount")));
-				aosegs[j].state = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "state")));
-				aosegs[j].version = atoi(PQgetvalue(aosegres, j, PQfnumber(aosegres, "formatversion")));
+				AOSegInfo *aoseg = &curr->aosegments[j];
+
+				aoseg->segno = atoi(PQgetvalue(aores, j, PQfnumber(aores, "segno")));
+				aoseg->eof = atoll(PQgetvalue(aores, j, PQfnumber(aores, "eof")));
+				aoseg->tupcount = atoll(PQgetvalue(aores, j, PQfnumber(aores, "tupcount")));
+				aoseg->varblockcount = atoll(PQgetvalue(aores, j, PQfnumber(aores, "varblockcount")));
+				aoseg->eofuncompressed = atoll(PQgetvalue(aores, j, PQfnumber(aores, "eofuncompressed")));
+				aoseg->modcount = atoll(PQgetvalue(aores, j, PQfnumber(aores, "modcount")));
+				aoseg->state = atoi(PQgetvalue(aores, j, PQfnumber(aores, "state")));
+				aoseg->version = atoi(PQgetvalue(aores, j, PQfnumber(aores, "formatversion")));
 			}
-			curr->aosegments = aosegs;
-			curr->naosegments = naosegs;
+
+			/*
+			 * Get contents of pg_aovisimap_<oid>
+			 *
+			 * In GPDB 4.3, the pg_aovisimap_<oid>.visimap field was of type "bit varying",
+			 * but we didn't actually store a valid "varbit" datum in it. Because of that,
+			 * we won't get the valid data out by calling the varbit output function on it.
+			 * Create a little function to blurp out its content as a bytea instead. in
+			 * 5.0 and above, the datatype is also nominally a bytea.
+			 */
+			if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802 && whichCluster == CLUSTER_OLD)
+			{
+				if (!bitmaphack_created)
+				{
+					PQclear(executeQueryOrDie(ctx, conn,
+											  "create function pg_temp.bitmaphack(bit varying) "
+											  " RETURNS cstring "
+											  " LANGUAGE INTERNAL AS 'byteaout'"));
+					bitmaphack_created = true;
+				}
+				snprintf(aoquery, sizeof(aoquery),
+						 "SELECT segno, first_row_no, pg_temp.bitmaphack(visimap) as visimap "
+						 "FROM pg_aoseg.pg_aovisimap_%u",
+						 curr->reloid);
+			}
+			else
+			{
+				snprintf(aoquery, sizeof(aoquery),
+						 "SELECT segno, first_row_no, visimap "
+						 "FROM pg_aoseg.pg_aovisimap_%u",
+						 curr->reloid);
+			}
+			aores = executeQueryOrDie(ctx, conn, aoquery);
+
+			curr->naovisimaps = PQntuples(aores);
+			curr->aovisimaps = (AOVisiMapInfo *) pg_malloc(ctx, sizeof(AOVisiMapInfo) * curr->naovisimaps);
+
+			for (j = 0; j < curr->naovisimaps; j++)
+			{
+				AOVisiMapInfo *aovisimap = &curr->aovisimaps[j];
+
+				aovisimap->segno = atoi(PQgetvalue(aores, j, PQfnumber(aores, "segno")));
+				aovisimap->first_row_no = atoll(PQgetvalue(aores, j, PQfnumber(aores, "first_row_no")));
+				aovisimap->visimap = strdup(PQgetvalue(aores, j, PQfnumber(aores, "visimap")));
+				fprintf(stderr, "segno %d, first_row_no %ld visimap: %s\n", aovisimap->segno,
+						aovisimap->first_row_no, aovisimap->visimap);
+			}
 		}
 		else
 		{
 			curr->aosegments = NULL;
 			curr->naosegments = 0;
+			curr->aovisimaps = NULL;
+			curr->naovisimaps = 0;
 		}
 	}
 	PQclear(res);
