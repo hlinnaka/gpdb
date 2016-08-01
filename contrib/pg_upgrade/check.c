@@ -104,9 +104,19 @@ check_old_cluster(migratorContext *ctx, bool live_check,
 	 * All of these checks have been disabled in GPDB, since we're using
 	 * this to upgrade only to 8.3. Needs to be removed when we merge
 	 * with PostgreSQL 8.4.
+	 *
+	 * The change to name datatype's alignment was backported to GPDB 5.0,
+	 * so we need to check even when upgradeing to GPDB 5.0.
 	 */
-#ifdef GPDB_84MERGE_FIXME
-	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803) &&
+	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802)
+	{
+		old_8_3_check_for_name_data_type_usage(ctx, CLUSTER_OLD);
+
+		old_GPDB4_check_for_money_data_type_usage(ctx, CLUSTER_OLD);
+	}
+
+	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803 &&
+		GET_MAJOR_VERSION(ctx->new.major_version) >= 804)
 	{
 		old_8_3_check_for_name_data_type_usage(ctx, CLUSTER_OLD);
 		old_8_3_check_for_tsquery_usage(ctx, CLUSTER_OLD);
@@ -127,7 +137,6 @@ check_old_cluster(migratorContext *ctx, bool live_check,
 			*sequence_script_file_name =
 				old_8_3_create_sequence_script(ctx, CLUSTER_OLD);
 	}
-#endif
 
 #ifdef GPDB_90MERGE_FIXME
 	/* Pre-PG 9.0 had no large object permissions */
@@ -188,20 +197,26 @@ report_clusters_compatible(migratorContext *ctx)
 void
 issue_warnings(migratorContext *ctx, char *sequence_script_file_name)
 {
-	/* old = PG 8.3 warnings? */
-#ifdef GPDB_84MERGE_FIXME
-	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803)
-	{
-		start_postmaster(ctx, CLUSTER_NEW, true);
+	start_postmaster(ctx, CLUSTER_NEW, true);
 
+	/* old == GPDB4 warnings */
+	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802)
+	{
+		new_gpdb5_0_invalidate_indexes(ctx, false, CLUSTER_NEW);
+	}
+
+	/* old = PG 8.3 warnings? */
+	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 803 &&
+		GET_MAJOR_VERSION(ctx->new.major_version) >= 804)
+	{
 		/* restore proper sequence values using file created from old server */
 		if (sequence_script_file_name)
 		{
 			prep_status(ctx, "Adjusting sequences");
 			exec_prog(ctx, true,
-				  SYSTEMQUOTE "\"%s/psql\" --set ON_ERROR_STOP=on "
-				  "--no-psqlrc --port %d --username \"%s\" "
-				  "-f \"%s\" --dbname template1 >> \"%s\"" SYSTEMQUOTE,
+					  SYSTEMQUOTE "\"%s/psql\" --set ON_ERROR_STOP=on "
+					  "--no-psqlrc --port %d --username \"%s\" "
+					  "-f \"%s\" --dbname template1 >> \"%s\"" SYSTEMQUOTE,
 					  ctx->new.bindir, ctx->new.port, ctx->user,
 					  sequence_script_file_name, ctx->logfile);
 			unlink(sequence_script_file_name);
@@ -211,19 +226,17 @@ issue_warnings(migratorContext *ctx, char *sequence_script_file_name)
 		old_8_3_rebuild_tsvector_tables(ctx, false, CLUSTER_NEW);
 		old_8_3_invalidate_hash_gin_indexes(ctx, false, CLUSTER_NEW);
 		old_8_3_invalidate_bpchar_pattern_ops_indexes(ctx, false, CLUSTER_NEW);
-		stop_postmaster(ctx, false, true);
 	}
-#endif
 
 #ifdef GPDB_90MERGE_FIXME
 	/* Create dummy large object permissions for old < PG 9.0? */
 	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 804)
 	{
-		start_postmaster(ctx, CLUSTER_NEW, true);
 		new_9_0_populate_pg_largeobject_metadata(ctx, false, CLUSTER_NEW);
-		stop_postmaster(ctx, false, true);
 	}
 #endif
+
+	stop_postmaster(ctx, false, true);
 }
 
 

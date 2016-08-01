@@ -465,6 +465,8 @@ unsigned int str2uint(const char *str);
 
 void new_9_0_populate_pg_largeobject_metadata(migratorContext *ctx,
 									  bool check_mode, Cluster whichCluster);
+void new_gpdb5_0_invalidate_indexes(migratorContext *ctx, bool check_mode,
+									Cluster whichCluster);
 
 /* version_old_8_3.c */
 
@@ -482,3 +484,6 @@ void old_8_3_invalidate_bpchar_pattern_ops_indexes(migratorContext *ctx,
 									  bool check_mode, Cluster whichCluster);
 char *old_8_3_create_sequence_script(migratorContext *ctx,
 							   Cluster whichCluster);
+
+/* version_old_gpdb4.c */
+void old_GPDB4_check_for_money_data_type_usage(migratorContext *ctx, Cluster whichCluster);

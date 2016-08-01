@@ -69,6 +69,11 @@ DELETE FROM upgrade_heap WHERE id BETWEEN 2000 AND 3000;
 ROLLBACK;
 
 
+-- We don't support converting indexes, but make sure the definition gets
+-- copied over, and that it gets marked as invalid.
+CREATE INDEX i_upgrade_heap ON upgrade_heap(id);
+
+
 -- HEAP TABLE with full pages.
 --
 -- The GPDB4 to 5.0 conversion needs to add a field to the page header (pd_prune_xid).

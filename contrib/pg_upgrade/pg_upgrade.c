@@ -9,6 +9,8 @@
 
 #include "pg_upgrade.h"
 
+#include "catalog/pg_magic_oid.h"
+
 #ifdef HAVE_LANGINFO_H
 #include <langinfo.h>
 #endif
@@ -400,7 +402,6 @@ prepare_new_databases(migratorContext *ctx)
 	stop_postmaster(ctx, false, false);
 }
 
-
 static void
 create_new_objects(migratorContext *ctx)
 {
@@ -430,12 +431,22 @@ create_new_objects(migratorContext *ctx)
 
 	uninstall_support_functions(ctx);
 
+	/*
+	 * If we're upgrading from GPDB4, mark all indexes as invalid.
+	 * The page format is incompatible, and while convert heap
+	 * and AO tables automatically, we don't have similar code for
+	 * indexes. Also, the heap conversion relocates tuples, so
+	 * any indexes on heaps would need to be rebuilt for that
+	 * reason, anyway.
+	 */
+	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802)
+		mark_indexes_invalid(ctx);
+
 	/* Restore contents of AO auxiliary tables */
 	restore_aosegment_tables(ctx);
 
 	stop_postmaster(ctx, false, false);
 }
-
 
 static void
 copy_clog_xlog_xid(migratorContext *ctx)
