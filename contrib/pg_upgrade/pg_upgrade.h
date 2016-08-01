@@ -102,6 +102,13 @@ typedef struct
 	int16		state;
 } AOSegInfo;
 
+typedef struct
+{
+	int16		attlen;
+	char		attalign;
+	bool		is_numeric;
+} AttInfo;
+
 /*
  * Each relation is represented by a relinfo structure.
  */
@@ -121,6 +128,12 @@ typedef struct
 	int			naosegments;
 	AOVisiMapInfo *aovisimaps;
 	int			naovisimaps;
+
+	/* Extra information for heap tables */
+	bool		gpdb4_heap_conversion_needed;
+	bool		has_numerics;
+	AttInfo	   *atts;
+	int			natts;
 } RelInfo;
 
 typedef struct
@@ -142,6 +155,12 @@ typedef struct
 	char		old_relname[NAMEDATALEN];		/* old name of the relation */
 	char		new_nspname[NAMEDATALEN];		/* new name of the namespace */
 	char		new_relname[NAMEDATALEN];		/* new name of the relation */
+
+	/* Extra information for heap tables */
+	bool		gpdb4_heap_conversion_needed;
+	bool		has_numerics;
+	AttInfo	   *atts;
+	int			natts;
 } FileNameMap;
 
 /*
@@ -396,6 +415,12 @@ const char *transfer_all_new_dbs(migratorContext *ctx, DbInfoArr *olddb_arr,
 
 /* aotable.c */
 void		restore_aosegment_tables(migratorContext *ctx);
+
+/* gpdb4_heap_convert.c */
+const char *convert_gpdb4_heap_file(migratorContext *ctx,
+									const char *src, const char *dst,
+									bool has_numerics, AttInfo *atts, int natts);
+void		finish_gpdb4_page_converter(migratorContext *ctx);
 
 /* tablespace.c */
 

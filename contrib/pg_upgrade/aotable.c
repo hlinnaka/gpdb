@@ -78,8 +78,6 @@ restore_aosegment_table(migratorContext *ctx, PGconn *conn, RelInfo *rel)
 	}
 }
 
-
-
 void
 restore_aosegment_tables(migratorContext *ctx)
 {

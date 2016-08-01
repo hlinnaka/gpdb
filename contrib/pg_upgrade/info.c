@@ -11,7 +11,6 @@
 
 #include "access/transam.h"
 
-
 static void get_db_infos(migratorContext *ctx, DbInfoArr *dbinfos,
 			 Cluster whichCluster);
 static void dbarr_print(migratorContext *ctx, DbInfoArr *arr,
@@ -142,6 +141,11 @@ map_rel(migratorContext *ctx, const RelInfo *oldrel, const RelInfo *newrel,
 	map_rel_by_id(ctx, oldrel->relfilenode, newrel->relfilenode, oldrel->nspname,
 				  oldrel->relname, newrel->nspname, newrel->relname, oldrel->tablespace, newrel->tablespace, old_db,
 				  new_db, olddata, newdata, map);
+
+	map->has_numerics = oldrel->has_numerics;
+	map->atts = oldrel->atts;
+	map->natts = oldrel->natts;
+	map->gpdb4_heap_conversion_needed = oldrel->gpdb4_heap_conversion_needed;
 }
 
 
@@ -296,6 +300,35 @@ get_db_and_rel_infos(migratorContext *ctx, DbInfoArr *db_arr, Cluster whichClust
 		dbarr_print(ctx, db_arr, whichCluster);
 }
 
+static bool
+is_numeric_type(migratorContext *ctx, PGconn *conn, Oid typoid, Oid typbasetype)
+{
+	char		query[QUERY_ALLOC];
+	PGresult   *res;
+
+	for (;;)
+	{
+		if (typoid == 1700 || typbasetype == 1700)		/* 1700 == NUMERICOID */
+			return true;
+
+		if (typbasetype == InvalidOid)
+			return false;
+
+		snprintf(query, sizeof(query),
+				 "SELECT t.oid, typbasetype FROM pg_type WHERE oid = %u",
+				 typbasetype);
+
+		res = executeQueryOrDie(ctx, conn, query);
+
+		if (PQntuples(res) != 1)
+			pg_log(ctx, PG_FATAL, "unexpected number of tuples in query result\n");
+
+		typoid = atoi(PQgetvalue(res, 0, PQfnumber(res, "oid")));
+		typbasetype = atoi(PQgetvalue(res, 0, PQfnumber(res, "typbasetype")));
+
+		PQclear(res);
+	}
+}
 
 /*
  * get_rel_infos()
@@ -319,10 +352,12 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	char	   *nspname = NULL;
 	char	   *relname = NULL;
 	char		relstorage;
+	char		relkind;
 	int			i_spclocation = -1;
 	int			i_nspname = -1;
 	int			i_relname = -1;
 	int			i_relstorage = -1;
+	int			i_relkind = -1;
 	int			i_oid = -1;
 	int			i_relfilenode = -1;
 	int			i_reltablespace = -1;
@@ -341,7 +376,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	 */
 
 	snprintf(query, sizeof(query),
-			 "SELECT DISTINCT c.oid, n.nspname, c.relname, c.relstorage, "
+			 "SELECT DISTINCT c.oid, n.nspname, c.relname, c.relstorage, c.relkind, "
 			 "	c.relfilenode, c.reltoastrelid, c.reltablespace, t.spclocation "
 			 "FROM pg_catalog.pg_class c JOIN "
 			 "		pg_catalog.pg_namespace n "
@@ -368,7 +403,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 /* GPDB 4.3 (based on PostgreSQL 8.2), however, doesn't have indisvalid
 			  * nor indisready. */
 			 " %s "
-			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode, c.relstorage, "
+			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode, c.relstorage, c.relkind, "
 			 "			c.reltoastrelid, c.reltablespace, t.spclocation, "
 			 "			n.nspname "
 			 "ORDER BY n.nspname, c.relname;",
@@ -393,6 +428,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 	i_nspname = PQfnumber(res, "nspname");
 	i_relname = PQfnumber(res, "relname");
 	i_relstorage = PQfnumber(res, "relstorage");
+	i_relkind = PQfnumber(res, "relkind");
 	i_relfilenode = PQfnumber(res, "relfilenode");
 	i_reltoastrelid = PQfnumber(res, "reltoastrelid");
 	i_reltablespace = PQfnumber(res, "reltablespace");
@@ -427,6 +463,8 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 		/* Collect extra information about append-only tables */
 		relstorage = PQgetvalue(res, relnum, i_relstorage) [0];
 		curr->relstorage = relstorage;
+
+		relkind = PQgetvalue(res, relnum, i_relkind) [0];
 
 		if (relstorage == 'a')  /* RELSTORAGE_AOROWS */
 		{
@@ -528,6 +566,70 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			curr->aovisimaps = NULL;
 			curr->naovisimaps = 0;
 		}
+
+		if (relstorage == 'h' && /* RELSTORAGE_HEAP */
+			(relkind == 'r' || relkind == 't')) /* RELKIND_RELATION or RELKIND_TOASTVALUE */
+		{
+			char		hquery[QUERY_ALLOC];
+			PGresult   *hres;
+			int			j;
+			int			i_attnum;
+			int			i_attlen;
+			int			i_attalign;
+			int			i_atttypid;
+			int			i_typbasetype;
+
+			/* Get information about numeric columns from pg_attribute. */
+
+			snprintf(hquery, sizeof(hquery),
+					 "SELECT a.attnum, a.attlen, a.attalign, a.atttypid, t.typbasetype "
+					 "FROM pg_attribute a, pg_type t "
+					 "WHERE a.attrelid = %u "
+					 "AND a.atttypid = t.oid "
+					 "AND a.attnum >= 1 "
+					 "ORDER BY attnum",
+					 curr->reloid);
+
+			hres = executeQueryOrDie(ctx, conn, hquery);
+			i_attnum = PQfnumber(hres, "attnum");
+			i_attlen = PQfnumber(hres, "attlen");
+			i_attalign = PQfnumber(hres, "attalign");
+			i_atttypid = PQfnumber(hres, "atttypid");
+			i_typbasetype = PQfnumber(hres, "typbasetype");
+
+			curr->natts = PQntuples(hres);
+			curr->atts = (AttInfo *) pg_malloc(ctx, sizeof(AttInfo) * curr->natts);
+			memset(curr->atts, 0, sizeof(AttInfo) * curr->natts);
+
+			for (j = 0; j < PQntuples(hres); j++)
+			{
+				int			attnum = atoi(PQgetvalue(hres, j, i_attnum));
+				Oid			typid =  atooid(PQgetvalue(hres, j, i_atttypid));
+				Oid			typbasetype =  atooid(PQgetvalue(hres, j, i_typbasetype));
+
+				if (attnum != j + 1)
+					pg_log(ctx, PG_FATAL, "pg_attribute entry missing for attribute %u\n",
+						   j + 1);
+
+				curr->atts[j].attlen = atoi(PQgetvalue(hres, j, i_attlen));
+				curr->atts[j].attalign = PQgetvalue(hres, j, i_attalign)[0];
+				curr->atts[j].is_numeric = is_numeric_type(ctx, conn, typid, typbasetype);
+
+				if (curr->atts[j].is_numeric)
+					curr->has_numerics = true;
+			}
+
+			PQclear(hres);
+
+			if (!curr->has_numerics)
+			{
+				pg_free(curr->atts);
+				curr->atts = NULL;
+			}
+			curr->gpdb4_heap_conversion_needed = true;
+		}
+		else
+			curr->gpdb4_heap_conversion_needed = false;
 	}
 	PQclear(res);
 
