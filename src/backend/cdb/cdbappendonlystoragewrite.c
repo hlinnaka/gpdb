@@ -299,7 +299,6 @@ void AppendOnlyStorageWrite_TransactionCreateFile(
 	Relation gp_relation_node;
 
 
-	Assert (segmentFileNum > 0);
 	Assert (logicalEof == 0);
 
 	/*

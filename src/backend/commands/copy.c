@@ -1440,61 +1440,6 @@ DoCopyInternal(const CopyStmt *stmt, const char *queryString, CopyState cstate)
 						 errmsg("\"%s\" is a directory", cstate->filename)));
 		}
 
-
-		/*
-		 * Append Only Tables.
-		 *
-		 * If QD, build a list of all the relations (relids) that may get data
-		 * inserted into them as a part of this operation. This includes
-		 * the relation specified in the COPY command, plus any partitions
-		 * that it may have. Then, call assignPerRelSegno to assign a segfile
-		 * number to insert into each of the Append Only relations that exists
-		 * in this global list. We generate the list now and save it in cstate.
-		 *
-		 * If QE - get the QD generated list from CopyStmt and each relation can
-		 * find it's assigned segno by looking at it (during CopyFrom).
-		 *
-		 * Utility mode always builds a one single mapping.
-		 */
-		if(shouldDispatch)
-		{
-			Oid relid = RelationGetRelid(cstate->rel);
-			List *all_relids = NIL;
-
-			all_relids = lappend_oid(all_relids, relid);
-
-			if (rel_is_partitioned(relid))
-			{
-				PartitionNode *pn = RelationBuildPartitionDesc(cstate->rel, false);
-				all_relids = list_concat(all_relids, all_partition_relids(pn));
-			}
-
-			cstate->ao_segnos = assignPerRelSegno(all_relids);
-		}
-		else
-		{
-			if (stmt->ao_segnos)
-			{
-				/* We must be a QE if we received the aosegnos config */
-				Assert(Gp_role == GP_ROLE_EXECUTE);
-				cstate->ao_segnos = stmt->ao_segnos;
-			}
-			else
-			{
-				/*
-				 * utility mode (or dispatch mode for no policy table).
-				 * create a one entry map for our one and only relation
-				 */
-				if(RelationIsAoRows(cstate->rel) || RelationIsAoCols(cstate->rel))
-				{
-					SegfileMapNode *n = makeNode(SegfileMapNode);
-					n->relid = RelationGetRelid(cstate->rel);
-					n->segno = SetSegnoForWrite(cstate->rel, InvalidFileSegNumber);
-					cstate->ao_segnos = lappend(cstate->ao_segnos, n);
-				}
-			}
-		}
-
 		/*
 		 * Set up is done. Get to work!
 		 */
@@ -2653,7 +2598,7 @@ CopyFromDispatch(CopyState cstate)
 		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
             palloc0(resultRelInfo->ri_TrigDesc->numtriggers * sizeof(FmgrInfo));
     resultRelInfo->ri_TrigInstrument = NULL;
-    ResultRelInfoSetSegno(resultRelInfo, cstate->ao_segnos);
+    ResultRelInfoSetSegno(resultRelInfo);
 
 	ExecOpenIndices(resultRelInfo);
 
@@ -2731,10 +2676,6 @@ CopyFromDispatch(CopyState cstate)
 		RelationBuildPartitionDesc(cstate->rel, false);
 
 	CopyInitPartitioningState(estate);
-
-
-	if (list_length(cstate->ao_segnos) > 0)
-		cdbCopy->ao_segnos = cstate->ao_segnos;
 
 	/* add cdbCopy reference to cdbSreh (if needed) */
 	if (cstate->errMode != ALL_OR_NOTHING)
@@ -3561,40 +3502,6 @@ CopyFromDispatch(CopyState cstate)
 	resultRelInfo = estate->es_result_relations;
 	for (i = estate->es_num_result_relations; i > 0; i--)
 	{
-		/* update AO tuple counts */
-		char relstorage = RelinfoGetStorage(resultRelInfo);
-		if (relstorage_is_ao(relstorage))
-		{
-			if (cdbCopy->aotupcounts)
-			{
-				HTAB *ht = cdbCopy->aotupcounts;
-				struct {
-					Oid relid;
-					int64 tupcount;
-				} *ao;
-				bool found;
-				Oid relid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
-
-				ao = hash_search(ht, &relid, HASH_FIND, &found);
-				if (found)
-				{
-   	 				/* find out which segnos the result rels in the QE's used */
-    			    ResultRelInfoSetSegno(resultRelInfo, cstate->ao_segnos);
-
-    				UpdateMasterAosegTotals(resultRelInfo->ri_RelationDesc,
-											resultRelInfo->ri_aosegno,
-											ao->tupcount, 1);
-				}
-			}
-			else
-			{
-				ResultRelInfoSetSegno(resultRelInfo, cstate->ao_segnos);
-				UpdateMasterAosegTotals(resultRelInfo->ri_RelationDesc,
-										resultRelInfo->ri_aosegno,
-										cstate->processed, 1);
-			}
-		}
-
 		/* Close indices and then the relation itself */
 		ExecCloseIndices(resultRelInfo);
 		heap_close(resultRelInfo->ri_RelationDesc, NoLock);
@@ -3732,7 +3639,7 @@ CopyFrom(CopyState cstate)
 		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
                         palloc0(resultRelInfo->ri_TrigDesc->numtriggers * sizeof(FmgrInfo));
         resultRelInfo->ri_TrigInstrument = NULL;
-        ResultRelInfoSetSegno(resultRelInfo, cstate->ao_segnos);
+        ResultRelInfoSetSegno(resultRelInfo);
 
         ExecOpenIndices(resultRelInfo);
 
@@ -4078,7 +3985,7 @@ CopyFrom(CopyState cstate)
 				if (relstorage == RELSTORAGE_AOROWS &&
 					resultRelInfo->ri_aoInsertDesc == NULL)
 				{
-					ResultRelInfoSetSegno(resultRelInfo, cstate->ao_segnos);
+					ResultRelInfoSetSegno(resultRelInfo);
 					resultRelInfo->ri_aoInsertDesc =
 						appendonly_insert_init(resultRelInfo->ri_RelationDesc,
 											   resultRelInfo->ri_aosegno, false);
@@ -4086,7 +3993,7 @@ CopyFrom(CopyState cstate)
 				else if (relstorage == RELSTORAGE_AOCOLS &&
 						 resultRelInfo->ri_aocsInsertDesc == NULL)
 				{
-					ResultRelInfoSetSegno(resultRelInfo, cstate->ao_segnos);
+					ResultRelInfoSetSegno(resultRelInfo);
                     resultRelInfo->ri_aocsInsertDesc =
                         aocs_insert_init(resultRelInfo->ri_RelationDesc,
                         				 resultRelInfo->ri_aosegno, false);
@@ -4304,9 +4211,6 @@ CopyFrom(CopyState cstate)
 	 */
 	if(cstate->errMode != ALL_OR_NOTHING && Gp_role == GP_ROLE_EXECUTE)
 		SendNumRowsRejected(cstate->cdbsreh->rejectcount);
-
-	if (estate->es_result_partitions && Gp_role == GP_ROLE_EXECUTE)
-		SendAOTupCounts(estate);
 
 	/* NB: do not pfree baseValues/baseNulls and partValues/partNulls here, since
 	 * there may be duplicate free in ExecDropSingleTupleTableSlot; if not, they

@@ -182,6 +182,7 @@ extern void UpdateFileSegInfo(Relation parentrel,
 
 extern void ClearFileSegInfo(Relation parentrel, int segno, FileSegInfoState newState);
 extern void SetFileSegInfoState(Relation parentrel, int segno, FileSegInfoState newState);
+extern void IncrementFileSegInfoModCount(Relation parentrel, int segno);
 extern FileSegTotals *
 GetSegFilesTotals(Relation parentrel, Snapshot appendOnlyMetaDataSnapshot);
 

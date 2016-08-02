@@ -471,6 +471,26 @@ SetFileSegInfoState(Relation parentrel,
 }
 
 void
+IncrementFileSegInfoModCount(Relation parentrel,
+							 int segno)
+{
+	elogif(Debug_appendonly_print_compaction, LOG,
+		   "Increment segfile info modcount: segno %d, table '%s'",
+		   segno,
+		   RelationGetRelationName(parentrel));
+
+	UpdateFileSegInfo_internal(parentrel,
+							   segno,
+							   -1,
+							   -1,
+							   0,
+							   0,
+							   1,
+							   AOSEG_STATE_USECURRENT);
+}
+
+
+void
 ClearFileSegInfo(Relation parentrel,
 		int segno,
 		FileSegInfoState newState)
@@ -824,6 +844,8 @@ UpdateFileSegInfo_internal(Relation parentrel,
 	 */
 	new_tuple = heap_modify_tuple(tuple, pg_aoseg_dsc, new_record,
 								new_record_nulls, new_record_repl);
+
+	elog(LOG, "updating segno %d with XID %u to eof %d", segno, GetCurrentTransactionIdIfAny(), (int) eof);
 
 	simple_heap_update(pg_aoseg_rel, &tuple->t_self, new_tuple);
 	CatalogUpdateIndexes(pg_aoseg_rel, new_tuple);
@@ -2259,7 +2281,7 @@ CheckAOConsistencyWithGpRelationNode( Snapshot snapshot, Relation rel, int total
 		if (allseginfo[i]->eof != 0)
 		{
 			PrintPgaosegAndGprelationNodeEntries(allseginfo, totalsegs, segmentFileNumMap);
-			elog(ERROR, "Missing pg_aoseg entry %d in gp_relation_node for %s",
+			elog(PANIC, "Missing pg_aoseg entry %d in gp_relation_node for %s",
 					allseginfo[i]->segno, RelationGetRelationName(rel));
 		}
 		i++;
