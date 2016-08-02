@@ -82,11 +82,6 @@ typedef enum FileSegInfoState
 
 
 /*
- * GUC variables
- */
-extern int MaxAppendOnlyTables;		/* Max # of tables */
-
-/*
  * Descriptor of a single AO relation file segment.
  */
 typedef struct FileSegInfo

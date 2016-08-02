@@ -86,10 +86,9 @@ void
 InsertInitialSegnoEntry(Relation parentrel, int segno)
 {
 	Relation	pg_aoseg_rel;
-	Relation	pg_aoseg_idx;
 	TupleDesc	pg_aoseg_dsc;
-	HeapTuple	pg_aoseg_tuple = NULL;
-	int			natts = 0;
+	HeapTuple	pg_aoseg_tuple;
+	int			natts;
 	bool	   *nulls;
 	Datum	   *values;
 
@@ -104,8 +103,6 @@ InsertInitialSegnoEntry(Relation parentrel, int segno)
 	nulls = palloc(sizeof(bool) * natts);
 	values = palloc0(sizeof(Datum) * natts);
 	MemSet(nulls, false, sizeof(char) * natts);
-
-	pg_aoseg_idx = index_open(parentrel->rd_appendonly->segidxid, RowExclusiveLock);
 
 	values[Anum_pg_aoseg_segno - 1] = Int32GetDatum(segno);
 	values[Anum_pg_aoseg_tupcount - 1] = Float8GetDatum(0);
@@ -127,7 +124,6 @@ InsertInitialSegnoEntry(Relation parentrel, int segno)
 
 	heap_freetuple(pg_aoseg_tuple);
 
-	index_close(pg_aoseg_idx, RowExclusiveLock);
 	heap_close(pg_aoseg_rel, RowExclusiveLock);
 }
 
@@ -1145,7 +1141,6 @@ gp_update_aorow_master_stats_internal(Relation parentrel, Snapshot appendOnlyMet
 	int 			proc;
 	int 			ret;
 	int64			total_count = 0;
-	MemoryContext 	oldcontext = CurrentMemoryContext;
 	
     Assert(RelationIsAoRows(parentrel));
 
@@ -1193,21 +1188,16 @@ gp_update_aorow_master_stats_internal(Relation parentrel, Snapshot appendOnlyMet
 			for (i = 0; i < proc; i++)
 			{
 				HeapTuple 	tuple = tuptable->vals[i];
-				FileSegInfo *fsinfo = NULL;
 				int			qe_segno;
 				int64 		qe_tupcount;
 				char 		*val_segno;
 				char 		*val_tupcount;
-				MemoryContext 	cxt_save;
 
 				/*
 				 * Get totals from QE's for a specific segment
 				 */
 				val_segno = SPI_getvalue(tuple, tupdesc, 1);
 				val_tupcount = SPI_getvalue(tuple, tupdesc, 2);
-
-				/* use our own context so that SPI won't free our stuff later */
-				cxt_save = MemoryContextSwitchTo(oldcontext);
 
 				/*
 				 * Convert to desired data type
@@ -1219,72 +1209,7 @@ gp_update_aorow_master_stats_internal(Relation parentrel, Snapshot appendOnlyMet
 
 				total_count += qe_tupcount;
 
-				/*
-				 * Get the numbers on the QD for this segment
-				 */
-
-				
-				// CONSIDER: For integrity, we should lock ALL segment files first before 
-				// executing the query.  And, the query of the segments (the SPI_execute)
-				// and the update (UpdateFileSegInfo) should be in the same transaction.
-				//
-				// If there are concurrent Append-Only inserts, we can end up with
-				// the wrong answer...
-				//
-				// NOTE: This is a transaction scope lock that must be held until commit / abort.
-				//
-				LockRelationAppendOnlySegmentFile(
-												&parentrel->rd_node,
-												qe_segno,
-												AccessExclusiveLock,
-												/* dontWait */ false);
-
-				fsinfo = GetFileSegInfo(parentrel, appendOnlyMetaDataSnapshot, qe_segno);
-				if (fsinfo == NULL)
-				{
-					InsertInitialSegnoEntry(parentrel, qe_segno);
-
-					fsinfo = NewFileSegInfo(qe_segno);
-				}
-
-				/*
-				 * check if numbers match.
-				 * NOTE: proper way is to use int8eq() but since we
-				 * don't expect any NAN's in here better do it directly
-				 */
-				if(fsinfo->total_tupcount != qe_tupcount)
-				{
-					int64 	tupcount_diff = qe_tupcount - fsinfo->total_tupcount;
-
-					elog(DEBUG3, "gp_update_ao_master_stats: updating "
-						"segno %d with tupcount %d", qe_segno,
-						(int)qe_tupcount);
-
-					/*
-					 * QD tup count !=  QE tup count. update QD count by
-					 * passing in the diff (may be negative sometimes).
-					 */
-					UpdateFileSegInfo_internal(parentrel, qe_segno, -1, -1, 
-							tupcount_diff, 0, 1, AOSEG_STATE_USECURRENT);
-				}
-				else
-					elog(DEBUG3, "gp_update_ao_master_stats: no need to "
-						"update segno %d. it is synced", qe_segno);
-
-				pfree(fsinfo);
-
-				MemoryContextSwitchTo(cxt_save);
-
-				/*
-				 * TODO: if an entry exists for this rel in the AO hash table
-				 * need to also update that entry in shared memory. Need to
-				 * figure out how to do this safely when concurrent operations
-				 * are in progress. note that if no entry exists we are ok.
-				 *
-				 * At this point this doesn't seem too urgent as we generally
-				 * only expect this function to update segno 0 only and the QD
-				 * never cares about segment 0 anyway.
-				 */
+				/* FIXME: This does nothing now.  Do we need this function at all? */
 			}
 		}
 

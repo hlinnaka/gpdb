@@ -3390,9 +3390,6 @@ CommitTransaction(void)
 	if (Gp_role == GP_ROLE_DISPATCH && ResourceScheduler)
 		AtCommit_ResScheduler();
 
-	/* Perform any AO table commit processing */
-	AtCommit_AppendOnly(GetTopTransactionIdIfAny());
-
 	/*
 	 * Let ON COMMIT management do its thing (must happen after closing
 	 * cursors, to avoid dangling-reference problems)
@@ -3591,7 +3588,6 @@ CommitTransaction(void)
 	/* Check we've released all catcache entries */
 	AtEOXact_CatCache(true);
 
-	AtEOXact_AppendOnly(s->transactionId);
 	AtEOXact_GUC(true, 1);
 	AtEOXact_SPI(true);
 	AtEOXact_on_commit_actions(true);
@@ -4007,9 +4003,6 @@ AbortTransaction(void)
 	/* Perform any Resource Scheduler abort procesing. */
 	if (Gp_role == GP_ROLE_DISPATCH && ResourceScheduler)
 		AtAbort_ResScheduler();
-		
-	/* Perform any AO table abort processing */
-	AtAbort_AppendOnly(localXid);
 
 	AtEOXact_LargeObject(false);	/* 'false' means it's abort */
 	AtAbort_Notify();
@@ -4095,7 +4088,6 @@ AbortTransaction(void)
 							 false, true);
 		AtEOXact_CatCache(false);
 
-		AtEOXact_AppendOnly(s->transactionId);
 		AtEOXact_GUC(false, 1);
 		AtEOXact_SPI(false);
 		AtEOXact_on_commit_actions(false);
