@@ -45,13 +45,14 @@
 #include "utils/guc.h"
 #include "miscadmin.h"
 
+static void AppendOnlySegmentFileTruncateToEOF(Relation aorel, int segno, int64 segeof);
+
 /*
  * Drops a segment file.
  *
  */ 
 static void
-AppendOnlyCompaction_DropSegmentFile(Relation aorel,
-		int segno)
+AppendOnlyCompaction_DropSegmentFile(Relation aorel, int segno)
 {
 	ItemPointerData persistentTid; 
 	int64 persistentSerialNum;
@@ -66,17 +67,33 @@ AppendOnlyCompaction_DropSegmentFile(Relation aorel,
 		return;
 	}
 
-	elogif(Debug_appendonly_print_compaction, LOG, 
-		"Drop segment file: segno %d", segno);
+	/*
+	 * Segment 0 is special, in that it always has a gp_relation_node entry,
+	 * and the segment file is always present, as a zero-length file, if nothing
+	 * else.
+	 */
+	if (segno == 0)
+	{
+		elogif(Debug_appendonly_print_compaction, LOG,
+			   "Truncate segment file: segno %d", segno);
 
-	MirroredFileSysObj_ScheduleDropAppendOnlyFile(
+		AppendOnlySegmentFileTruncateToEOF(aorel, segno, 0);
+	}
+	else
+	{
+		elogif(Debug_appendonly_print_compaction, LOG,
+			   "Drop segment file: segno %d", segno);
+
+		MirroredFileSysObj_ScheduleDropAppendOnlyFile(
 			&aorel->rd_node,
 			segno,
 			RelationGetRelationName(aorel),
 			&persistentTid,
 			persistentSerialNum);
 
-	DeleteGpRelationNodeTuple(aorel, segno);
+		if (segno != 0)
+			DeleteGpRelationNodeTuple(aorel, segno);
+	}
 }
 
 /*
@@ -195,22 +212,16 @@ AppendOnlyCompaction_ShouldCompact(
  * For the segment file is truncates to the eof.
  */
 static void
-AppendOnlySegmentFileTruncateToEOF(Relation aorel, 
-		FileSegInfo *fsinfo)
+AppendOnlySegmentFileTruncateToEOF(Relation aorel, int segno, int64 segeof)
 {
 	const char* relname = RelationGetRelationName(aorel);
 	MirroredAppendOnlyOpen mirroredOpened;
 	int32				   fileSegNo;
 	char			filenamepath[MAXPGPATH];
-	int				segno;
-	int64			segeof;
 
-	Assert(fsinfo);
 	Assert(RelationIsAoRows(aorel));
 
-	segno = fsinfo->segno;
 	relname = RelationGetRelationName(aorel);
-	segeof = (int64)fsinfo->eof;
 
 	/* Open and truncate the relation segfile beyond its eof */
 	MakeAOSegmentFileName(aorel, segno, -1, &fileSegNo, filenamepath);
@@ -616,7 +627,7 @@ AppendOnlyTruncateToEOF(Relation aorel)
 				 aorel->rd_node.relNode,
 				 segno);
 
-		AppendOnlySegmentFileTruncateToEOF(aorel, fsinfo);
+		AppendOnlySegmentFileTruncateToEOF(aorel, fsinfo->segno, fsinfo->eof);
 		pfree(fsinfo);
 	}
 
