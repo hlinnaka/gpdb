@@ -330,7 +330,7 @@ FileSegCanBeDropped(Relation parentrel, int segno)
 	HeapTuple		tuple;
 	ScanKeyData		key;
 	IndexScanDesc	aoscan;
-	Datum			state;
+	int16			state;
 	bool			isNull;
 
 	/*
@@ -371,7 +371,7 @@ FileSegCanBeDropped(Relation parentrel, int segno)
 	index_close(pg_aoseg_idx, AccessShareLock);
 
 	/* get the state */
-	state = fastgetattr(tuple, Anum_pg_aoseg_state, pg_aoseg_dsc, &isNull);
+	state = DatumGetInt16(fastgetattr(tuple, Anum_pg_aoseg_state, pg_aoseg_dsc, &isNull));
 
 	if(isNull)
 		ereport(ERROR,
