@@ -166,6 +166,8 @@ GetAllFileSegInfo(Relation parentrel, Snapshot appendOnlyMetaDataSnapshot, int *
 extern FileSegInfo **
 GetAllFileSegInfo_pg_aoseg_rel(char *relationName, Relation pg_aoseg_rel, Snapshot appendOnlyMetaDataSnapshot, int *totalsegs);
 
+extern bool FileSegCanBeDropped(Relation parentrel, int segno);
+
 extern void UpdateFileSegInfo(Relation parentrel,
 				  int segno,
 				  int64 eof,
