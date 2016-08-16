@@ -530,10 +530,6 @@ set_frozenxids(migratorContext *ctx)
 	PQclear(executeQueryOrDie(ctx, conn_template1,
 							  "set allow_system_table_mods='dml'"));
 
-	PQclear(executeQueryOrDie(ctx, conn_template1,
-							  "UPDATE pg_catalog.pg_database "
-							  "SET	datfrozenxid = '%u'",
-							  ctx->old.controldata.chkpnt_nxtxid));
 
 	/* set pg_database.datfrozenxid */
 	PQclear(executeQueryOrDie(ctx, conn_template1,
