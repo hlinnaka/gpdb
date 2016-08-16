@@ -587,6 +587,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 					 "WHERE a.attrelid = %u "
 					 "AND a.atttypid = t.oid "
 					 "AND a.attnum >= 1 "
+					 "AND a.attisdropped = false"
 					 "ORDER BY attnum",
 					 curr->reloid);
 
@@ -607,9 +608,6 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 				Oid			typid =  atooid(PQgetvalue(hres, j, i_atttypid));
 				Oid			typbasetype =  atooid(PQgetvalue(hres, j, i_typbasetype));
 
-				if (attnum != j + 1)
-					pg_log(ctx, PG_FATAL, "pg_attribute entry missing for attribute %u\n",
-						   j + 1);
 
 				curr->atts[j].attlen = atoi(PQgetvalue(hres, j, i_attlen));
 				curr->atts[j].attalign = PQgetvalue(hres, j, i_attalign)[0];
