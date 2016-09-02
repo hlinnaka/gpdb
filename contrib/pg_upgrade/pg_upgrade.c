@@ -439,8 +439,8 @@ create_new_objects(migratorContext *ctx)
 	 * any indexes on heaps would need to be rebuilt for that
 	 * reason, anyway.
 	 */
-	if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802)
-		mark_indexes_invalid(ctx);
+	//if (GET_MAJOR_VERSION(ctx->old.major_version) <= 802)
+	//	mark_indexes_invalid(ctx);
 
 	/* Restore contents of AO auxiliary tables */
 	restore_aosegment_tables(ctx);
