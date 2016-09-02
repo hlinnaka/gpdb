@@ -587,7 +587,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 					 "WHERE a.attrelid = %u "
 					 "AND a.atttypid = t.oid "
 					 "AND a.attnum >= 1 "
-					 "AND a.attisdropped = false"
+					 "AND a.attisdropped = false "
 					 "ORDER BY attnum",
 					 curr->reloid);
 
