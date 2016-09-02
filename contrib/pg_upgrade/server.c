@@ -199,8 +199,8 @@ start_postmaster(migratorContext *ctx, Cluster whichCluster, bool quiet)
 			 "-o \"-p %d %s\" start >> \"%s\" 2>&1" SYSTEMQUOTE,
 			 bindir, output_filename, datadir, port,
 			 (cluster->controldata.cat_ver >=
-				BINARY_UPGRADE_SERVER_FLAG_CAT_VER) ? "-b" :
-				"-c autovacuum=off -c autovacuum_freeze_max_age=2000000000",
+				BINARY_UPGRADE_SERVER_FLAG_CAT_VER) ? "-b --gp_dbid=1 --gp_num_contents_in_cluster=0 --gp_contentid=-1" :
+				"--gp_dbid=1 --gp_num_contents_in_cluster=0 --gp_contentid=-1 -c autovacuum=off -c autovacuum_freeze_max_age=2000000000",
 			 output_filename);
 	exec_prog(ctx, true, "%s", cmd);
 
