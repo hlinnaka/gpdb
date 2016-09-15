@@ -117,7 +117,6 @@ typedef enum NodeTag
 	 * It will take the form of IndexScan, SeqScan, etc. 
 	 */
 	T_ResultState,
-	T_PlanState_Start = T_ResultState,
 	T_AppendState,
 	T_SequenceState,
 	T_BitmapAndState,
@@ -158,7 +157,6 @@ typedef enum NodeTag
 	T_RowTriggerState,
 	T_AssertOpState,
 	T_PartitionSelectorState,
-	T_PlanState_End,
 	T_TupleDescNode,
 
 	/*
@@ -515,13 +513,6 @@ typedef enum NodeTag
     /* CDB: tags for random other stuff */
     T_CdbExplain_StatHdr = 950,             /* in cdb/cdbexplain.c */
 
-    /*
-     * TAGS FOR CAQL PARSER
-     */
-	T_CaQLSelect = 2000,
-	T_CaQLInsert,
-	T_CaQLDelete,
-	T_CaQLExpr,
 } NodeTag;
 
 /*

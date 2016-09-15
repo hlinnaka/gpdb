@@ -7,7 +7,6 @@
 /misc.out
 /tablespace.out
 
-caql.out
 constraints_optimizer.out
 aocs.out
 appendonly.out
@@ -16,14 +15,11 @@ mapred.out
 sreh.out
 upg2.out
 ereport.out
-tidycat.out
 filespace.out
 upgrade.out
 auth_constraint.out
-catversion.out
 resource_queue_function.out
 table_functions.out
-tidycat2.out
 tpch500GB.out
 partindex_test.out
 external_table.out
@@ -32,3 +28,4 @@ largeobject.out
 qp_gist_indexes2.out
 qp_gist_indexes2_optimizer.out
 qp_regexp.out
+gang_mgmt.out

@@ -1,17 +1,18 @@
 import commands
+import fnmatch
 import getpass
 import glob
+import gzip
+import os
 import platform
 import shutil
 import socket
 import tarfile
 import thread
-import fnmatch
-import os
+import yaml
+
 from collections import defaultdict
 from datetime import datetime
-
-import yaml
 
 from gppylib.commands.gp import SegmentStart, GpStandbyStart
 from gppylib.commands.unix import findCmdInPath
@@ -1070,6 +1071,8 @@ def verify_file_contents(context, file_type, file_dir, text_find, should_contain
         fn = '%sgp_dump_%s_schema' % (context.dump_prefix, context.backup_timestamp)
     elif file_type == 'cdatabase':
         fn = '%sgp_cdatabase_1_1_%s' % (context.dump_prefix, context.backup_timestamp)
+    elif file_type == 'dump':
+        fn = '%sgp_dump_1_1_%s.gz' % (context.dump_prefix, context.backup_timestamp)
 
     subdirectory = context.backup_timestamp[0:8]
 
@@ -1082,8 +1085,13 @@ def verify_file_contents(context, file_type, file_dir, text_find, should_contain
         raise Exception ("Can not find %s file: %s" % (file_type, full_path))
 
     contents = ""
-    with open(full_path) as fd:
-        contents = fd.read()
+
+    if file_type == 'dump':
+        fd = gzip.open(full_path)
+    else:
+        fd =  open(full_path)
+    contents = fd.read()
+    fd.close()
 
     if should_contain and not text_find in contents:
         raise Exception("Did not find '%s' in file %s" % (text_find, full_path))
@@ -1328,6 +1336,20 @@ def impl(context, tmp_file_prefix):
             raise Exception('Found temp %s files where they should not be present' % tmp_file_prefix)
     else:
         raise Exception('Invalid call to temp file removal %s' % tmp_file_prefix)
+
+@then('tables names should be identical to stored table names in "{dbname}" except "{fq_table_name}"')
+def impl(context, dbname, fq_table_name):
+    table_names = sorted(get_table_names(dbname))
+    stored_table_names = sorted(context.table_names)
+    if fq_table_name != "" :
+        stored_table_names.remove(fq_table_name.strip().split('.'))
+
+    if table_names != stored_table_names:
+        print "Table names after backup:"
+        print stored_table_names
+        print "Table names after restore:"
+        print table_names
+        raise Exception('Schema not restored correctly. List of tables are not equal before and after restore in database %s' % dbname)
 
 @then('tables names should be identical to stored table names in "{dbname}"')
 def impl(context, dbname):
@@ -3855,12 +3877,21 @@ def impl(context, dir):
     run_command(context, command)
 
 
-@when('the entry for the table "{user_table}" is removed from "{catalog_table}" in the database "{db_name}"')
-def impl(context, user_table, catalog_table, db_name):
-    delete_qry = "delete from %s where relname='%s';" % (catalog_table, user_table)
-
+@when('the entry for the table "{user_table}" is removed from "{catalog_table}" with key "{primary_key}" in the database "{db_name}"')
+def impl(context, user_table, catalog_table, primary_key, db_name):
+    delete_qry = "delete from %s where %s='%s'::regclass::oid;" % (catalog_table, primary_key, user_table)
     with dbconn.connect(dbconn.DbURL(dbname=db_name)) as conn:
         for qry in ["set allow_system_table_mods='dml';", "set allow_segment_dml=true;", delete_qry]:
+            dbconn.execSQL(conn, qry)
+            conn.commit()
+
+@when('the entry for the table "{user_table}" is removed from "{catalog_table}" with key "{primary_key}" in the database "{db_name}" on the first primary segment')
+def impl(context, user_table, catalog_table, primary_key, db_name):
+    host, port = get_primary_segment_host_port()
+    delete_qry = "delete from %s where %s='%s'::regclass::oid;" % (catalog_table, primary_key, user_table)
+
+    with dbconn.connect(dbconn.DbURL(dbname=db_name, port=port, hostname=host), utility=True, allowSystemTableMods='dml') as conn:
+        for qry in [delete_qry]:
             dbconn.execSQL(conn, qry)
             conn.commit()
 
@@ -3882,3 +3913,67 @@ def impl(_):
     for file in os.listdir(repair_dir):
         if not timestamp in file:
             raise Exception("file found containing inconsistent timestamp")
+
+@when('user kills a mirror process with the saved information')
+def impl(context):
+    cmdStr = "ps ux | grep 'mirror process' | grep %s  | awk '{print $2}'" % context.mirror_port
+    cmd=Command(name='get mirror pid: %s' % cmdStr, cmdStr=cmdStr)
+    cmd.run()
+    pid = cmd.get_stdout_lines()[0]
+    kill_process(int(pid), context.mirror_segdbname, sig=signal.SIGABRT)
+
+@when('user temporarily moves the data directory of the killed mirror')
+@then('user temporarily moves the data directory of the killed mirror')
+def impl(context):
+    rmStr = "mv %s{,.bk}" % context.mirror_datadir
+    cmd=Command(name='Move mirror data directory', cmdStr=rmStr)
+    cmd.run(validateAfter=True)
+
+@when('user returns the data directory to the default location of the killed mirror')
+@then('user returns the data directory to the default location of the killed mirror')
+def impl(context):
+    rmStr = "mv %s{.bk,}" % context.mirror_datadir
+    cmd=Command(name='Move mirror data directory', cmdStr=rmStr)
+    cmd.run(validateAfter=True)
+
+@when('wait until the mirror is down')
+def impl(context):
+    qry = "select status from gp_segment_configuration where dbid='%s' and status='d' " % context.mirror_segdbId
+    start_time = current_time = datetime.now()
+    while (current_time - start_time).seconds < 120:
+        row_count = len(getRows('template1', qry))
+        if row_count == 1:
+            break
+        sleep(5)
+        current_time = datetime.now()
+
+@when('run gppersistent_rebuild with the saved content id')
+@then('run gppersistent_rebuild with the saved content id')
+def impl(context):
+    cmdStr = "echo -e 'y\ny\n' | $GPHOME/sbin/gppersistentrebuild -c %s" % context.mirror_segcid
+    cmd=Command(name='Run gppersistentrebuild',cmdStr=cmdStr)
+    cmd.run(validateAfter=True)
+    context.ret_code = cmd.get_results().rc
+
+@given('the information of a "{seg}" segment on any host is saved')
+@when('the information of a "{seg}" segment on any host is saved')
+@then('the information of a "{seg}" segment on any host is saved')
+def impl(context, seg):
+    if seg == "mirror":
+        gparray = GpArray.initFromCatalog(dbconn.DbURL())
+        mirror_segs = [seg for seg in gparray.getDbList() if seg.isSegmentMirror()]
+        context.mirror_segdbId = mirror_segs[0].getSegmentDbId()
+        context.mirror_segcid = mirror_segs[0].getSegmentContentId()
+        context.mirror_segdbname = mirror_segs[0].getSegmentHostName()
+        context.mirror_datadir = mirror_segs[0].getSegmentDataDirectory()
+        context.mirror_port = mirror_segs[0].getSegmentPort()
+
+@given('the user creates an index for table "{table_name}" in database "{db_name}"')
+@when('the user creates an index for table "{table_name}" in database "{db_name}"')
+@then('the user creates an index for table "{table_name}" in database "{db_name}"')
+def impl(context, table_name, db_name):
+    index_qry = "create table {0}(i int primary key, j varchar); create index test_index on index_table using bitmap(j)".format(table_name)
+
+    with dbconn.connect(dbconn.DbURL(dbname=db_name)) as conn:
+        dbconn.execSQL(conn, index_qry)
+        conn.commit()

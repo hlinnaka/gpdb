@@ -9,7 +9,6 @@
  */
 #include "postgres.h"
 
-#include "catalog/catquery.h"
 #include "catalog/pg_type.h"            /* INT8OID */
 #include "nodes/makefuncs.h"
 #include "optimizer/clauses.h"
@@ -497,7 +496,7 @@ SubqueryToJoinWalker(Node *node, ConvertSubqueryToJoinContext *context)
 	/**
 	 * If this is a correlated opexpression, we'd need to look inside.
 	 */
-	if (contain_vars_of_level_or_above(node, 1) && IsA(node, OpExpr))
+	else if (contain_vars_of_level_or_above(node, 1) && IsA(node, OpExpr))
 	{
 		OpExpr *opexp = (OpExpr *) node;
 
@@ -545,6 +544,11 @@ SubqueryToJoinWalker(Node *node, ConvertSubqueryToJoinContext *context)
 		/**
 		 * Correlated join expression contains incompatible operators. Not safe to convert.
 		 */
+		context->safeToConvert = false;
+	}
+	else if (contain_vars_of_level_or_above(node, 1))
+	{
+		/* This is a correlated expression, but we don't know how to deal with it. Give up. */
 		context->safeToConvert = false;
 	}
 
@@ -1353,38 +1357,28 @@ not_null_inner_vars(Node *clause)
  * Output:
  * 	true if the attribute is non-nullable
  */
-static bool is_attribute_nonnullable(Oid relationOid, AttrNumber attrNumber)
+static bool
+is_attribute_nonnullable(Oid relationOid, AttrNumber attrNumber)
 {
-	HeapTuple			attributeTuple = NULL;
-	Form_pg_attribute 	attribute = NULL;
+	HeapTuple			attributeTuple;
+	Form_pg_attribute 	attribute;
 	bool				result = true;
-	cqContext		   *pcqCtx;
-	
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_attribute "
-				" WHERE attrelid = :1 "
-				" AND attnum = :2 ",
-				ObjectIdGetDatum(relationOid),
-				Int16GetDatum(attrNumber)));
 
-	attributeTuple = caql_getnext(pcqCtx);
-
+	attributeTuple = SearchSysCache2(ATTNUM,
+									 ObjectIdGetDatum(relationOid),
+									 Int16GetDatum(attrNumber));
 	if (!HeapTupleIsValid(attributeTuple))
-	{
-		caql_endscan(pcqCtx);
 		return false;
-	}
 
 	attribute = (Form_pg_attribute) GETSTRUCT(attributeTuple);
-	
+
 	if (attribute->attisdropped)
 		result = false;
 
 	if (!attribute->attnotnull)
 		result = false;
-	
-	caql_endscan(pcqCtx);
+
+	ReleaseSysCache(attributeTuple);
 
 	return result;
 }

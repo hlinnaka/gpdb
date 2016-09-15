@@ -150,6 +150,7 @@ extern bool Debug_appendonly_print_blockdirectory;
 extern bool Debug_appendonly_print_read_block;
 extern bool Debug_appendonly_print_append_block;
 extern bool Debug_appendonly_print_segfile_choice;
+extern bool test_AppendOnlyHash_eviction_vs_just_marking_not_inuse;
 extern int  Debug_appendonly_bad_header_print_level;
 extern bool Debug_appendonly_print_datumstream;
 extern bool Debug_appendonly_print_visimap;
@@ -300,6 +301,8 @@ extern int gp_max_partition_level;
 extern bool gp_temporary_files_filespace_repair;
 extern bool gp_perfmon_print_packet_info;
 extern bool fts_diskio_check;
+
+extern bool gp_enable_relsize_collection;
 
 /* Debug DTM Action */
 typedef enum
@@ -459,14 +462,22 @@ extern bool optimizer_multilevel_partitioning;
 extern bool optimizer_enable_derive_stats_all_groups;
 extern bool optimizer_explain_show_status;
 extern bool optimizer_prefer_scalar_dqa_multistage_agg;
+extern bool optimizer_parallel_union;
+extern bool optimizer_array_constraints;
 
 /**
  * GUCs related to code generation.
  **/
+#define CODEGEN_OPTIMIZATION_LEVEL_NONE          0
+#define CODEGEN_OPTIMIZATION_LEVEL_LESS          1
+#define CODEGEN_OPTIMIZATION_LEVEL_DEFAULT       2
+#define CODEGEN_OPTIMIZATION_LEVEL_AGGRESSIVE    3
+
 extern bool init_codegen;
 extern bool codegen;
 extern bool codegen_validate_functions;
 extern int codegen_varlen_tolerance;
+extern int codegen_optimization_level;
 
 /**
  * Enable logging of DPE match in optimizer.

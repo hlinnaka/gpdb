@@ -191,7 +191,6 @@ static Dllist *BackendList;
 typedef enum pmsub_type
 {
 	SeqServerProc = 0,
-	WalSendServerProc,
 	WalRedoServerProc,
 	FtsProbeProc,
 	PerfmonProc,
@@ -722,7 +721,7 @@ HANDLE		PostmasterHandle;
 
 /*
  * Is this a part of a segment database.  Note that this is
- *   not always the same as ! GPPostmaster because
+ *   not always the same as ! Gp_entry_postmaster because
  *   when the cluster master is started in utility mode then
  *   Gp_entry_postmaster will not be set
  */
@@ -734,11 +733,6 @@ bool GPIsSegmentDatabase()
 bool GPAreFileReplicationStructuresRequired(void)
 {
     return AreFileReplicationStructuresRequired;
-}
-
-bool GPPostmaster()
-{
-	return (Gp_entry_postmaster);
 }
 
 /**
@@ -769,12 +763,6 @@ int
 PostmasterGetMppLocalProcessCounter(void)
 {
 	return Save_MppLocalProcessCounter;
-}
-
-DistributedTransactionTimeStamp
-PostmasterGetDtxStartTime(void)
-{
-	return Save_DtxStartTime;
 }
 
 static void
@@ -814,7 +802,7 @@ PostmasterMain(int argc, char *argv[])
 {
 	int			opt;
 	int			status;
-	char       *userDoption = NULL;
+	char	   *userDoption = NULL;
 	int			i;
 	char		stack_base;
 
@@ -2959,6 +2947,8 @@ retry1:
 			break;
 	}
 
+	SIMPLE_FAULT_INJECTOR(ProcessStartupPacketFault);
+
 	return STATUS_OK;
 }
 
@@ -4214,6 +4204,7 @@ do_immediate_shutdown_reaper(void)
         zeroIfPidEqual(pid, &BgWriterPID);
         zeroIfPidEqual(pid, &CheckpointPID);
 		zeroIfPidEqual(pid, &WalReceiverPID);
+		zeroIfPidEqual(pid, &WalWriterPID);
         zeroIfPidEqual(pid, &AutoVacPID);
         zeroIfPidEqual(pid, &PgArchPID);
         zeroIfPidEqual(pid, &PgStatPID);
@@ -5032,10 +5023,10 @@ static void do_reaper()
 
 		/*
 		 * Wait for all important children to exit, then reset shmem and
-		 * redo database startup.  (We can ignore the archiver and stats processes
-		 * here since they are not connected to shmem.)
+		 * redo database startup.  (We can ignore the syslogger, archiver and stats
+		 * processes here since they are not connected to shmem.)
 		 */
-		if (DLGetHead(BackendList) ||
+		if (CountChildren(BACKEND_TYPE_ALL) != 0 ||
 		    StartupPID != 0 ||
 		    StartupPass2PID != 0 ||
 		    StartupPass3PID != 0 ||
@@ -5046,11 +5037,31 @@ static void do_reaper()
 		    FilerepPeerResetPID != 0 ||
 			AutoVacPID != 0 ||
 			WalReceiverPID != 0 ||
+			WalWriterPID != 0 ||
 			ServiceProcessesExist(0))
         {
             /* important child is still going...wait longer */
 			goto reaper_done;
         }
+
+		/*
+		 * Start waiting for dead_end children to die. This state change causes
+		 * ServerLoop to stop creating new ones. Otherwise, we may infinitely
+		 * wait here on heavy workload circumstances, or in postmaster reset
+		 * cases of segments where FilerepPeerReset process on primary segment
+		 * continuously connects corresponding mirror postmaster.
+		 */
+		if (DLGetHead(BackendList) != NULL)
+		{
+			pmState = PM_CHILD_STOP_WAIT_DEAD_END_CHILDREN;
+			goto reaper_done;
+		}
+
+		/*
+		 * NB: We cannot change the pmState to PM_CHILD_STOP_NO_CHILDREN here,
+		 * since there should be syslogger existing, and maybe archiver and
+		 * pgstats as well.
+		 */
 
         if ( RecoveryError )
         {
@@ -5152,6 +5163,8 @@ GetServerProcessTitle(int pid)
 		return "background writer process";
 	if (pid == CheckpointPID)
 		return "checkpoint process";
+	else if (pid == WalWriterPID)
+		return "walwriter process";
 	else if (pid == WalReceiverPID)
 		return "walreceiver process";
 	else if (pid == AutoVacPID)
@@ -5647,13 +5660,13 @@ static PMState StateMachineCheck_WaitBackends(void)
     }
     else
     {
-        // note: if wal writer is added, check this here: WalWriterPID == 0 &&
         int childCount = CountChildren(BACKEND_TYPE_AUTOVAC|BACKEND_TYPE_NORMAL);
         bool isFilerepBackendsDoneShutdown = IsFilerepBackendsDoneShutdown();
         bool autovacShutdown = AutoVacPID == 0;
 
         if (childCount == 0 &&
 			WalReceiverPID == 0 &&
+			WalWriterPID == 0 &&
             (BgWriterPID == 0 || !FatalError) && /* todo: CHAD_PM why wait for BgWriterPID here?  Can't we just allow
                                                           normal state advancement to hit there? */
             autovacShutdown &&
@@ -5679,9 +5692,6 @@ static PMState StateMachineCheck_WaitBackends(void)
             }
             else
             {
-                /*
-                 * This state change causes ServerLoop to stop creating new ones.
-                 */
                 Assert(Shutdown > NoShutdown);
                 moveToNextState = true;
             }
@@ -5877,6 +5887,9 @@ static void StateMachineTransition_ShutdownBackends(void)
 
     /* and the autovac launcher too */
     signal_child_if_up(AutoVacPID, SIGTERM);
+
+	/* and the wal writer too */
+	signal_child_if_up(WalWriterPID, SIGTERM);
 
     signal_filerep_to_shutdown(SegmentStateShutdownFilerepBackends);
 

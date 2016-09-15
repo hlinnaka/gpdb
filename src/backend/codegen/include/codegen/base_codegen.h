@@ -19,6 +19,7 @@ extern "C" {
 #include <string>
 #include <vector>
 #include "codegen/utils/gp_codegen_utils.h"
+#include "codegen/codegen_manager.h"
 #include "codegen/codegen_interface.h"
 
 #include "llvm/IR/Function.h"
@@ -48,6 +49,10 @@ class BaseCodegen: public CodegenInterface {
    **/
   virtual ~BaseCodegen() {
     SetToRegular(regular_func_ptr_, ptr_to_chosen_func_ptr_);
+  }
+
+  bool InitDependencies() override {
+    return true;
   }
 
   bool GenerateCode(gpcodegen::GpCodegenUtils* codegen_utils) final {
@@ -148,6 +153,7 @@ class BaseCodegen: public CodegenInterface {
   /**
    * @brief Constructor
    *
+   * @param manager                The manager in which this is enrolled.
    * @param orig_func_name         Original function name.
    * @param regular_func_ptr       Regular version of the target function.
    * @param ptr_to_chosen_func_ptr Reference to the function pointer that the caller will call.
@@ -156,16 +162,22 @@ class BaseCodegen: public CodegenInterface {
    * 			corresponding regular version.
    *
    **/
-  explicit BaseCodegen(const std::string& orig_func_name,
+  explicit BaseCodegen(gpcodegen::CodegenManager* manager,
+                       const std::string& orig_func_name,
                        FuncPtrType regular_func_ptr,
                        FuncPtrType* ptr_to_chosen_func_ptr)
-  : orig_func_name_(orig_func_name),
+  : manager_(manager),
+    orig_func_name_(orig_func_name),
     unique_func_name_(CodegenInterface::GenerateUniqueName(orig_func_name)),
     regular_func_ptr_(regular_func_ptr),
     ptr_to_chosen_func_ptr_(ptr_to_chosen_func_ptr),
     is_generated_(false) {
     // Initialize the caller to use regular version of target function.
     SetToRegular(regular_func_ptr, ptr_to_chosen_func_ptr);
+  }
+
+  gpcodegen::CodegenManager* manager() const {
+    return manager_;
   }
 
   /**
@@ -209,6 +221,7 @@ class BaseCodegen: public CodegenInterface {
   }
 
  private:
+  gpcodegen::CodegenManager* manager_;
   std::string orig_func_name_;
   std::string unique_func_name_;
   FuncPtrType regular_func_ptr_;

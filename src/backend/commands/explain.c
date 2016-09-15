@@ -20,6 +20,7 @@
 #include "commands/explain.h"
 #include "commands/prepare.h"
 #include "commands/trigger.h"
+#include "commands/queue.h"
 #include "executor/execUtils.h"
 #include "executor/instrument.h"
 #include "nodes/pg_list.h"
@@ -32,6 +33,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/json.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"             /* AllocSetContextCreate() */
 #include "utils/resscheduler.h"
@@ -76,8 +78,8 @@ typedef struct ExplainState
 extern bool Test_print_direct_dispatch_info;
 
 static void ExplainOneQuery(Query *query, ExplainStmt *stmt,
-							const char *queryString,
-							ParamListInfo params, TupOutputState *tstate);
+				const char *queryString,
+				ParamListInfo params, TupOutputState *tstate);
 static void report_triggers(ResultRelInfo *rInfo, bool show_relname,
 				StringInfo buf);
 
@@ -368,10 +370,10 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ParamListInfo params,
 	instr_time	starttime;
 	double		totaltime = 0;
 	ExplainState *es;
-    StringInfoData buf;
-    EState     *estate = NULL;
+	StringInfoData buf;
+	EState     *estate = NULL;
 	int			eflags;
-    int         nb;
+	int         nb;
 	MemoryContext explaincxt = CurrentMemoryContext;
 
 	/*
@@ -390,6 +392,17 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ParamListInfo params,
 								None_Receiver, params,
 								stmt->analyze);
 
+	if (gp_enable_gpperfmon && Gp_role == GP_ROLE_DISPATCH)
+	{
+		Assert(queryString);
+		gpmon_qlog_query_submit(queryDesc->gpmon_pkt);
+		gpmon_qlog_query_text(queryDesc->gpmon_pkt,
+				queryString,
+				application_name,
+				GetResqueueName(GetResQueueId()),
+				GetResqueuePriority(GetResQueueId()));
+	}
+
 	/* Initialize ExplainState structure. */
 	es = (ExplainState *) palloc0(sizeof(ExplainState));
 	es->pstmt = queryDesc->plannedstmt;
@@ -401,7 +414,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ParamListInfo params,
 
 	/* If analyzing, we need to cope with queued triggers */
 	if (stmt->analyze)
-        AfterTriggerBeginQuery();
+		AfterTriggerBeginQuery();
 
     /* Allocate workarea for summary stats. */
     if (stmt->analyze)
@@ -415,7 +428,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ParamListInfo params,
 
 	/* Select execution options */
 	if (stmt->analyze)
-        eflags = 0;				/* default run-to-completion flags */
+		eflags = 0;				/* default run-to-completion flags */
 	else
 		eflags = EXEC_FLAG_EXPLAIN_ONLY;
 
@@ -531,7 +544,6 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ParamListInfo params,
 			else
 				f = format_node_dump(s);
 			pfree(s);
-
 			do_text_output_multiline(tstate, f);
 			pfree(f);
 			do_text_output_oneline(tstate, ""); /* separator line */
@@ -862,7 +874,6 @@ appendGangAndDirectDispatchInfo(StringInfo str, PlanState *planstate, int sliceI
 		}
 	}
 }
-
 
 /*
  * explain_outNode -
@@ -1803,7 +1814,6 @@ explain_outNode(StringInfo str,
 
 			for (i = 0; i < indent; i++)
 				appendStringInfo(str, "  ");
-
 			appendStringInfo(str, "  ->  ");
 
 			/*

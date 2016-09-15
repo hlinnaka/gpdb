@@ -57,6 +57,19 @@ s3.conf
 sql
 expected
 results
+source_replaced
 
 *.out
 *.diffs
+
+.idea
+
+*.sln
+*.suo
+*.vcxproj
+*.vcxproj.user
+*.filters
+*.VC.db
+*.VC.opendb
+
+CMakeLists.txt

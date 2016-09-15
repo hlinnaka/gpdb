@@ -59,10 +59,10 @@ TEST_F(GPReaderTest, Open) {
     ReaderParams params;
     gpreader.open(params);
 
-    ListBucketResult* keyList = gpreader.getBucketReader().getKeyList();
-    EXPECT_EQ(1, keyList->contents.size());
-    EXPECT_EQ("threebytes/threebytes", keyList->contents[0]->getName());
-    EXPECT_EQ(3, keyList->contents[0]->getSize());
+    const ListBucketResult& keyList = gpreader.getBucketReader().getKeyList();
+    EXPECT_EQ(1, keyList.contents.size());
+    EXPECT_EQ("threebytes/threebytes", keyList.contents[0].getName());
+    EXPECT_EQ(3, keyList.contents[0].getSize());
 }
 
 TEST_F(GPReaderTest, Close) {
@@ -85,12 +85,11 @@ TEST_F(GPReaderTest, Close) {
     ReaderParams params;
     gpreader.open(params);
 
-    ListBucketResult* keyList = gpreader.getBucketReader().getKeyList();
-    EXPECT_EQ(1, keyList->contents.size());
+    const ListBucketResult& keyList = gpreader.getBucketReader().getKeyList();
+    EXPECT_EQ(1, keyList.contents.size());
 
     gpreader.close();
-    keyList = gpreader.getBucketReader().getKeyList();
-    EXPECT_EQ(NULL, keyList);
+    EXPECT_TRUE(keyList.contents.empty());
 }
 
 TEST_F(GPReaderTest, ReadSmallData) {
@@ -128,10 +127,10 @@ TEST_F(GPReaderTest, ReadSmallData) {
     ReaderParams params;
     gpreader.open(params);
 
-    ListBucketResult* keyList = gpreader.getBucketReader().getKeyList();
-    EXPECT_EQ(1, keyList->contents.size());
-    EXPECT_EQ("threebytes/threebytes", keyList->contents[0]->getName());
-    EXPECT_EQ(3, keyList->contents[0]->getSize());
+    const ListBucketResult& keyList = gpreader.getBucketReader().getKeyList();
+    EXPECT_EQ(1, keyList.contents.size());
+    EXPECT_EQ("threebytes/threebytes", keyList.contents[0].getName());
+    EXPECT_EQ(3, keyList.contents[0].getSize());
 
     char buffer[64];
     EXPECT_EQ(3, gpreader.read(buffer, sizeof(buffer)));
@@ -215,10 +214,10 @@ TEST_F(GPReaderTest, ReadHugeData) {
     gpreader.open(params);
 
     // compare the data size
-    ListBucketResult* keyList = gpreader.getBucketReader().getKeyList();
-    EXPECT_EQ(1, keyList->contents.size());
-    EXPECT_EQ("bigdata/bigdata", keyList->contents[0]->getName());
-    EXPECT_EQ(totalData, keyList->contents[0]->getSize());
+    const ListBucketResult& keyList = gpreader.getBucketReader().getKeyList();
+    EXPECT_EQ(1, keyList.contents.size());
+    EXPECT_EQ("bigdata/bigdata", keyList.contents[0].getName());
+    EXPECT_EQ(totalData, keyList.contents[0].getSize());
 
     // compare the data content
     static char buffer[1024 * 1024];
@@ -237,7 +236,7 @@ TEST_F(GPReaderTest, ReadFromEmptyURL) {
     MockS3RESTfulService mockRestfulService;
     MockGPReader gpreader(url, &mockRestfulService);
 
-    // an exception should be throwed in validateURL()
+    // an exception should be throwed in parseURL()
     //    with message "'' is not valid"
     ReaderParams params;
     EXPECT_THROW(gpreader.open(params), std::runtime_error);
@@ -249,7 +248,7 @@ TEST_F(GPReaderTest, ReadFromInvalidURL) {
     MockS3RESTfulService mockRestfulService;
     MockGPReader gpreader(url, &mockRestfulService);
 
-    // an exception should be throwed in validateURL()
+    // an exception should be throwed in parseURL()
     //    with message "'s3://' is not valid,"
     ReaderParams params;
     EXPECT_THROW(gpreader.open(params), std::runtime_error);
@@ -296,10 +295,10 @@ TEST_F(GPReaderTest, ReadAndGetFailedKeyReaderResponse) {
     ReaderParams params;
     gpreader.open(params);
 
-    ListBucketResult* keyList = gpreader.getBucketReader().getKeyList();
-    EXPECT_EQ(1, keyList->contents.size());
-    EXPECT_EQ("threebytes/threebytes", keyList->contents[0]->getName());
-    EXPECT_EQ(3, keyList->contents[0]->getSize());
+    const ListBucketResult& keyList = gpreader.getBucketReader().getKeyList();
+    EXPECT_EQ(1, keyList.contents.size());
+    EXPECT_EQ("threebytes/threebytes", keyList.contents[0].getName());
+    EXPECT_EQ(3, keyList.contents[0].getSize());
 
     char buffer[64];
     EXPECT_THROW(gpreader.read(buffer, sizeof(buffer)), std::runtime_error);

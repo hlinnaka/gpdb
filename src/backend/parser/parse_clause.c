@@ -16,22 +16,15 @@
 
 #include "postgres.h"
 
-#include "catalog/catquery.h"
 #include "access/heapam.h"
 #include "catalog/heap.h"
-#include "catalog/pg_am.h"
-#include "catalog/pg_amop.h"
 #include "catalog/pg_exttable.h"
-#include "catalog/pg_namespace.h"
-#include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
-#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_window.h"
 #include "commands/defrem.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
-#include "nodes/print.h" /* XXX: remove after debugging !! */
 #include "optimizer/clauses.h"
 #include "optimizer/tlist.h"
 #include "optimizer/var.h"
@@ -48,7 +41,6 @@
 #include "rewrite/rewriteManip.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
-#include "utils/syscache.h"
 
 #include "cdb/cdbvars.h"
 #include "cdb/cdbpartition.h"
@@ -348,7 +340,7 @@ transformWindowFrameEdge(ParseState *pstate, WindowFrameEdge *e,
 								 parser_errposition(pstate, con->location)));
 
 					ReleaseOperator(tup);
-					ReleaseType(typ);
+					ReleaseSysCache(typ);
 				}
 			}
 		}
@@ -398,15 +390,9 @@ winref_checkspec_walker(Node *node, void *ctx)
 		{
 			HeapTuple		tuple;
 			Form_pg_window	wf;
-			cqContext	   *pcqCtx;
 
-			pcqCtx = caql_beginscan(
-					NULL,
-					cql("SELECT * FROM pg_window "
-						" WHERE winfnoid = :1 ",
-						ObjectIdGetDatum(winref->winfnoid)));
-
-			tuple = caql_getnext(pcqCtx);
+			tuple = SearchSysCache1(WINFNOID,
+									ObjectIdGetDatum(winref->winfnoid));
 
 			/*
 			 * Check only "true" window function.
@@ -428,8 +414,8 @@ winref_checkspec_walker(Node *node, void *ctx)
 							 errmsg("window function \"%s\" cannot be used with a framed window specification",
 									get_func_name(wf->winfnoid)),
 								parser_errposition(ref->pstate, winref->location)));
+				ReleaseSysCache(tuple);
 			}
-			caql_endscan(pcqCtx);
 		}
 	}
 
@@ -1517,9 +1503,9 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		 *
 		 * Note: expandRTE returns new lists, safe for me to modify
 		 */
-		expandRTE(l_rte, l_rtindex, 0, false, -1,
+		expandRTE(l_rte, l_rtindex, 0, -1, false,
 				  &l_colnames, &l_colvars);
-		expandRTE(r_rte, r_rtindex, 0, false, -1,
+		expandRTE(r_rte, r_rtindex, 0, -1, false,
 				  &r_colnames, &r_colvars);
 
 		/*

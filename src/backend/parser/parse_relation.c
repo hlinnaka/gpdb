@@ -17,17 +17,12 @@
 
 #include <ctype.h>
 
-#include "access/genam.h"
 #include "access/heapam.h"
-#include "catalog/catquery.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
-#include "catalog/pg_exttable.h"
 #include "catalog/pg_proc_callback.h"
 #include "catalog/pg_type.h"
-#include "catalog/indexing.h"
 #include "funcapi.h"
-#include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/relation.h"                 /* CdbRelColumnInfo */
@@ -37,12 +32,9 @@
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
 #include "parser/parse_coerce.h"
-#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
-#include "utils/array.h"
-#include "utils/fmgroids.h"
 
 
 /* GUC parameter */
@@ -64,7 +56,6 @@ static void expandTupleDesc(TupleDesc tupdesc, Alias *eref,
 static int	specialAttNum(const char *attname);
 static void warnAutoRange(ParseState *pstate, RangeVar *relation);
 
-static bool get_attisdropped(Oid relid, int attnum);
 
 /*
  * refnameRangeTblEntry
@@ -203,24 +194,20 @@ scanNameSpaceForRelid(ParseState *pstate, Oid relid, int location)
  * rejects WITH lists containing duplicate CTE names.
  */
 CommonTableExpr *
-scanNameSpaceForCTE(ParseState *pstate,
-					const char *refname,
+scanNameSpaceForCTE(ParseState *pstate, const char *refname,
 					Index *ctelevelsup)
 {
-	Assert(refname != NULL);
-
-	Index levelsup;
+	Index		levelsup;
 
 	for (levelsup = 0;
 		 pstate != NULL;
 		 pstate = pstate->parentParseState, levelsup++)
 	{
-		ListCell *lc;
+		ListCell   *lc;
 
 		foreach(lc, pstate->p_ctenamespace)
 		{
 			CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
-			Assert(cte != NULL && cte->ctename != NULL);
 
 			if (strcmp(cte->ctename, refname) == 0)
 			{
@@ -229,7 +216,6 @@ scanNameSpaceForCTE(ParseState *pstate,
 			}
 		}
 	}
-
 	return NULL;
 }
 
@@ -268,16 +254,17 @@ isFutureCTE(ParseState *pstate, const char *refname)
  * valid matches, but only one will be returned).  This must be used ONLY
  * as a heuristic in giving suitable error messages.  See warnAutoRange.
  *
- * Notice that we consider both matches on actual relation name (or CTE) and matches
- * on alias.
+ * Notice that we consider both matches on actual relation (or CTE) name
+ * and matches on alias.
  */
 static RangeTblEntry *
 searchRangeTable(ParseState *pstate, RangeVar *relation)
 {
-	Oid	relId = InvalidOid;
 	const char *refname = relation->relname;
+	Oid			relId = InvalidOid;
 	CommonTableExpr *cte = NULL;
-	Index ctelevelsup = 0;
+	Index		ctelevelsup = 0;
+	Index		levelsup;
 
 	/*
 	 * If it's an unqualified name, check for possible CTE matches. A CTE
@@ -289,8 +276,10 @@ searchRangeTable(ParseState *pstate, RangeVar *relation)
 	if (!cte)
 		relId = RangeVarGetRelid(relation, true);
 
-	Index levelsup = 0;
-	while (pstate != NULL)
+	/* Now look for RTEs matching either the relation/CTE or the alias */
+	for (levelsup = 0;
+		 pstate != NULL;
+		 pstate = pstate->parentParseState, levelsup++)
 	{
 		ListCell   *l;
 
@@ -298,11 +287,10 @@ searchRangeTable(ParseState *pstate, RangeVar *relation)
 		{
 			RangeTblEntry *rte = (RangeTblEntry *) lfirst(l);
 
-			if (OidIsValid(relId) &&
-				rte->rtekind == RTE_RELATION &&
+			if (rte->rtekind == RTE_RELATION &&
+				OidIsValid(relId) &&
 				rte->relid == relId)
 				return rte;
-
 			if (rte->rtekind == RTE_CTE &&
 				cte != NULL &&
 				rte->ctelevelsup + levelsup == ctelevelsup &&
@@ -314,9 +302,6 @@ searchRangeTable(ParseState *pstate, RangeVar *relation)
                 strcmp(rte->eref->aliasname, refname) == 0)
 				return rte;
 		}
-
-		pstate = pstate->parentParseState;
-		levelsup++;
 	}
 	return NULL;
 }
@@ -766,15 +751,15 @@ addRangeTableEntry(ParseState *pstate,
 				   bool inh,
 				   bool inFromCl)
 {
-	RangeTblEntry		*rte	 = makeNode(RangeTblEntry);
-	char				*refname = alias ? alias->aliasname : relation->relname;
-	LOCKMODE             lockmode = AccessShareLock;
-	bool                 nowait = false;
-	LockingClause		*locking;
-	Relation			 rel;
-	ParseCallbackState	 pcbstate;
-	
-	/* 
+	RangeTblEntry *rte = makeNode(RangeTblEntry);
+	char	   *refname = alias ? alias->aliasname : relation->relname;
+	LOCKMODE	lockmode = AccessShareLock;
+	bool		nowait = false;
+	LockingClause *locking;
+	Relation	rel;
+	ParseCallbackState pcbstate;
+
+	/*
 	 * CDB: lock promotion around the locking clause is a little different
 	 * from postgres to allow for required lock promotion for distributed
 	 * tables.
@@ -788,7 +773,7 @@ addRangeTableEntry(ParseState *pstate,
 	setup_parser_errposition_callback(&pcbstate, pstate, relation->location);
 	rel = parserOpenTable(pstate, relation, lockmode, nowait, NULL);
 	cancel_parser_errposition_callback(&pcbstate);
-	
+
 	/*
 	 * Get the rel's OID.  This access also ensures that we have an up-to-date
 	 * relcache entry for the rel.	Since this is typically the first access
@@ -1375,6 +1360,11 @@ addRangeTableEntryForCTE(ParseState *pstate,
 						 bool inFromCl)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
+	char	   *refname;
+	Alias	   *eref;
+	int			numaliases;
+	int			varattno;
+	ListCell   *lc;
 
 	rte->rtekind = RTE_CTE;
 	rte->ctename = cte->ctename;
@@ -1395,18 +1385,15 @@ addRangeTableEntryForCTE(ParseState *pstate,
 	rte->ctecoltypmods = cte->ctecoltypmods;
 
 	rte->alias = rangeVar->alias;
-	char *refname = rte->alias ? rte->alias->aliasname : cte->ctename;
-	Alias *eref;
-
+	refname = rte->alias ? rte->alias->aliasname : cte->ctename;
 	if (rte->alias)
 		eref = copyObject(rte->alias);
 	else
 		eref = makeAlias(refname, NIL);
-	int numaliases = list_length(eref->colnames);
+	numaliases = list_length(eref->colnames);
 
 	/* fill in any unspecified alias columns */
-	int varattno = 0;
-	ListCell *lc;
+	varattno = 0;
 	foreach(lc, cte->ctecolnames)
 	{
 		varattno++;
@@ -1501,6 +1488,15 @@ bool
 isSimplyUpdatableRelation(Oid relid, bool noerror)
 {
 	Relation rel;
+
+	if (!OidIsValid(relid))
+	{
+		if (!noerror)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("Invalid oid: %d is not simply updatable", relid)));
+		return false;
+	}
 
 	rel = relation_open(relid, AccessShareLock);
 
@@ -2115,36 +2111,6 @@ bogus:
 	return "*BOGUS*";
 }
 
-static bool get_attisdropped(Oid relid, int attnum)
-{
-	HeapTuple			 tp;
-	Form_pg_attribute	 att_tup;
-	bool				 result = false;
-	cqContext			*pcqCtx;
-
-	/* SELECT attisdropped FROM pg_attribute */
-
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_attribute "
-				" WHERE attrelid = :1 "
-				" AND attnum = :2 ",
-				ObjectIdGetDatum(relid),
-				Int16GetDatum(attnum)));
-
-	tp = caql_getnext(pcqCtx);
-
-	if (!HeapTupleIsValid(tp))		/* shouldn't happen */
-		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
-	att_tup = (Form_pg_attribute) GETSTRUCT(tp);
-	result	= att_tup->attisdropped;
-
-	caql_endscan(pcqCtx);
-
-	return (result);
-}
-
 /*
  * get_rte_attribute_type
  *		Get attribute type information from a RangeTblEntry
@@ -2160,18 +2126,11 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 				/* Plain relation RTE --- get the attribute's type info */
 				HeapTuple	tp;
 				Form_pg_attribute att_tup;
-				cqContext  *pcqCtx;
 
-				pcqCtx = caql_beginscan(
-						NULL,
-						cql("SELECT * FROM pg_attribute "
-							" WHERE attrelid = :1 "
-							" AND attnum = :2 ",
-							ObjectIdGetDatum(rte->relid),
-							Int16GetDatum(attnum)));
-
-				tp = caql_getnext(pcqCtx);
-
+				tp = SearchSysCache(ATTNUM,
+									ObjectIdGetDatum(rte->relid),
+									Int16GetDatum(attnum),
+									0, 0);
 				if (!HeapTupleIsValid(tp))		/* shouldn't happen */
 					elog(ERROR, "cache lookup failed for attribute %d of relation %u",
 						 attnum, rte->relid);
@@ -2189,8 +2148,7 @@ get_rte_attribute_type(RangeTblEntry *rte, AttrNumber attnum,
 						   get_rel_name(rte->relid))));
 				*vartype = att_tup->atttypid;
 				*vartypmod = att_tup->atttypmod;
-
-				caql_endscan(pcqCtx);
+				ReleaseSysCache(tp);
 			}
 			break;
 		case RTE_SUBQUERY:
@@ -2318,13 +2276,28 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 	{
 		case RTE_RELATION:
 			{
-				result = get_attisdropped(rte->relid, attnum);
+				/*
+				 * Plain relation RTE --- get the attribute's catalog entry
+				 */
+				HeapTuple	tp;
+				Form_pg_attribute att_tup;
+
+				tp = SearchSysCache(ATTNUM,
+									ObjectIdGetDatum(rte->relid),
+									Int16GetDatum(attnum),
+									0, 0);
+				if (!HeapTupleIsValid(tp))		/* shouldn't happen */
+					elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+						 attnum, rte->relid);
+				att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+				result = att_tup->attisdropped;
+				ReleaseSysCache(tp);
 			}
 			break;
 		case RTE_SUBQUERY:
 		case RTE_VALUES:
 		case RTE_CTE:
-			/* Subselect and Values RTEs never have dropped columns */
+			/* Subselect, Values, CTE RTEs never have dropped columns */
 			result = false;
 			break;
 		case RTE_JOIN:
@@ -2360,7 +2333,19 @@ get_rte_attribute_is_dropped(RangeTblEntry *rte, AttrNumber attnum)
 					 *
 					 * Same as ordinary relation RTE
 					 */
-					result = get_attisdropped(funcrelid, attnum);
+					HeapTuple	tp;
+					Form_pg_attribute att_tup;
+
+					tp = SearchSysCache(ATTNUM,
+										ObjectIdGetDatum(funcrelid),
+										Int16GetDatum(attnum),
+										0, 0);
+					if (!HeapTupleIsValid(tp))	/* shouldn't happen */
+						elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+							 attnum, funcrelid);
+					att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+					result = att_tup->attisdropped;
+					ReleaseSysCache(tp);
 				}
 				else
 				{

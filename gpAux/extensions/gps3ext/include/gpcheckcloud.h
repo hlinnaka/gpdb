@@ -7,6 +7,7 @@
 
 #include "gpcommon.h"
 #include "gpreader.h"
+#include "gpwriter.h"
 #include "s3common.h"
 #include "s3conf.h"
 #include "s3interface.h"
@@ -16,15 +17,5 @@
 #define BUF_SIZE 64 * 1024
 
 extern volatile bool QueryCancelPending;
-
-void print_template();
-
-void print_usage(FILE *stream);
-
-uint64_t print_contents(ListBucketResult *r);
-
-bool check_config(const char *url_with_options);
-
-bool s3_download(const char *url_with_options);
 
 #endif

@@ -176,7 +176,6 @@ extern void AppendOnlyStorageWrite_Init(AppendOnlyStorageWrite *storageWrite,
 							char *relationName,
 							char *title,
 							AppendOnlyStorageAttributes *storageAttributes);
-extern char *AppendOnlyStorageWrite_RelationName(AppendOnlyStorageWrite *storageWrite);
 extern void AppendOnlyStorageWrite_FinishSession(AppendOnlyStorageWrite *storageWrite);
 
 extern void AppendOnlyStorageWrite_TransactionCreateFile(AppendOnlyStorageWrite *storageWrite,
@@ -206,7 +205,6 @@ extern void AppendOnlyStorageWrite_TransactionFlushAndCloseFile(AppendOnlyStorag
 													int64 *newLogicalEof,
 												int64 *fileLen_uncompressed);
 
-extern int32 AppendOnlyStorageWrite_FixedHeaderLen(AppendOnlyStorageWrite *storageWrite);
 extern int32 AppendOnlyStorageWrite_CompleteHeaderLen(AppendOnlyStorageWrite *storageWrite,
 										 AoHeaderKind aoHeaderKind);
 extern uint8 *AppendOnlyStorageWrite_GetBuffer(AppendOnlyStorageWrite *storageWrite,

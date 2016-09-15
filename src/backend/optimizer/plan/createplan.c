@@ -41,7 +41,6 @@
 #include "utils/lsyscache.h"
 #include "utils/uri.h"
 
-#include "cdb/cdbgroup.h"       /* adapt_flow_to_targetlist() */
 #include "cdb/cdbllize.h"       /* pull_up_Flow() */
 #include "cdb/cdbpath.h"        /* cdbpath_rows() */
 #include "cdb/cdbpathtoplan.h"  /* cdbpathtoplan_create_flow() etc. */
@@ -255,8 +254,7 @@ create_subplan(PlannerInfo *root, Path *best_path)
         case T_Motion:
             plan = create_motion_plan(root, (CdbMotionPath *)best_path);
             break;
-        default:
-            Assert(false);
+		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) best_path->pathtype);
 			plan = NULL;		/* keep compiler quiet */
@@ -268,8 +266,7 @@ create_subplan(PlannerInfo *root, Path *best_path)
         plan->dispatch = DISPATCH_PARALLEL;
 
 	return plan;
-}                               /* create_subplan */
-
+}
 
 /*
  * create_scan_plan
@@ -727,6 +724,7 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path)
 	}
 
 	plan = make_append(subplans, false, tlist);
+
 	return (Plan *) plan;
 }
 

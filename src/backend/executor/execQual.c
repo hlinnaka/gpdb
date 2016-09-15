@@ -38,7 +38,6 @@
 #include "access/heapam.h"
 #include "access/nbtree.h"
 #include "access/tuptoaster.h"
-#include "catalog/catquery.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "cdb/cdbvars.h"
@@ -90,10 +89,10 @@ static Datum ExecEvalScalarVarFast(ExprState *exprstate, ExprContext *econtext,
 static Datum ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate,
 					ExprContext *econtext,
 					bool *isNull, ExprDoneCond *isDone);
-static Datum ExecEvalWholeRowSlow(WholeRowVarExprState *wrvstate,
+static Datum ExecEvalWholeRowFast(WholeRowVarExprState *wrvstate,
 					 ExprContext *econtext,
 					 bool *isNull, ExprDoneCond *isDone);
-static Datum ExecEvalWholeRowFast(WholeRowVarExprState *wrvstate,
+static Datum ExecEvalWholeRowSlow(WholeRowVarExprState *wrvstate,
 					 ExprContext *econtext,
 					 bool *isNull, ExprDoneCond *isDone);
 static Datum ExecEvalConst(ExprState *exprstate, ExprContext *econtext,
@@ -157,11 +156,11 @@ static Datum ExecEvalCoalesce(CoalesceExprState *coalesceExpr,
 static Datum ExecEvalMinMax(MinMaxExprState *minmaxExpr,
 			   ExprContext *econtext,
 			   bool *isNull, ExprDoneCond *isDone);
+static Datum ExecEvalXml(XmlExprState *xmlExpr, ExprContext *econtext,
+			bool *isNull, ExprDoneCond *isDone);
 static Datum ExecEvalNullIf(FuncExprState *nullIfExpr,
 			   ExprContext *econtext,
 			   bool *isNull, ExprDoneCond *isDone);
-static Datum ExecEvalXml(XmlExprState *xmlExpr, ExprContext *econtext,
-						 bool *isNull, ExprDoneCond *isDone);
 static Datum ExecEvalNullTest(NullTestState *nstate,
 				 ExprContext *econtext,
 				 bool *isNull, ExprDoneCond *isDone);
@@ -690,7 +689,6 @@ ExecEvalScalarVar(ExprState *exprstate, ExprContext *econtext,
 	if (isDone)
 		*isDone = ExprSingleResult;
 
-	Assert(econtext->ecxt_scantuple != NULL || econtext->ecxt_innertuple != NULL || econtext->ecxt_outertuple != NULL);
 	/*
 	 * Get the input slot and attribute number we want
 	 *
@@ -747,6 +745,7 @@ ExecEvalScalarVar(ExprState *exprstate, ExprContext *econtext,
 		if (attnum > slot_tupdesc->natts)		/* should never happen */
 			elog(ERROR, "attribute number %d exceeds number of columns %d",
 				 attnum, slot_tupdesc->natts);
+
 		attr = slot_tupdesc->attrs[attnum - 1];
 
 		/* can't check type if dropped, since atttypid is probably 0 */
@@ -1160,7 +1159,6 @@ ExecEvalParam(ExprState *exprstate, ExprContext *econtext,
 		ParamExecData *prm;
 
 		prm = &(econtext->ecxt_param_exec_vals[thisParamId]);
-
 		if (prm->execPlan != NULL)
 		{
 			/* Parameter not evaluated yet, so go do it */
@@ -2849,10 +2847,10 @@ static void FastPathScalarArrayOp(ScalarArrayOpExpr *opexpr, ScalarArrayOpExprSt
  * (for ANY and ALL respectively).	Of course we short-circuit as soon as
  * the result is known.
  */
-	static Datum
+static Datum
 ExecEvalScalarArrayOp(ScalarArrayOpExprState *sstate,
-		ExprContext *econtext,
-		bool *isNull, ExprDoneCond *isDone)
+					  ExprContext *econtext,
+					  bool *isNull, ExprDoneCond *isDone)
 {
 	ScalarArrayOpExpr *opexpr = (ScalarArrayOpExpr *) sstate->fxprstate.xprstate.expr;
 	bool		useOr = opexpr->useOr;
@@ -2881,7 +2879,7 @@ ExecEvalScalarArrayOp(ScalarArrayOpExprState *sstate,
 	if (sstate->fxprstate.func.fn_oid == InvalidOid)
 	{
 		init_fcache(opexpr->opfuncid, &sstate->fxprstate,
-			    econtext->ecxt_per_query_memory, true);
+					econtext->ecxt_per_query_memory, true);
 		Assert(!sstate->fxprstate.func.fn_retset);
 	}
 
@@ -5984,7 +5982,10 @@ ExecCleanTargetListLength(List *targetlist)
  * of *isDone = ExprMultipleResult signifies a set element, and a return
  * of *isDone = ExprEndResult signifies end of the set of tuple.
  */
-static bool
+#ifndef USE_CODEGEN
+static
+#endif
+bool
 ExecTargetList(List *targetlist,
 			   ExprContext *econtext,
 			   Datum *values,

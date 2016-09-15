@@ -173,3 +173,79 @@ drop table if exists mpp_t1;
 drop table if exists mpp_t2;
 drop table if exists mpp_t3;
 -- end_ignore
+
+--
+-- Test case for when there is case clause in join filter
+--
+
+-- start_ignore
+drop table if exists t_case_subquery1;
+-- end_ignore
+
+create table t_case_subquery1 (a int, b int, c text);
+insert into t_case_subquery1 values(1, 5, NULL), (1, 2, NULL);
+
+select t1.* from t_case_subquery1 t1 where t1.b = (
+  select max(b) from t_case_subquery1 t2 where t1.a = t2.a and t2.b < 5 and
+    case
+    when t1.c is not null and t2.c is not null
+    then t1.c = t2.c
+    end
+);
+-- start_ignore
+drop table if exists t_case_subquery1;
+-- end_ignore
+
+--
+-- Test case for if coalesce is needed for specific cases where a subquery with
+-- count aggregate has to return 0 or null. Count returns 0 on empty relations
+-- where other queries return NULL.
+--
+
+-- start_ignore
+drop table if exists t_coalesce_count_subquery;
+drop table if exists t_coalesce_count_subquery_empty;
+drop table if exists t_coalesce_count_subquery_empty2;
+CREATE TABLE t_coalesce_count_subquery(a, b) AS VALUES (1, 1);
+CREATE TABLE t_coalesce_count_subquery_empty(c int, d int);
+CREATE TABLE t_coalesce_count_subquery_empty2(e int, f int);
+-- end_ignore
+
+SELECT (SELECT count(*) FROM t_coalesce_count_subquery_empty where c = a) FROM t_coalesce_count_subquery;
+
+SELECT (SELECT COUNT(*) FROM t_coalesce_count_subquery_empty GROUP BY c LIMIT 1) FROM t_coalesce_count_subquery;
+
+SELECT (SELECT a1 FROM (SELECT count(*) FROM t_coalesce_count_subquery_empty2 group by e
+        union all
+        SELECT count(*) from t_coalesce_count_subquery_empty group by c) x(a1) LIMIT 1)
+FROM t_coalesce_count_subquery;
+
+SELECT (SELECT a1 FROM (SELECT count(*) from t_coalesce_count_subquery_empty group by c
+        union all
+        SELECT count(*) FROM t_coalesce_count_subquery_empty2 group by e) x(a1) LIMIT 1)
+FROM t_coalesce_count_subquery;
+
+-- start_ignore
+drop table if exists t_coalesce_count_subquery;
+drop table if exists t_coalesce_count_subquery_empty;
+drop table if exists t_coalesce_count_subquery_empty2;
+-- start_ignore
+drop table if exists t_outer;
+drop table if exists t_inner;
+
+create table t_outer (a oid, b tid);
+create table t_inner (c int);
+-- end_ignore
+SET enable_nestloop=off;
+SET enable_hashjoin=off;
+set enable_mergejoin = on;
+select * from t_outer where t_outer.b not in (select ctid from t_inner);
+
+RESET enable_nestloop;
+RESET enable_hashjoin;
+RESET enable_mergejoin;
+
+-- start_ignore
+drop table if exists t_outer;
+drop table if exists t_inner;
+-- end_ignore

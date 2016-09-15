@@ -95,6 +95,9 @@ s/\(cdbdisp\.c:\d+\)//
 m/\(plpython\.c:\d+\)/
 s/\(plpython\.c:\d+\)//
 
+m/\(functions\.c:\d+\)/
+s/\(functions\.c:\d+\)//
+
 #In alter_table_distribution_policy tests, some test cases emit NOTICE message
 #like the following
 #drop cascades to function pg_atsdb_211851_2_4_out.
@@ -110,4 +113,18 @@ s/overlaps existing partition "r\d+"/partition "r##########"/
 # Mask out some numbers (part of temp table schema) that vary from run to run.
 m/Table "pg_temp_\d+.temp/
 s/Table "pg_temp_\d+.temp/Table "pg_temp_#####/
+
+# Mask out Log & timestamp for orca message that has feature not supported.
+m/^LOG.*\"Feature/
+s/^LOG.*\"Feature/\"Feature/
+
+m/^DETAIL:  Internal error: No motion listener port \(seg\d.*:.*\)/
+s/^DETAIL:  Internal error: No motion listener port \(seg\d.*:.*\)//
+
+# Mask out gp_debug_linger HINT message for dispatch
+m/^HINT:  Process \d+ will wait for gp_debug_linger=\d+ seconds before termination\./
+s/^HINT:  Process \d+ will wait for gp_debug_linger=\d+ seconds before termination\.//
+
+m/^ \(seg\d .*:\d+\)/
+s/^ \(seg\d .*:\d+\)//
 -- end_matchsubs

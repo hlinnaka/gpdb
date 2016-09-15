@@ -21,7 +21,6 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
-#include "catalog/catquery.h"
 #include "catalog/pg_aggregate.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_operator.h"
@@ -105,7 +104,6 @@ static Expr *evaluate_function(Oid funcid,
 				  HeapTuple func_tuple,
 				  eval_const_expressions_context *context);
 static Expr *inline_function(Oid funcid, Oid result_type, List *args,
-				cqContext *pcqCtx,
 				HeapTuple func_tuple,
 				eval_const_expressions_context *context);
 static Node *substitute_actual_parameters(Node *expr, int nargs, List *args,
@@ -438,7 +436,6 @@ count_agg_clauses_walker(Node *node, AggClauseCounts *counts)
 		Oid			aggprelimfn;
 		int			i;
 		ListCell   *l;
-		cqContext  *pcqCtx;
 
 		Assert(aggref->agglevelsup == 0);
 		counts->numAggs++;
@@ -478,23 +475,17 @@ count_agg_clauses_walker(Node *node, AggClauseCounts *counts)
 		}
 
 		/* fetch aggregate transition datatype from pg_aggregate */
-		pcqCtx = caql_beginscan(
-				NULL,
-				cql("SELECT * FROM pg_aggregate "
-					" WHERE aggfnoid = :1 ",
-					ObjectIdGetDatum(aggref->aggfnoid)));
-
-		aggTuple = caql_getnext(pcqCtx);
-
+		aggTuple = SearchSysCache(AGGFNOID,
+								  ObjectIdGetDatum(aggref->aggfnoid),
+								  0, 0, 0);
 		if (!HeapTupleIsValid(aggTuple))
 			elog(ERROR, "cache lookup failed for aggregate %u",
 				 aggref->aggfnoid);
 		aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
 		aggtranstype = aggform->aggtranstype;
 		aggprelimfn = aggform->aggprelimfn;
-		
-		caql_endscan(pcqCtx);
-		
+		ReleaseSysCache(aggTuple);
+
 		/* CDB wants to know whether the function can do 2-stage aggregation */
 		if ( aggprelimfn == InvalidOid )
 		{
@@ -2006,15 +1997,14 @@ eval_const_expressions_mutator(Node *node,
 	if (IsA(node, FuncExpr))
 	{
 		FuncExpr   *expr = (FuncExpr *) node;
+		List	   *args;
+		Expr	   *simple;
+		FuncExpr   *newexpr;
 
 		if (!context->transform_functions_returning_composite_values && type_is_rowtype(expr->funcresulttype))
 		{
 			return copyObject(expr);
 		}
-
-		List	   *args = NIL;
-		Expr	   *simple = NULL;
-		FuncExpr   *newexpr = NULL;
 
 		/*
 		 * Reduce constants in the FuncExpr's arguments.  We know args is
@@ -3198,7 +3188,6 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 {
 	HeapTuple	func_tuple;
 	Expr	   *newexpr;
-	cqContext  *pcqCtx;
 
 	/*
 	 * We have two strategies for simplification: either execute the function
@@ -3208,14 +3197,9 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 	 * to the function's pg_proc tuple, so fetch it just once to use in both
 	 * attempts.
 	 */
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	func_tuple = caql_getnext(pcqCtx);
-
+	func_tuple = SearchSysCache(PROCOID,
+								ObjectIdGetDatum(funcid),
+								0, 0, 0);
 	if (!HeapTupleIsValid(func_tuple))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
@@ -3234,10 +3218,9 @@ simplify_function(Oid funcid, Oid result_type, int32 result_typmod,
 
 	if (!newexpr && allow_inline)
 		newexpr = inline_function(funcid, result_type, *args,
-								  pcqCtx,
 								  func_tuple, context);
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(func_tuple);
 
 	return newexpr;
 }
@@ -3254,15 +3237,15 @@ static List *
 add_function_defaults(List *args, Oid result_type, HeapTuple func_tuple)
 {
 	Form_pg_proc funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
-	Datum       proargdefaults;
-	bool        isnull;
-	char       *str;
-	List       *defaults;
-	int         ndelete;
-	int         nargs;
-	Oid         actual_arg_types[FUNC_MAX_ARGS];
-	Oid         declared_arg_types[FUNC_MAX_ARGS];
-	Oid         rettype;
+	Datum		proargdefaults;
+	bool		isnull;
+	char	   *str;
+	List	   *defaults;
+	int			ndelete;
+	int			nargs;
+	Oid			actual_arg_types[FUNC_MAX_ARGS];
+	Oid			declared_arg_types[FUNC_MAX_ARGS];
+	Oid			rettype;
 	ListCell   *lc;
 
 	/* The error cases here shouldn't happen, but check anyway */
@@ -3474,7 +3457,6 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod, List *args,
  */
 static Expr *
 inline_function(Oid funcid, Oid result_type, List *args,
-				cqContext *pcqCtx,
 				HeapTuple func_tuple,
 				eval_const_expressions_context *context)
 {
@@ -3549,9 +3531,10 @@ inline_function(Oid funcid, Oid result_type, List *args,
 	}
 
 	/* Fetch and parse the function body */
-	tmp = caql_getattr(pcqCtx,
-					   Anum_pg_proc_prosrc,
-					   &isNull);
+	tmp = SysCacheGetAttr(PROCOID,
+						  func_tuple,
+						  Anum_pg_proc_prosrc,
+						  &isNull);
 	if (isNull)
 		elog(ERROR, "null prosrc for function %u", funcid);
 	src = DatumGetCString(DirectFunctionCall1(textout, tmp));

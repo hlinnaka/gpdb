@@ -311,6 +311,14 @@ FaultInjectorIdentifierEnumToString[] = {
 		/* inject fault while allocating string buffer */
 	_("opt_relcache_translator_catalog_access"),
 		/* inject fault while translating relcache entries */
+	_("send_qe_details_init_backend"),
+		/* inject fault before sending QE details during backend initialization */
+	_("process_startup_packet"),
+		/* inject fault in ProcessStartupPacket() */
+	_("quickdie"),
+		/* inject fault in quickdie*/
+	_("after_one_slice_dispatched"),
+		/* inject fault in cdbdisp_dispatchX*/
 	_("not recognized"),
 };
 
@@ -998,6 +1006,8 @@ FaultInjector_NewHashEntry(
 			case FinishPreparedTransactionAbortPass1AbortingCreateNeeded:
 			case FinishPreparedTransactionAbortPass2AbortingCreateNeeded:
 
+			case SendQEDetailsInitBackend:
+
 				break;
 			default:
 				
@@ -1075,6 +1085,7 @@ FaultInjector_NewHashEntry(
 		/* We do not use vmem on master. Therefore, we only attempt large palloc on segments. */
 		case MultiExecHashLargeVmem:
 		case FaultInBackgroundWriterMain:
+		case SendQEDetailsInitBackend:
 			
 			if (fileRepRole != FileRepPrimaryRole)
 			{

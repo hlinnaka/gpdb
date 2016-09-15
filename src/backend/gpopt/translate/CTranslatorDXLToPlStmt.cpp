@@ -212,7 +212,7 @@ PlannedStmt *
 CTranslatorDXLToPlStmt::PplstmtFromDXL
 	(
 	const CDXLNode *pdxln,
-	const Query *pquery
+	bool canSetTag
 	)
 {
 	GPOS_ASSERT(NULL != pdxln);
@@ -249,7 +249,7 @@ CTranslatorDXLToPlStmt::PplstmtFromDXL
 
 	// store partitioned table indexes in planned stmt
 	pplstmt->queryPartOids = m_pctxdxltoplstmt->PlPartitionedTables();
-	pplstmt->canSetTag = pquery->canSetTag;
+	pplstmt->canSetTag = canSetTag;
 	pplstmt->relationOids = plOids;
 	pplstmt->numSelectorsPerScanId = m_pctxdxltoplstmt->PlNumPartitionSelectors();
 
@@ -1449,7 +1449,13 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 
 		Expr *pexprOrigIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
 		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
-		GPOS_ASSERT(IsA(pexprIndexCond, OpExpr) && "expected OpExpr in index qual");
+		GPOS_ASSERT((IsA(pexprIndexCond, OpExpr) || IsA(pexprIndexCond, ScalarArrayOpExpr))
+				&& "expected OpExpr or ScalarArrayOpExpr in index qual");
+
+		if (IsA(pexprIndexCond, ScalarArrayOpExpr) && IMDIndex::EmdindBitmap != pmdindex->Emdindt())
+		{
+			GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiDXL2PlStmtConversion, GPOS_WSZ_LIT("ScalarArrayOpExpr condition on index scan"));
+		}
 
 		// for indexonlyscan, we already have the attno referring to the index
 		if (!fIndexOnlyScan)
@@ -1460,7 +1466,16 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		}
 		
 		// find index key's attno
-		List *plistArgs = ((OpExpr *) pexprIndexCond)->args;
+		List *plistArgs = NULL;
+		if (IsA(pexprIndexCond, OpExpr))
+		{
+			plistArgs = ((OpExpr *) pexprIndexCond)->args;
+		}
+		else
+		{
+			plistArgs = ((ScalarArrayOpExpr *) pexprIndexCond)->args;
+		}
+
 		Node *pnodeFst = (Node *) lfirst(gpdb::PlcListHead(plistArgs));
 		Node *pnodeSnd = (Node *) lfirst(gpdb::PlcListTail(plistArgs));
 				
@@ -1478,10 +1493,16 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		
 		if (fRelabel)
 		{
-			List *plArgs = ((OpExpr *) pexprIndexCond)->args;
 			List *plNewArgs = ListMake2(pnodeFst, pnodeSnd);
-			gpdb::GPDBFree(plArgs);
-			((OpExpr *) pexprIndexCond)->args = plNewArgs;
+			gpdb::GPDBFree(plistArgs);
+			if (IsA(pexprIndexCond, OpExpr))
+			{
+				((OpExpr *) pexprIndexCond)->args = plNewArgs;
+			}
+			else
+			{
+				((ScalarArrayOpExpr *) pexprIndexCond)->args = plNewArgs;
+			}
 		}
 		
 		GPOS_ASSERT(IsA(pnodeFst, Var) || IsA(pnodeSnd, Var) && "expected index key in index qual");
@@ -1512,7 +1533,7 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		GPOS_ASSERT(!fRecheck);
 		
 		// create index qual
-		pdrgpindexqualinfo->Append(GPOS_NEW(m_pmp) CIndexQualInfo(iAttno, (OpExpr *)pexprIndexCond, (OpExpr *)pexprOrigIndexCond, (StrategyNumber) iSN, oidIndexSubtype));
+		pdrgpindexqualinfo->Append(GPOS_NEW(m_pmp) CIndexQualInfo(iAttno, pexprIndexCond, pexprOrigIndexCond, (StrategyNumber) iSN, oidIndexSubtype));
 	}
 
 	// the index quals much be ordered by attribute number
@@ -1522,8 +1543,8 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 	for (ULONG ul = 0; ul < ulLen; ul++)
 	{
 		CIndexQualInfo *pindexqualinfo = (*pdrgpindexqualinfo)[ul];
-		*pplIndexConditions = gpdb::PlAppendElement(*pplIndexConditions, pindexqualinfo->m_popExpr);
-		*pplIndexOrigConditions = gpdb::PlAppendElement(*pplIndexOrigConditions, pindexqualinfo->m_popOriginalExpr);
+		*pplIndexConditions = gpdb::PlAppendElement(*pplIndexConditions, pindexqualinfo->m_pexpr);
+		*pplIndexOrigConditions = gpdb::PlAppendElement(*pplIndexOrigConditions, pindexqualinfo->m_pexprOriginal);
 		*pplIndexStratgey = gpdb::PlAppendInt(*pplIndexStratgey, pindexqualinfo->m_sn);
 		*pplIndexSubtype = gpdb::PlAppendOid(*pplIndexSubtype, pindexqualinfo->m_oidIndexSubtype);
 	}

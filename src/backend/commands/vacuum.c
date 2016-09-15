@@ -36,8 +36,8 @@
 #include "access/appendonly_visimap.h"
 #include "access/aocs_compaction.h"
 #include "catalog/catalog.h"
-#include "catalog/catquery.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_appendonly_fn.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_index.h"
 #include "catalog/indexing.h"
@@ -666,13 +666,13 @@ static bool vacuum_assign_compaction_segno(
 		return false;
 	}
 
-	new_compaction_list = SetSegnoForCompaction(onerel->rd_id,
+	new_compaction_list = SetSegnoForCompaction(onerel,
 			compactedSegmentFileList, insertedSegmentFileList, &is_drop);
 	if (new_compaction_list)
 	{
 		if (!is_drop)
 		{
-			insert_segno = lappend_int(NIL, SetSegnoForCompactionInsert(onerel->rd_id,
+			insert_segno = lappend_int(NIL, SetSegnoForCompactionInsert(onerel,
 				new_compaction_list, compactedSegmentFileList, insertedSegmentFileList));
 		}
 		else
@@ -1418,20 +1418,21 @@ get_rel_oids(List *relids, const RangeVar *vacrel, const char *stmttype,
 	else
 	{
 		/* Process all plain relations listed in pg_class */
+		Relation	pgclass;
+		HeapScanDesc scan;
 		HeapTuple	tuple;
-		cqContext	cqc;
-		cqContext  *pcqCtx;
+		ScanKeyData key;
 
-		/* NOTE: force heapscan in caql */
-		pcqCtx = caql_beginscan(
-				caql_syscache(
-						caql_indexOK(cqclr(&cqc), false),
-						false),
-				cql("SELECT * FROM pg_class "
-					" WHERE relkind = :1 ",
-					CharGetDatum(RELKIND_RELATION)));
+		ScanKeyInit(&key,
+					Anum_pg_class_relkind,
+					BTEqualStrategyNumber, F_CHAREQ,
+					CharGetDatum(RELKIND_RELATION));
 
-		while (HeapTupleIsValid(tuple = caql_getnext(pcqCtx)))
+		pgclass = heap_open(RelationRelationId, AccessShareLock);
+
+		scan = heap_beginscan(pgclass, SnapshotNow, 1, &key);
+
+		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 		{
 			Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
 
@@ -1447,13 +1448,24 @@ get_rel_oids(List *relids, const RangeVar *vacrel, const char *stmttype,
 					classForm->relstorage == RELSTORAGE_VIRTUAL))
 				continue;
 
+			/* Skip persistent tables. Vacuum lazy is harmless, but also no
+			 * benefit to perform. Vacuum full could turn out dangerous as it
+			 * has potential to move tuples around causing the TIDs for tuples
+			 * to change, which violates its reference from
+			 * gp_relation_node. One scenario where this can happen is zero-page
+			 * due to failure after page extension but before page initialization.
+			 */
+			 if (GpPersistent_IsPersistentRelation(HeapTupleGetOid(tuple)))
+				 continue;
+
 			/* Make a relation list entry for this guy */
 			oldcontext = MemoryContextSwitchTo(vac_context);
 			oid_list = lappend_oid(oid_list, HeapTupleGetOid(tuple));
 			MemoryContextSwitchTo(oldcontext);
 		}
 
-		caql_endscan(pcqCtx);
+		heap_endscan(scan);
+		heap_close(pgclass, AccessShareLock);
 	}
 
 	return oid_list;
@@ -1590,8 +1602,6 @@ vac_update_relstats(Oid relid, BlockNumber num_pages, double num_tuples,
 	HeapTuple	ctup;
 	Form_pg_class pgcform;
 	bool		dirty;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 
 	Assert(relid != InvalidOid);
 
@@ -1633,16 +1643,10 @@ vac_update_relstats(Oid relid, BlockNumber num_pages, double num_tuples,
 	 */
 	rd = heap_open(RelationRelationId, RowExclusiveLock);
 
-	pcqCtx = caql_addrel(cqclr(&cqc), rd);
-
 	/* Fetch a copy of the tuple to scribble on */
-	ctup = caql_getfirst(
-			pcqCtx,
-			cql("SELECT * FROM pg_class "
-				" WHERE oid = :1 "
-				" FOR UPDATE ",
-				ObjectIdGetDatum(relid)));
-
+	ctup = SearchSysCacheCopy(RELOID,
+							  ObjectIdGetDatum(relid),
+							  0, 0, 0);
 	if (!HeapTupleIsValid(ctup))
 		elog(ERROR, "pg_class entry for relid %u vanished during vacuuming",
 			 relid);
@@ -1734,10 +1738,8 @@ vac_update_datfrozenxid(void)
 	HeapTuple	tuple;
 	Form_pg_database dbform;
 	Relation	relation;
+	SysScanDesc scan;
 	HeapTuple	classTup;
-	cqContext  *pcqCtx;
-	cqContext	cqc;
-
 	TransactionId newFrozenXid;
 	bool		dirty = false;
 
@@ -1753,11 +1755,12 @@ vac_update_datfrozenxid(void)
 	 * We must seqscan pg_class to find the minimum Xid, because there is no
 	 * index that can help us here.
 	 */
-	pcqCtx = caql_beginscan(
-			caql_indexOK(cqclr(&cqc), false),
-			cql("SELECT * FROM pg_class ", NULL));
+	relation = heap_open(RelationRelationId, AccessShareLock);
 
-	while (HeapTupleIsValid(classTup = caql_getnext(pcqCtx)))
+	scan = systable_beginscan(relation, InvalidOid, false,
+							  SnapshotNow, 0, NULL);
+
+	while ((classTup = systable_getnext(scan)) != NULL)
 	{
 		Form_pg_class classForm = (Form_pg_class) GETSTRUCT(classTup);
 
@@ -1779,6 +1782,10 @@ vac_update_datfrozenxid(void)
 				classForm->relstorage == RELSTORAGE_VIRTUAL))
 			continue;
 
+		/* exclude persistent tables, as all updates to it are frozen */
+		if (GpPersistent_IsPersistentRelation(HeapTupleGetOid(classTup)))
+			continue;
+
 		Assert(TransactionIdIsNormal(classForm->relfrozenxid));
 
 		if (TransactionIdPrecedes(classForm->relfrozenxid, newFrozenXid))
@@ -1786,27 +1793,18 @@ vac_update_datfrozenxid(void)
 	}
 
 	/* we're done with pg_class */
-	caql_endscan(pcqCtx);
+	systable_endscan(scan);
+	heap_close(relation, AccessShareLock);
 
 	Assert(TransactionIdIsNormal(newFrozenXid));
 
 	/* Now fetch the pg_database tuple we need to update. */
 	relation = heap_open(DatabaseRelationId, RowExclusiveLock);
 
-	cqContext  *dbcqCtx;
-	cqContext	dbcqc;
-
-	dbcqCtx = caql_addrel(cqclr(&dbcqc), relation);
-
 	/* Fetch a copy of the tuple to scribble on */
-
-	tuple = caql_getfirst(
-			dbcqCtx,
-			cql("SELECT * FROM pg_database "
-				" WHERE oid = :1 "
-				" FOR UPDATE ",
-				ObjectIdGetDatum(MyDatabaseId)));
-
+	tuple = SearchSysCacheCopy(DATABASEOID,
+							   ObjectIdGetDatum(MyDatabaseId),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "could not find tuple for database %u", MyDatabaseId);
 	dbform = (Form_pg_database) GETSTRUCT(tuple);
@@ -1857,9 +1855,9 @@ static void
 vac_truncate_clog(TransactionId frozenXID)
 {
 	TransactionId myXID = GetCurrentTransactionId();
+	Relation	relation;
+	HeapScanDesc scan;
 	HeapTuple	tuple;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 	NameData	oldest_datname;
 	bool		frozenAlreadyWrapped = false;
 
@@ -1878,11 +1876,11 @@ vac_truncate_clog(TransactionId frozenXID)
 	 * worst possible outcome is that pg_clog is not truncated as aggressively
 	 * as it could be.
 	 */
-	pcqCtx = caql_beginscan(
-			caql_indexOK(cqclr(&cqc), false),
-			cql("SELECT * FROM pg_database ", NULL));
+	relation = heap_open(DatabaseRelationId, AccessShareLock);
 
-	while (HeapTupleIsValid(tuple = caql_getnext(pcqCtx)))
+	scan = heap_beginscan(relation, SnapshotNow, 0, NULL);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		Form_pg_database dbform = (Form_pg_database) GETSTRUCT(tuple);
 
@@ -1904,7 +1902,9 @@ vac_truncate_clog(TransactionId frozenXID)
 		}
 	}
 
-	caql_endscan(pcqCtx);
+	heap_endscan(scan);
+
+	heap_close(relation, AccessShareLock);
 
 	/*
 	 * Do not truncate CLOG if we seem to have suffered wraparound already;
@@ -2187,7 +2187,6 @@ vacuum_appendonly_indexes(Relation aoRelation,
 	Relation   *Irel;
 	int			nindexes;
 	AppendOnlyIndexVacuumState vacuumIndexState;
-	AppendOnlyEntry *aoEntry;
 	List *extra_oids;
 	FileSegInfo **segmentFileInfo = NULL; /* Might be a casted AOCSFileSegInfo */
 	int totalSegfiles;
@@ -2207,30 +2206,24 @@ vacuum_appendonly_indexes(Relation aoRelation,
 	else
 		vac_open_indexes(aoRelation, RowExclusiveLock, &nindexes, &Irel);
 
-	aoEntry = GetAppendOnlyEntry(
-			aoRelation->rd_id,
-			SnapshotNow);
-	Assert(aoEntry);
-
 	if (RelationIsAoRows(aoRelation))
 	{
-		segmentFileInfo = GetAllFileSegInfo(aoRelation, aoEntry, SnapshotNow, &totalSegfiles);
+		segmentFileInfo = GetAllFileSegInfo(aoRelation, SnapshotNow, &totalSegfiles);
 	}
 	else
 	{
 		Assert(RelationIsAoCols(aoRelation));
-		segmentFileInfo = (FileSegInfo **)GetAllAOCSFileSegInfo(aoRelation, aoEntry, SnapshotNow, &totalSegfiles);
+		segmentFileInfo = (FileSegInfo **)GetAllAOCSFileSegInfo(aoRelation, SnapshotNow, &totalSegfiles);
 	}
 
 	AppendOnlyVisimap_Init(
 			&vacuumIndexState.visiMap,
-			aoEntry->visimaprelid,
-			aoEntry->visimapidxid,
+			aoRelation->rd_appendonly->visimaprelid,
+			aoRelation->rd_appendonly->visimapidxid,
 			AccessShareLock,
 			SnapshotNow);
 
 	AppendOnlyBlockDirectory_Init_forSearch(&vacuumIndexState.blockDirectory,
-			aoEntry,
 			SnapshotNow,
 			segmentFileInfo,
 			totalSegfiles,
@@ -2282,8 +2275,6 @@ vacuum_appendonly_indexes(Relation aoRelation,
 		}
 		pfree(segmentFileInfo);
 	}
-	pfree(aoEntry);
-	aoEntry = NULL;
 
 	vac_close_indexes(nindexes, Irel, NoLock);
 	return nindexes;
@@ -5393,7 +5384,9 @@ open_relation_and_check_permission(VacuumStmt *vacstmt,
 	 * Check that it's a plain table; we used to do this in get_rel_oids() but
 	 * seems safer to check after we've locked the relation.
 	 */
-	if (onerel->rd_rel->relkind != expected_relkind || RelationIsExternal(onerel))
+	if (onerel->rd_rel->relkind != expected_relkind ||
+		RelationIsExternal(onerel) ||
+		GpPersistent_IsPersistentRelation(RelationGetRelid(onerel)))
 	{
 		ereport(WARNING,
 				(errmsg("skipping \"%s\" --- cannot vacuum indexes, views, external tables, or special system tables",

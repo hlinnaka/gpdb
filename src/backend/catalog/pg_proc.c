@@ -17,7 +17,6 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/xact.h"
-#include "catalog/catquery.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_depend.h"
@@ -108,12 +107,11 @@ ProcedureCreate(const char *procedureName,
 	bool		replaces[Natts_pg_proc];
 	Oid			relid;
 	NameData	procname;
+	TupleDesc	tupDesc;
 	bool		is_update;
 	ObjectAddress myself,
 				referenced;
 	int			i;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 	bool		isnull;
 	Datum		ndefDatum;
 	int			ndefCount;
@@ -349,21 +347,14 @@ ProcedureCreate(const char *procedureName,
 		nulls[Anum_pg_proc_proargdefaults - 1] = true;
 
 	rel = heap_open(ProcedureRelationId, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
 
 	/* Check for pre-existing definition */
-
-	pcqCtx = caql_beginscan(
-			caql_addrel(cqclr(&cqc), rel),
-			cql("SELECT * FROM pg_proc "
-				" WHERE proname = :1 "
-				" AND proargtypes = :2 "
-				" AND pronamespace = :3 "
-				" FOR UPDATE ",
-				CStringGetDatum((char *) procedureName),
-				PointerGetDatum(parameterTypes),
-				ObjectIdGetDatum(procNamespace)));
-
-	oldtup = caql_getnext(pcqCtx);
+	oldtup = SearchSysCache(PROCNAMEARGSNSP,
+							PointerGetDatum(procedureName),
+							PointerGetDatum(parameterTypes),
+							ObjectIdGetDatum(procNamespace),
+							0);
 
 	if (HeapTupleIsValid(oldtup))
 	{
@@ -473,20 +464,32 @@ ProcedureCreate(const char *procedureName,
 		 */
 		if (OidIsValid(describeFuncOid))
 		{
+			Relation	depRel;
+			ScanKeyData key[3];
+			SysScanDesc scan;
 			HeapTuple   depTup;
-			cqContext  *pcqCtx2;
-			
 
-			/* XXX XXX: SELECT COUNT(*) ... AND classid = :3, RewriteRelationId) */
-			pcqCtx2 = caql_beginscan(
-					NULL,
-					cql("SELECT * FROM pg_depend "
-						" WHERE refclassid = :1 "
-						" AND refobjid = :2 ",
-						ObjectIdGetDatum(ProcedureRelationId),
-						ObjectIdGetDatum(oldOid)));
-			
-			while (HeapTupleIsValid(depTup = caql_getnext(pcqCtx2)))
+			depRel = heap_open(DependRelationId, AccessShareLock);
+
+			/*
+			 * This is equivalent to:
+			 *
+			 * SELECT * FROM pg_depend
+			 * WHERE refclassid = :1 AND refobjid = :2 AND classid = :3
+			 */
+			ScanKeyInit(&key[0],
+						Anum_pg_depend_refclassid,
+						BTEqualStrategyNumber, F_OIDEQ,
+						ObjectIdGetDatum(ProcedureRelationId));
+			ScanKeyInit(&key[1],
+						Anum_pg_depend_refobjid,
+						BTEqualStrategyNumber, F_OIDEQ,
+						ObjectIdGetDatum(oldOid));
+
+			scan = systable_beginscan(depRel, DependReferenceIndexId, true,
+									  SnapshotNow, 2, key);
+
+			while (HeapTupleIsValid(depTup = systable_getnext(scan)))
 			{
 				Form_pg_depend depData = (Form_pg_depend) GETSTRUCT(depTup);
 				if (depData->classid == RewriteRelationId)
@@ -496,7 +499,9 @@ ProcedureCreate(const char *procedureName,
 							 errmsg("cannot add DESCRIBE callback to function used in view(s)")));
 				}
 			}
-			caql_endscan(pcqCtx2);
+			systable_endscan(scan);
+
+			heap_close(depRel, AccessShareLock);
 		}
 
 		/* Can't change aggregate or window status, either */
@@ -535,31 +540,27 @@ ProcedureCreate(const char *procedureName,
 		replaces[Anum_pg_proc_proacl - 1] = false;
 
 		/* Okay, do it... */
-		tup = caql_modify_current(pcqCtx, values, nulls, replaces);
-		caql_update_current(pcqCtx, tup); /* implicit update of index as well*/
+		tup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+		simple_heap_update(rel, &tup->t_self, tup);
 
-		caql_endscan(pcqCtx);
+		ReleaseSysCache(oldtup);
 		is_update = true;
 	}
 	else
 	{
-		pcqCtx = caql_beginscan(
-				caql_addrel(cqclr(&cqc), rel),
-				cql("INSERT INTO pg_proc ",
-					NULL));
-
 		/* Creating a new procedure */
-		tup = caql_form_tuple(pcqCtx, values, nulls);
+		tup = heap_form_tuple(tupDesc, values, nulls);
 				
 		if (OidIsValid(funcOid))
 			HeapTupleSetOid(tup, funcOid);
 		
 		/* Insert tuple into the relation */
-		caql_insert(pcqCtx, tup);  /* implicit update of index as well */
-
-		caql_endscan(pcqCtx);
+		simple_heap_insert(rel, tup);
 		is_update = false;
 	}
+
+	/* Need to update indexes for either the insert or update case */
+	CatalogUpdateIndexes(rel, tup);
 
 	retval = HeapTupleGetOid(tup);
 
@@ -672,9 +673,11 @@ Datum
 fmgr_internal_validator(PG_FUNCTION_ARGS)
 {
 	Oid			funcoid = PG_GETARG_OID(0);
+	HeapTuple	tuple;
+	Form_pg_proc proc;
 	bool		isnull;
+	Datum		tmp;
 	char	   *prosrc;
-	int			fetchCount;
 
 	if (!CheckFunctionValidatorAccess(fcinfo->flinfo->fn_oid, funcoid))
 		PG_RETURN_VOID();
@@ -684,25 +687,25 @@ fmgr_internal_validator(PG_FUNCTION_ARGS)
 	 * name will be found later if it isn't there now.
 	 */
 
-	prosrc = caql_getcstring_plus(
-					NULL,
-					&fetchCount,
-					&isnull,
-					cql("SELECT prosrc FROM pg_proc "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(funcoid)));
-
-	if (!fetchCount)
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(funcoid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for function %u", funcoid);
+	proc = (Form_pg_proc) GETSTRUCT(tuple);
 
+	tmp = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_prosrc, &isnull);
 	if (isnull)
 		elog(ERROR, "null prosrc");
+	prosrc = DatumGetCString(DirectFunctionCall1(textout, tmp));
 
 	if (fmgr_internal_function(prosrc) == InvalidOid)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_FUNCTION),
 				 errmsg("there is no built-in function named \"%s\"",
 						prosrc)));
+
+	ReleaseSysCache(tuple);
 
 	PG_RETURN_VOID();
 }
@@ -722,11 +725,11 @@ fmgr_c_validator(PG_FUNCTION_ARGS)
 	Oid			funcoid = PG_GETARG_OID(0);
 	void	   *libraryhandle;
 	HeapTuple	tuple;
+	Form_pg_proc proc;
 	bool		isnull;
 	Datum		tmp;
 	char	   *prosrc;
 	char	   *probin;
-	cqContext  *pcqCtx;
 
 	if (!CheckFunctionValidatorAccess(fcinfo->flinfo->fn_oid, funcoid))
 		PG_RETURN_VOID();
@@ -737,31 +740,27 @@ fmgr_c_validator(PG_FUNCTION_ARGS)
 	 * and for pg_dump loading it's much better if we *do* check.
 	 */
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcoid)));
-
-	tuple = caql_getnext(pcqCtx);
-
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(funcoid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for function %u", funcoid);
+	proc = (Form_pg_proc) GETSTRUCT(tuple);
 
-	tmp = caql_getattr(pcqCtx, Anum_pg_proc_prosrc, &isnull);
+	tmp = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_prosrc, &isnull);
 	if (isnull)
-		elog(ERROR, "null prosrc for C function %u", funcoid);
+		elog(ERROR, "null prosrc");
 	prosrc = DatumGetCString(DirectFunctionCall1(textout, tmp));
 
-	tmp = caql_getattr(pcqCtx, Anum_pg_proc_probin, &isnull);
+	tmp = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_probin, &isnull);
 	if (isnull)
-		elog(ERROR, "null probin for C function %u", funcoid);
+		elog(ERROR, "null probin");
 	probin = DatumGetCString(DirectFunctionCall1(textout, tmp));
 
 	(void) load_external_function(probin, prosrc, true, &libraryhandle);
 	(void) fetch_finfo_record(libraryhandle, prosrc);
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tuple);
 
 	PG_RETURN_VOID();
 }
@@ -785,19 +784,13 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 	ErrorContextCallback sqlerrcontext;
 	bool		haspolyarg;
 	int			i;
-	cqContext  *pcqCtx;
 
 	if (!CheckFunctionValidatorAccess(fcinfo->flinfo->fn_oid, funcoid))
 		PG_RETURN_VOID();
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcoid)));
-
-	tuple = caql_getnext(pcqCtx);
-
+	tuple = SearchSysCache(PROCOID,
+						   ObjectIdGetDatum(funcoid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for function %u", funcoid);
 	proc = (Form_pg_proc) GETSTRUCT(tuple);
@@ -833,7 +826,7 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 	/* Postpone body checks if !check_function_bodies */
 	if (check_function_bodies)
 	{
-		tmp = caql_getattr(pcqCtx, Anum_pg_proc_prosrc, &isnull);
+		tmp = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_prosrc, &isnull);
 		if (isnull)
 			elog(ERROR, "null prosrc");
 
@@ -870,7 +863,7 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 		error_context_stack = sqlerrcontext.previous;
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tuple);
 
 	PG_RETURN_VOID();
 }

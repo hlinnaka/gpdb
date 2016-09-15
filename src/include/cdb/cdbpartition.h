@@ -92,9 +92,6 @@ del_part_template(Oid rootrelid, int16 parlevel, Oid parent);
 extern void
 add_part_to_catalog(Oid relid, PartitionBy *pby, bool bTemplate_Only);
 
-extern void parruleord_reset_rank(Oid partid, int2 level, Oid parent,
-					  int2 ruleord);
-
 extern AttrNumber 
 max_partition_attr(PartitionNode *pn);
 
@@ -104,11 +101,9 @@ get_partition_attrs(PartitionNode *pn);
 extern int 
 num_partition_levels(PartitionNode *pn);
 
-extern PartitionRule *ruleMakePartitionRule(HeapTuple tuple,
-					  TupleDesc tupdesc);
+extern PartitionRule *ruleMakePartitionRule(HeapTuple tuple);
 
-extern Partition *partMakePartition(HeapTuple tuple,
-				  TupleDesc tupdesc);
+extern Partition *partMakePartition(HeapTuple tuple);
 
 extern List *
 all_partition_relids(PartitionNode *pn);
@@ -205,9 +200,6 @@ extern AlterTableCmd *basic_AT_cmd(AlterTableCmd *cmd);
 extern bool can_implement_dist_on_part(Relation rel, List *dist_cnames);
 extern bool is_exchangeable(Relation rel, Relation oldrel, Relation newrel, bool fthrow);
 
-extern char *
-ChooseConstraintNameForPartitionEarly(Relation rel, ConstrType contype, Node *expr);
-
 extern void
 fixCreateStmtForPartitionedTable(CreateStmt *stmt);
 
@@ -225,7 +217,7 @@ extern void RemovePartitionEncodingByRelidAttribute(Oid relid, AttrNumber attnum
 extern Datum *get_partition_encoding_attoptions(Relation rel, Oid paroid);
 
 extern LogicalIndexes * BuildLogicalIndexInfo(Oid relid);
-extern Oid getPhysicalIndexRelid(LogicalIndexInfo *iInfo, Oid partOid);
+extern Oid getPhysicalIndexRelid(Relation partRel, LogicalIndexInfo *iInfo);
 
 extern LogicalIndexInfo *logicalIndexInfoForIndexOid(Oid rootOid, Oid indexOid);
 

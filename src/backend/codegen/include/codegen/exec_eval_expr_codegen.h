@@ -13,9 +13,10 @@
 #ifndef GPCODEGEN_EXECEVALEXPR_CODEGEN_H_  // NOLINT(build/header_guard)
 #define GPCODEGEN_EXECEVALEXPR_CODEGEN_H_
 
-#include "codegen/codegen_wrapper.h"
 #include "codegen/base_codegen.h"
+#include "codegen/codegen_wrapper.h"
 #include "codegen/expr_tree_generator.h"
+#include "codegen/slot_getattr_codegen.h"
 
 namespace gpcodegen {
 
@@ -39,13 +40,16 @@ class ExecEvalExprCodegen: public BaseCodegen<ExecEvalExprFn> {
    *        function or the corresponding regular version.
    *
    **/
-  explicit ExecEvalExprCodegen(ExecEvalExprFn regular_func_ptr,
+  explicit ExecEvalExprCodegen(CodegenManager* manager,
+                               ExecEvalExprFn regular_func_ptr,
                                ExecEvalExprFn* ptr_to_regular_func_ptr,
                                ExprState *exprstate,
                                ExprContext *econtext,
                                PlanState* plan_state);
 
   virtual ~ExecEvalExprCodegen() = default;
+
+  bool InitDependencies() override;
 
  protected:
   /**
@@ -70,8 +74,11 @@ class ExecEvalExprCodegen: public BaseCodegen<ExecEvalExprFn> {
 
  private:
   ExprState *exprstate_;
-  ExprContext *econtext_;
   PlanState* plan_state_;
+
+  ExprTreeGeneratorInfo gen_info_;
+  SlotGetAttrCodegen* slot_getattr_codegen_;
+  std::unique_ptr<ExprTreeGenerator> expr_tree_generator_;
 
   static constexpr char kExecEvalExprPrefix[] = "ExecEvalExpr";
 
@@ -87,8 +94,7 @@ class ExecEvalExprCodegen: public BaseCodegen<ExecEvalExprFn> {
    * @brief Prepare generation of dependent slot_getattr() if necessary
    * @return true on successful generation.
    **/
-  void PrepareSlotGetAttr(gpcodegen::GpCodegenUtils* codegen_utils,
-                          ExprTreeGeneratorInfo* gen_info);
+  void PrepareSlotGetAttr();
 };
 
 /** @} */

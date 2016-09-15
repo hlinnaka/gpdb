@@ -179,6 +179,7 @@ set(GPCODEGEN_SRC
     op_expr_tree_generator.cc
     pg_date_func_generator.cc
     var_expr_tree_generator.cc
+    advance_aggregates_codegen.cc
 )
 
 # Integrate with GPDB build system. 
@@ -312,6 +313,10 @@ endif()
 if(EXISTS ${TXT_OBJFILE})
     add_cmockery_gtest(codegen_framework_unittest.t 
         tests/codegen_framework_unittest.cc
+        ${MOCK_DIR}/backend/postmaster/postmaster_mock.o
+    )
+    add_cmockery_gtest(codegen_pg_func_generator_unittest.t 
+        tests/codegen_pg_func_generator_unittest.cc
         ${MOCK_DIR}/backend/postmaster/postmaster_mock.o
     )
 endif()

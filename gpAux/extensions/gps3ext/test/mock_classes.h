@@ -15,22 +15,51 @@ using std::stringstream;
 class MockS3Interface : public S3Interface {
    public:
     MOCK_METHOD5(listBucket,
-                 ListBucketResult*(const string& schema, const string& region, const string& bucket,
+                 ListBucketResult(const string& schema, const string& region, const string& bucket,
                                    const string& prefix, const S3Credential& cred));
 
     MOCK_METHOD6(fetchData,
                  uint64_t(uint64_t offset, vector<uint8_t>& data, uint64_t len, const string &sourceUrl,
                           const string &region, const S3Credential &cred));
 
+    MOCK_METHOD4(uploadData, uint64_t(vector<uint8_t>& data, const string& keyUrl,
+                                const string& region, const S3Credential& cred));
+
     MOCK_METHOD3(checkCompressionType, S3CompressionType(const string& keyUrl, const string& region,
                                            const S3Credential& cred));
-};
 
+    MOCK_METHOD3(checkKeyExistence, bool(const string& keyUrl, const string& region,
+                                   const S3Credential& cred));
+
+    MOCK_METHOD3(getUploadId, string(const string& keyUrl, const string& region, const S3Credential& cred));
+
+    MOCK_METHOD6(uploadPartOfData, string(vector<uint8_t>& data, const string& keyUrl, const string& region,
+                            const S3Credential& cred, uint64_t partNumber, const string& uploadId));
+
+    MOCK_METHOD5(completeMultiPart, bool(const string& keyUrl, const string& region, const S3Credential& cred,
+                           const string& uploadId, const vector<string>& etagArray));
+
+    MOCK_METHOD4(abortUpload, bool(const string &keyUrl, const string &region, const S3Credential &cred,
+                 const string &uploadId));
+
+};
 
 class MockS3RESTfulService : public S3RESTfulService {
    public:
+    MOCK_METHOD3(head, ResponseCode(const string &url, HTTPHeaders &headers,
+                               const map<string, string> &params));
+
     MOCK_METHOD3(get, Response(const string &url, HTTPHeaders &headers,
                                const map<string, string> &params));
+
+    MOCK_METHOD4(put, Response(const string &url, HTTPHeaders &headers,
+                               const map<string, string> &params, const vector<uint8_t> &data));
+
+    MOCK_METHOD4(post, Response(const string &url, HTTPHeaders &headers,
+                                const map<string, string> &params,const vector<uint8_t> &data));
+
+    MOCK_METHOD3(deleteRequest, Response(const string &url, HTTPHeaders &headers,
+            const map<string, string> &params));
 };
 
 class XMLGenerator {

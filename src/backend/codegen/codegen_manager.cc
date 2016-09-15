@@ -9,36 +9,24 @@
 //    Implementation of a code generator manager
 //
 //---------------------------------------------------------------------------
+#include <assert.h>
+#include <iosfwd>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "llvm/Support/raw_ostream.h"
+
+#include "codegen/codegen_interface.h"
+#include "codegen/codegen_manager.h"
+#include "codegen/codegen_wrapper.h"
+#include "codegen/utils/codegen_utils.h"
+#include "codegen/utils/gp_codegen_utils.h"
 
 extern "C" {
-#include <utils/elog.h>
+#include "postgres.h"  // NOLINT(build/include)
+#include "utils/guc.h"
 }
-
-#include <cstdint>
-#include <string>
-
-#include "codegen/utils/clang_compiler.h"
-#include "codegen/utils/utility.h"
-#include "codegen/utils/instance_method_wrappers.h"
-#include "codegen/utils/gp_codegen_utils.h"
-#include "codegen/codegen_interface.h"
-
-#include "codegen/codegen_manager.h"
-#include "llvm/ADT/APFloat.h"
-#include "llvm/ADT/APInt.h"
-#include "llvm/IR/Argument.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Constant.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/Instruction.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Value.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Support/Casting.h"
 
 using gpcodegen::CodegenManager;
 
@@ -57,6 +45,13 @@ bool CodegenManager::EnrollCodeGenerator(
 }
 
 unsigned int CodegenManager::GenerateCode() {
+  // First, allow all code generators to initialize their dependencies
+  for (size_t i = 0; i < enrolled_code_generators_.size(); ++i) {
+    // NB: This list is still volatile at this time, as more generators may be
+    // enrolled as we iterate to initialize dependencies.
+    enrolled_code_generators_[i]->InitDependencies();
+  }
+  // Then ask them to generate code
   unsigned int success_count = 0;
   for (std::unique_ptr<CodegenInterface>& generator :
       enrolled_code_generators_) {
@@ -73,10 +68,19 @@ unsigned int CodegenManager::PrepareGeneratedFunctions() {
     return success_count;
   }
 
+  STATIC_ASSERT_OPTIMIZATION_LEVEL(kNone,
+                                   CODEGEN_OPTIMIZATION_LEVEL_NONE);
+  STATIC_ASSERT_OPTIMIZATION_LEVEL(kLess,
+                                   CODEGEN_OPTIMIZATION_LEVEL_LESS);
+  STATIC_ASSERT_OPTIMIZATION_LEVEL(kDefault,
+                                   CODEGEN_OPTIMIZATION_LEVEL_DEFAULT);
+  STATIC_ASSERT_OPTIMIZATION_LEVEL(kAggressive,
+                                   CODEGEN_OPTIMIZATION_LEVEL_AGGRESSIVE);
 
   // Call GpCodegenUtils to compile entire module
   bool compilation_status = codegen_utils_->PrepareForExecution(
-      gpcodegen::GpCodegenUtils::OptimizationLevel::kDefault, true);
+      gpcodegen::GpCodegenUtils::OptimizationLevel(codegen_optimization_level),
+      true);
 
   if (!compilation_status) {
     return success_count;
@@ -109,6 +113,12 @@ const std::string& CodegenManager::GetExplainString() {
 
 void CodegenManager::AccumulateExplainString() {
   explain_string_.clear();
+  // This is called only when EXPLAIN CODEGEN. Because we don't want to compile
+  // at this time, we need to call CodegenUtils::Optimize to "optimize" LLVM IR.
+  codegen_utils_->Optimize(gpcodegen::CodegenUtils::OptimizationLevel(
+                               codegen_optimization_level),
+                           gpcodegen::CodegenUtils::SizeLevel::kNormal,
+                           false);
   llvm::raw_string_ostream out(explain_string_);
   codegen_utils_->PrintUnderlyingModules(out);
 }

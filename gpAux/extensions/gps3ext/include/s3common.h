@@ -15,6 +15,10 @@
 using std::string;
 
 struct S3Credential {
+    bool operator==(const S3Credential& other) const {
+        return this->accessID == other.accessID && this->secret == other.secret;
+    }
+
     string accessID;
     string secret;
 };
@@ -24,10 +28,8 @@ enum Method { GET, PUT, POST, DELETE, HEAD };
 void SignRequestV4(const string& method, HTTPHeaders* h, const string& orig_region,
                    const string& path, const string& query, const S3Credential& cred);
 
-char* get_opt_s3(const char* url, const char* key);
 string get_opt_s3(const string& options, const string& key);
 
-char* truncate_options(const char* url_with_options);
 string truncate_options(const string& url_with_options);
 
 #endif  // __S3_COMMON_H__
