@@ -264,7 +264,6 @@ static void aocs_initscan(AOCSScanDesc scan)
 
     open_ds_read(scan->aos_rel, scan->ds, scan->relationTupleDesc,
 				 scan->proj,
-				 scan->aos_rel->rd_appendonly->version,
 				 scan->aos_rel->rd_appendonly->checksum);
 
     pgstat_count_heap_scan(scan->aos_rel);

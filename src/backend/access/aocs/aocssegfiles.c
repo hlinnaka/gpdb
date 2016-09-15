@@ -1423,7 +1423,7 @@ gp_aocsseg_history(PG_FUNCTION_ARGS)
 	 */
 	while (true)
 	{
-		Datum		values[19];
+		Datum		values[20];
 		bool		nulls[19];
 		HeapTuple	tuple;
 		Datum		result;
