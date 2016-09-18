@@ -375,7 +375,8 @@ COptTasks::SzAllocate
 	}
 	GPOS_CATCH_EX(ex)
 	{
-		elog(ERROR, "no available memory to allocate string buffer");
+		elog(WARNING, "no available memory to allocate string buffer");
+		GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiWarningAsError);
 	}
 	GPOS_CATCH_END;
 
@@ -565,7 +566,21 @@ COptTasks::Execute
 	params.abort_requested = &abort_flag;
 
 	// execute task and send log message to server log
-	(void) gpos_exec(&params);
+	GPOS_TRY
+	{
+		(void) gpos_exec(&params);
+	}
+	GPOS_CATCH_EX(ex)
+	{
+		LogErrorAndDelete(err_buf);
+		GPOS_RETHROW(ex);
+	}
+	GPOS_CATCH_END;
+	LogErrorAndDelete(err_buf);
+}
+
+void
+COptTasks::LogErrorAndDelete(CHAR* err_buf) {
 
 	if ('\0' != err_buf[0])
 	{
@@ -670,7 +685,7 @@ COptTasks::Pplstmt
 	IMemoryPool *pmp,
 	CMDAccessor *pmda,
 	const CDXLNode *pdxln,
-	const Query *pquery
+	bool canSetTag
 	)
 {
 
@@ -696,7 +711,7 @@ COptTasks::Pplstmt
 	
 	// translate DXL -> PlannedStmt
 	CTranslatorDXLToPlStmt trdxltoplstmt(pmp, pmda, &ctxdxltoplstmt, gpdb::UlSegmentCountGP());
-	return trdxltoplstmt.PplstmtFromDXL(pdxln, pquery);
+	return trdxltoplstmt.PplstmtFromDXL(pdxln, canSetTag);
 }
 
 
@@ -1071,7 +1086,9 @@ COptTasks::PvOptimizeTask
 			// translate DXL->PlStmt only when needed
 			if (poctx->m_fGeneratePlStmt)
 			{
-				poctx->m_pplstmt = (PlannedStmt *) gpdb::PvCopyObject(Pplstmt(pmp, &mda, pdxlnPlan, ptrquerytodxl->Pquery()));
+				// always use poctx->m_pquery->canSetTag as the ptrquerytodxl->Pquery() is a mutated Query object
+				// that may not have the correct canSetTag
+				poctx->m_pplstmt = (PlannedStmt *) gpdb::PvCopyObject(Pplstmt(pmp, &mda, pdxlnPlan, poctx->m_pquery->canSetTag));
 			}
 
 			CStatisticsConfig *pstatsconf = pocconf->Pstatsconf();
@@ -1320,7 +1337,7 @@ COptTasks::PvPlstmtFromDXLTask
 
 		// translate DXL -> PlannedStmt
 		CTranslatorDXLToPlStmt trdxltoplstmt(pmp, amda.Pmda(), &ctxdxlplstmt, gpdb::UlSegmentCountGP());
-		PlannedStmt *pplstmt = trdxltoplstmt.PplstmtFromDXL(pdxlnOriginal, poctx->m_pquery);
+		PlannedStmt *pplstmt = trdxltoplstmt.PplstmtFromDXL(pdxlnOriginal, poctx->m_pquery->canSetTag);
 		if (optimizer_print_plan)
 		{
 			elog(NOTICE, "Plstmt: %s", gpdb::SzNodeToString(pplstmt));
@@ -1874,8 +1891,9 @@ COptTasks::UlCmpt
 			return rgcmpt[ul];
 		}
 	}
-	
-	elog(ERROR, "Invalid comparison type code. Valid values are Eq, NEq, LT, LEq, GT, GEq");
+
+	elog(WARNING, "Invalid comparison type code. Valid values are Eq, NEq, LT, LEq, GT, GEq");
+	GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiWarningAsError);
 	return CmptOther;
 }
 

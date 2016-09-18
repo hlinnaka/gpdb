@@ -11,67 +11,81 @@
 //---------------------------------------------------------------------------
 
 
+#include <assert.h>
+#include <stddef.h>
 #include <algorithm>
-#include <cstdint>
 #include <string>
+#include <cstdint>
 
+
+#include "codegen/base_codegen.h"
+#include "codegen/codegen_wrapper.h"
 #include "codegen/exec_variable_list_codegen.h"
 #include "codegen/slot_getattr_codegen.h"
-#include "codegen/utils/clang_compiler.h"
-#include "codegen/utils/utility.h"
 #include "codegen/utils/gp_codegen_utils.h"
-#include "codegen/base_codegen.h"
+#include "codegen/utils/utility.h"
 
-#include "llvm/ADT/APFloat.h"
-#include "llvm/ADT/APInt.h"
 #include "llvm/IR/Argument.h"
-#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/Instruction.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Value.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Support/Casting.h"
+
 
 extern "C" {
 #include "postgres.h"  // NOLINT(build/include)
-#include "utils/elog.h"
-#include "access/htup.h"
-#include "nodes/execnodes.h"
 #include "executor/tuptable.h"
+#include "nodes/execnodes.h"
+#include "utils/elog.h"
+#include "access/tupdesc.h"
+#include "nodes/pg_list.h"
 }
+
+namespace llvm {
+class BasicBlock;
+class Function;
+class Value;
+}  // namespace llvm
 
 using gpcodegen::ExecVariableListCodegen;
 using gpcodegen::SlotGetAttrCodegen;
 
 constexpr char ExecVariableListCodegen::kExecVariableListPrefix[];
 
-ExecVariableListCodegen::ExecVariableListCodegen
-(
+ExecVariableListCodegen::ExecVariableListCodegen(
+    CodegenManager* manager,
     ExecVariableListFn regular_func_ptr,
     ExecVariableListFn* ptr_to_regular_func_ptr,
     ProjectionInfo* proj_info,
-    TupleTableSlot* slot) :
-    BaseCodegen(kExecVariableListPrefix,
-        regular_func_ptr,
-        ptr_to_regular_func_ptr),
-    proj_info_(proj_info),
-    slot_(slot) {
+    TupleTableSlot* slot)
+    : BaseCodegen(manager,
+                  kExecVariableListPrefix,
+                  regular_func_ptr,
+                  ptr_to_regular_func_ptr),
+      proj_info_(proj_info),
+      slot_(slot),
+      max_attr_(0),
+      slot_getattr_codegen_(nullptr) {
 }
 
+bool ExecVariableListCodegen::InitDependencies() {
+  assert(proj_info_ != nullptr);
+
+  // Find the largest attribute index in projInfo->pi_targetlist
+  max_attr_ = *std::max_element(
+      proj_info_->pi_varNumbers,
+      proj_info_->pi_varNumbers + list_length(proj_info_->pi_targetlist));
+  slot_getattr_codegen_ = SlotGetAttrCodegen::GetCodegenInstance(
+      manager(), slot_, max_attr_);
+  return true;
+}
 
 bool ExecVariableListCodegen::GenerateExecVariableList(
     gpcodegen::GpCodegenUtils* codegen_utils) {
-  assert(NULL != codegen_utils);
-  static_assert(sizeof(Datum) == sizeof(int64),
+  assert(nullptr != codegen_utils);
+  static_assert(sizeof(Datum) == sizeof(int64_t),
       "sizeof(Datum) doesn't match sizeof(int64)");
 
-  if ( NULL == proj_info_->pi_varSlotOffsets ) {
+  if ( nullptr == proj_info_->pi_varSlotOffsets ) {
     elog(DEBUG1,
         "Cannot codegen ExecVariableList because varSlotOffsets are null");
     return false;
@@ -89,17 +103,12 @@ bool ExecVariableListCodegen::GenerateExecVariableList(
     }
   }
 
-  // Find the largest attribute index in projInfo->pi_targetlist
-  int max_attr = *std::max_element(
-      proj_info_->pi_varNumbers,
-      proj_info_->pi_varNumbers + list_length(proj_info_->pi_targetlist));
-
   // System attribute
-  if (max_attr <= 0) {
+  if (max_attr_ <= 0) {
     elog(DEBUG1, "Cannot generate code for ExecVariableList"
                  "because max_attr is negative (i.e., system attribute).");
     return false;
-  } else if (max_attr > slot_->tts_tupleDescriptor->natts) {
+  } else if (max_attr_ > slot_->tts_tupleDescriptor->natts) {
     elog(DEBUG1, "Cannot generate code for ExecVariableList"
                  "because max_attr is greater than natts.");
     return false;
@@ -126,7 +135,7 @@ bool ExecVariableListCodegen::GenerateExecVariableList(
       "fallback", exec_variable_list_func);
 
   // Generation-time constants
-  llvm::Value* llvm_max_attr = codegen_utils->GetConstant(max_attr);
+  llvm::Value* llvm_max_attr = codegen_utils->GetConstant(max_attr_);
   llvm::Value* llvm_slot = codegen_utils->GetConstant(slot_);
 
   // Function arguments to ExecVariableList
@@ -137,21 +146,18 @@ bool ExecVariableListCodegen::GenerateExecVariableList(
 
 
   // Generate slot_getattr for attributes all the way to max_attr
-  std::string slot_getattr_func_name =
-      "slot_getattr_" + std::to_string(max_attr);
-  llvm::Function* slot_getattr_func = nullptr;
-  bool ok = SlotGetAttrCodegen::GenerateSlotGetAttr(
-      codegen_utils,
-      slot_getattr_func_name,
-      slot_,
-      max_attr,
-      &slot_getattr_func);
-  if (!ok) {
+  assert(nullptr != slot_getattr_codegen_);
+  slot_getattr_codegen_->GenerateCode(codegen_utils);
+  llvm::Function* slot_getattr_func =
+      slot_getattr_codegen_->GetGeneratedFunction();
+
+  // In case the above generation failed, no point in continuing since that was
+  // the most crucial part of ExecVariableList code generation.
+  if (nullptr == slot_getattr_func) {
     elog(DEBUG1, "Cannot generate code for ExecVariableList "
                  "because slot_getattr generation failed!");
     return false;
   }
-  assert(nullptr != slot_getattr_func);
 
   // Entry block
   // -----------

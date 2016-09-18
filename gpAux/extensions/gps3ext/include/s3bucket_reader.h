@@ -13,7 +13,7 @@ using std::string;
 class S3BucketReader : public Reader {
    public:
     S3BucketReader();
-    ~S3BucketReader();
+    virtual ~S3BucketReader();
 
     void open(const ReaderParams &params);
     uint64_t read(char *buf, uint64_t count);
@@ -27,13 +27,13 @@ class S3BucketReader : public Reader {
         this->upstreamReader = reader;
     }
 
-    void validateURL();
-    void validateURL(const string &url) {
+    void parseURL();
+    void parseURL(const string &url) {
         this->url = url;
-        validateURL();
+        parseURL();
     };
 
-    ListBucketResult *getKeyList() {
+    const ListBucketResult &getKeyList() {
         return keyList;
     }
 
@@ -70,12 +70,9 @@ class S3BucketReader : public Reader {
     Reader *upstreamReader;
     bool needNewReader;
 
-    ListBucketResult *keyList;  // List of matched keys/files.
-    uint64_t keyIndex;          // BucketContent index of keylist->contents.
+    ListBucketResult keyList;  // List of matched keys/files.
+    uint64_t keyIndex;         // BucketContent index of keylist->contents.
 
-    void SetSchema();
-    void SetRegion();
-    void SetBucketAndPrefix();
     BucketContent *getNextKey();
     ReaderParams getReaderParams(BucketContent *key);
 };

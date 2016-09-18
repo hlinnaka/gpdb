@@ -13,7 +13,6 @@
  */
 #include "postgres.h"
 
-#include "catalog/catquery.h"
 #include "access/heapam.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_proc.h"
@@ -290,25 +289,18 @@ assign_func_result_transient_type(Oid funcid)
 	HeapTuple	tp;
 	Form_pg_proc procform;
 	TupleDesc	tupdesc;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
-	caql_endscan(pcqCtx);
-
+	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 	procform = (Form_pg_proc) GETSTRUCT(tp);
 
 	tupdesc = build_function_result_tupdesc_t(tp);
 	if (tupdesc == NULL)
+	{
+		ReleaseSysCache(tp);
 		return;
+	}
 
 	if (resolve_polymorphic_tupdesc(tupdesc,
 									&procform->proargtypes,
@@ -318,6 +310,7 @@ assign_func_result_transient_type(Oid funcid)
 			tupdesc->tdtypmod < 0)
 			assign_record_type_typmod(tupdesc);
 	}
+	ReleaseSysCache(tp);
 }
 
 /*
@@ -340,17 +333,11 @@ internal_get_result_type(Oid funcid,
 	Form_pg_proc procform;
 	Oid			rettype;
 	TupleDesc	tupdesc;
-	cqContext  *pcqCtx;
 
 	/* First fetch the function's pg_proc row to inspect its rettype */
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 	procform = (Form_pg_proc) GETSTRUCT(tp);
@@ -387,7 +374,7 @@ internal_get_result_type(Oid funcid,
 			result = TYPEFUNC_RECORD;
 		}
 
-		caql_endscan(pcqCtx);
+		ReleaseSysCache(tp);
 
 		return result;
 	}
@@ -439,7 +426,7 @@ internal_get_result_type(Oid funcid,
 			break;
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 
 	return result;
 }
@@ -840,17 +827,11 @@ get_func_result_name(Oid functionId)
 	int			numoutargs;
 	int			nargnames;
 	int			i;
-	cqContext  *pcqCtx;
 
 	/* First fetch the function's pg_proc row */
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(functionId)));
-
-	procTuple = caql_getnext(pcqCtx);
-
+	procTuple = SearchSysCache(PROCOID,
+							   ObjectIdGetDatum(functionId),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(procTuple))
 		elog(ERROR, "cache lookup failed for function %u", functionId);
 
@@ -861,13 +842,13 @@ get_func_result_name(Oid functionId)
 	else
 	{
 		/* Get the data out of the tuple */
-		proargmodes = caql_getattr(pcqCtx,
-								   Anum_pg_proc_proargmodes,
-								   &isnull);
+		proargmodes = SysCacheGetAttr(PROCOID, procTuple,
+									  Anum_pg_proc_proargmodes,
+									  &isnull);
 		Assert(!isnull);
-		proargnames = caql_getattr(pcqCtx,
-								   Anum_pg_proc_proargnames,
-								   &isnull);
+		proargnames = SysCacheGetAttr(PROCOID, procTuple,
+									  Anum_pg_proc_proargnames,
+									  &isnull);
 		Assert(!isnull);
 
 		/*
@@ -922,7 +903,7 @@ get_func_result_name(Oid functionId)
 		}
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(procTuple);
 
 	return result;
 }

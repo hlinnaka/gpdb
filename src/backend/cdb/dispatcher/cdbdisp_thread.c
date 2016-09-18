@@ -275,7 +275,7 @@ cdbdisp_dispatchToGang_internal(struct CdbDispatcherState *ds,
 			 */
 			pParms->waitMode = DISPATCH_WAIT_CANCEL;
 
-			for (j = 0; j < threadStartIndex + (i - 1); j++)
+			for (j = 0; j < threadStartIndex + i; j++)
 			{
 				DispatchCommandParms *pParms;
 
@@ -631,6 +631,12 @@ thread_DispatchWait(DispatchCommandParms *pParms)
 			CdbDispatchResult *dispatchResult = pParms->dispatchResultPtrArray[i];
 			SegmentDatabaseDescriptor *segdbDesc = dispatchResult->segdbDesc;
 
+			/*
+			 * Already finished with this QE?
+			 */
+			if (!dispatchResult->stillRunning)
+				continue;
+
 			if (cdbconn_isBadConnection(segdbDesc))
 			{
 				char *msg = PQerrorMessage(segdbDesc->conn);
@@ -640,12 +646,6 @@ thread_DispatchWait(DispatchCommandParms *pParms)
 				dispatchResult->stillRunning = false;
 				continue;
 			}
-
-			/*
-			 * Already finished with this QE?
-			 */
-			if (!dispatchResult->stillRunning)
-				continue;
 
 			/*
 			 * Add socket to fd_set if still connected.
@@ -767,29 +767,12 @@ static bool
 dispatchCommand(CdbDispatchResult * dispatchResult,
 				const char *query_text, int query_text_len)
 {
-	SegmentDatabaseDescriptor *segdbDesc = dispatchResult->segdbDesc;
 	TimestampTz beforeSend = 0;
 	long secs;
 	int	usecs;
 
 	if (DEBUG1 >= log_min_messages)
 		beforeSend = GetCurrentTimestamp();
-
-	if (PQisBusy(segdbDesc->conn))
-		write_log("Trying to send to busy connection %s: asyncStatus %d",
-				  segdbDesc->whoami,
-				  segdbDesc->conn->asyncStatus);
-
-	if (cdbconn_isBadConnection(segdbDesc))
-	{
-		char *msg = PQerrorMessage(segdbDesc->conn);
-
-		cdbdisp_appendMessage(dispatchResult, LOG,
-							  "Error before transmit from %s: %s",
-							  dispatchResult->segdbDesc->whoami,
-							  msg ? msg : "unknown error");
-		return false;
-	}
 
 	/*
 	 * Submit the command asynchronously.

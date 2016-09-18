@@ -16,14 +16,15 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/hash.h"
 #include "access/nbtree.h"
 #include "bootstrap/bootstrap.h"
-#include "catalog/catquery.h"
 #include "catalog/heap.h"                   /* SystemAttributeDefinition() */
 #include "catalog/pg_amop.h"
 #include "catalog/pg_amproc.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/pg_inherits.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -48,13 +49,6 @@
 #include "utils/syscache.h"
 #include "utils/fmgroids.h"
 #include "funcapi.h"
-
-static Datum
-attstatsslot_getattr(cqContext	*pcqCtx, 
-					 TupleDesc	 tupdesc,
-					 HeapTuple	 statstuple,
-					 AttrNumber	 attnum, bool *isnull);
-
 
 
 /*				---------- AMOP CACHES ----------						 */
@@ -770,23 +764,23 @@ get_opfamily_proc(Oid opfamily, Oid lefttype, Oid righttype, int16 procnum)
 char *
 get_attname(Oid relid, AttrNumber attnum)
 {
-	char	   *result = NULL;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getcstring_plus(
-					NULL,
-					&fetchCount,
-					NULL,
-					cql("SELECT attname FROM pg_attribute "
-						" WHERE attrelid = :1 "
-						" AND attnum = :2 ",
+	tp = SearchSysCache(ATTNUM,
 						ObjectIdGetDatum(relid),
-						Int16GetDatum(attnum)));
-	
-	if (!fetchCount)
-		return NULL;
+						Int16GetDatum(attnum),
+						0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+		char	   *result;
 
-	return result;
+		result = pstrdup(NameStr(att_tup->attname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return NULL;
 }
 
 /*
@@ -818,7 +812,20 @@ get_relid_attribute_name(Oid relid, AttrNumber attnum)
 AttrNumber
 get_attnum(Oid relid, const char *attname)
 {
-	return caql_getattnumber(relid, attname);
+	HeapTuple	tp;
+
+	tp = SearchSysCacheAttName(relid, attname);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+		AttrNumber	result;
+
+		result = att_tup->attnum;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return InvalidAttrNumber;
 }
 
 /*
@@ -830,24 +837,23 @@ get_attnum(Oid relid, const char *attname)
 Oid
 get_atttype(Oid relid, AttrNumber attnum)
 {
-	Oid			result;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result  = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT atttypid FROM pg_attribute "
-				" WHERE attrelid = :1 "
-				" AND attnum = :2 ",
-				ObjectIdGetDatum(relid),
-				Int16GetDatum(attnum)));
+	tp = SearchSysCache(ATTNUM,
+						ObjectIdGetDatum(relid),
+						Int16GetDatum(attnum),
+						0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+		Oid			result;
 
-	if (!fetchCount)
+		result = att_tup->atttypid;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return InvalidOid;
-
-	return result;
-
 }
 
 /*
@@ -860,28 +866,22 @@ int32
 get_atttypmod(Oid relid, AttrNumber attnum)
 {
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	int32		result = -1;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_attribute "
-				" WHERE attrelid = :1 "
-				" AND attnum = :2 ",
-				ObjectIdGetDatum(relid),
-				Int16GetDatum(attnum)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(ATTNUM,
+						ObjectIdGetDatum(relid),
+						Int16GetDatum(attnum),
+						0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
+		int32		result;
 
 		result = att_tup->atttypmod;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return -1;
 }
 
 /*
@@ -899,7 +899,6 @@ get_atttypetypmod(Oid relid, AttrNumber attnum,
 {
 	HeapTuple	tp;
 	Form_pg_attribute att_tup;
-	cqContext  *pcqCtx;
 
     /* CDB: Get type for sysattr even if relid is no good (e.g. SubqueryScan) */
     if (attnum < 0 &&
@@ -911,16 +910,10 @@ get_atttypetypmod(Oid relid, AttrNumber attnum,
         return;
     }
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_attribute "
-				" WHERE attrelid = :1 "
-				" AND attnum = :2 ",
-				ObjectIdGetDatum(relid),
-				Int16GetDatum(attnum)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(ATTNUM,
+						ObjectIdGetDatum(relid),
+						Int16GetDatum(attnum),
+						0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
 			 attnum, relid);
@@ -928,8 +921,7 @@ get_atttypetypmod(Oid relid, AttrNumber attnum,
 
 	*typid = att_tup->atttypid;
 	*typmod = att_tup->atttypmod;
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 }
 
 /*				---------- CONSTRAINT CACHE ----------					 */
@@ -998,20 +990,19 @@ get_opclass_family(Oid opclass)
 Oid
 get_opclass_input_type(Oid opclass)
 {
+	HeapTuple	tp;
+	Form_pg_opclass cla_tup;
 	Oid			result;
-	int			fetchCount;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT opcintype FROM pg_opclass "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opclass)));
-	
-	if (!fetchCount)
+	tp = SearchSysCache(CLAOID,
+						ObjectIdGetDatum(opclass),
+						0, 0, 0);
+	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for opclass %u", opclass);
+	cla_tup = (Form_pg_opclass) GETSTRUCT(tp);
 
+	result = cla_tup->opcintype;
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1026,21 +1017,22 @@ get_opclass_input_type(Oid opclass)
 RegProcedure
 get_opcode(Oid opno)
 {
-	Oid			result;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oprcode FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		RegProcedure result;
 
-	if (!fetchCount)
+		result = optup->oprcode;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return (RegProcedure) InvalidOid;
-
-	return (RegProcedure) result;
 }
 
 /*
@@ -1052,21 +1044,22 @@ get_opcode(Oid opno)
 char *
 get_opname(Oid opno)
 {
-	char	   *result = NULL;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getcstring_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oprname FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		char	   *result;
 
-	if (!fetchCount)
+		result = pstrdup(NameStr(optup->oprname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return NULL;
-
-	return result;
 }
 
 /*
@@ -1080,26 +1073,16 @@ op_input_types(Oid opno, Oid *lefttype, Oid *righttype)
 {
 	HeapTuple	tp;
 	Form_pg_operator optup;
-	cqContext  *pcqCtx;
 
-	*lefttype = InvalidOid;
-	*righttype = InvalidOid;
-
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
-
-	tp = caql_getnext(pcqCtx);
-
-	if (HeapTupleIsValid(tp))
-	{
-		optup = (Form_pg_operator) GETSTRUCT(tp);
-		*lefttype = optup->oprleft;
-		*righttype = optup->oprright;
-	}
-	caql_endscan(pcqCtx);
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (!HeapTupleIsValid(tp))	/* shouldn't happen */
+		elog(ERROR, "cache lookup failed for operator %u", opno);
+	optup = (Form_pg_operator) GETSTRUCT(tp);
+	*lefttype = optup->oprleft;
+	*righttype = optup->oprright;
+	ReleaseSysCache(tp);
 }
 
 /*
@@ -1194,21 +1177,22 @@ op_volatile(Oid opno)
 Oid
 get_commutator(Oid opno)
 {
-	Oid			result;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oprcom FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		Oid			result;
 
-	if (!fetchCount)
+		result = optup->oprcom;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return InvalidOid;
-
-	return result;
 }
 
 /*
@@ -1219,21 +1203,22 @@ get_commutator(Oid opno)
 Oid
 get_negator(Oid opno)
 {
-	Oid			result;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oprnegate FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		Oid			result;
 
-	if (!fetchCount)
+		result = optup->oprnegate;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return InvalidOid;
-
-	return result;
 }
 
 /*
@@ -1244,21 +1229,22 @@ get_negator(Oid opno)
 RegProcedure
 get_oprrest(Oid opno)
 {
-	Oid			result;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oprrest FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		RegProcedure result;
 
-	if (!fetchCount)
+		result = optup->oprrest;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return (RegProcedure) InvalidOid;
-
-	return (RegProcedure) result;
 }
 
 /*
@@ -1269,21 +1255,22 @@ get_oprrest(Oid opno)
 RegProcedure
 get_oprjoin(Oid opno)
 {
-	Oid			result;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oprjoin FROM pg_operator "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(opno)));
+	tp = SearchSysCache(OPEROID,
+						ObjectIdGetDatum(opno),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		RegProcedure result;
 
-	if (!fetchCount)
+		result = optup->oprjoin;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return (RegProcedure) InvalidOid;
-
-	return (RegProcedure) result;
 }
 
 /*				---------- TRIGGER CACHE ----------					 */
@@ -1297,19 +1284,28 @@ get_oprjoin(Oid opno)
 char *
 get_trigger_name(Oid triggerid)
 {
+	Relation	rel;
+	HeapTuple	tp;
 	char	   *result = NULL;
-	int			fetchCount;
+	ScanKeyData	scankey;
+	SysScanDesc sscan;
 
-	result = caql_getcstring_plus(
-					NULL,
-					&fetchCount,
-					NULL,
-					cql("SELECT tgname FROM pg_trigger "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(triggerid)));
+	ScanKeyInit(&scankey, ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(triggerid));
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	sscan = systable_beginscan(rel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &scankey);
 
-	if (!fetchCount)
-		return NULL;
+	tp = systable_getnext(sscan);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_trigger trigtup = (Form_pg_trigger) GETSTRUCT(tp);
+
+		result = pstrdup(NameStr(trigtup->tgname));
+	}
+	systable_endscan(sscan);
+	heap_close(rel, AccessShareLock);
 
 	return result;
 }
@@ -1321,19 +1317,24 @@ get_trigger_name(Oid triggerid)
 Oid
 get_trigger_relid(Oid triggerid)
 {
-	Oid			result;
-	int			fetchCount;
+	Relation	rel;
+	HeapTuple	tp;
+	Oid			result = InvalidOid;
+	ScanKeyData	scankey;
+	SysScanDesc sscan;
 
-	result  = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT tgrelid FROM pg_trigger "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(triggerid)));
+	ScanKeyInit(&scankey, ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(triggerid));
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	sscan = systable_beginscan(rel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &scankey);
 
-	if (!fetchCount)
-		return InvalidOid;
+	tp = systable_getnext(sscan);
+	if (HeapTupleIsValid(tp))
+		result = ((Form_pg_trigger) GETSTRUCT(tp))->tgrelid;
+	systable_endscan(sscan);
+	heap_close(rel, AccessShareLock);
 
 	return result;
 }
@@ -1345,19 +1346,25 @@ get_trigger_relid(Oid triggerid)
 Oid
 get_trigger_funcid(Oid triggerid)
 {
-	Oid			result;
-	int			fetchCount;
+	Relation	rel;
+	HeapTuple	tp;
+	Oid			result = InvalidOid;
+	ScanKeyData	scankey;
+	SysScanDesc sscan;
 
-	result  = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT tgfoid FROM pg_trigger "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(triggerid)));
+	ScanKeyInit(&scankey, ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(triggerid));
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	sscan = systable_beginscan(rel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &scankey);
 
-	if (!fetchCount)
-		return InvalidOid;
+	tp = systable_getnext(sscan);
+	if (HeapTupleIsValid(tp))
+		result = ((Form_pg_trigger) GETSTRUCT(tp))->tgfoid;
+
+	systable_endscan(sscan);
+	heap_close(rel, AccessShareLock);
 
 	return result;
 }
@@ -1369,24 +1376,28 @@ get_trigger_funcid(Oid triggerid)
 int32
 get_trigger_type(Oid triggerid)
 {
+	Relation	rel;
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
 	int32		result = -1;
+	ScanKeyData	scankey;
+	SysScanDesc sscan;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_trigger "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(triggerid)));
+	ScanKeyInit(&scankey, ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(triggerid));
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	sscan = systable_beginscan(rel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &scankey);
 
-	tp = caql_getnext(pcqCtx);
-
+	tp = systable_getnext(sscan);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for trigger %u", triggerid);
 
 	result = ((Form_pg_trigger) GETSTRUCT(tp))->tgtype;
 
-	caql_endscan(pcqCtx);
+	systable_endscan(sscan);
+	heap_close(rel, AccessShareLock);
+
 	return result;
 }
 
@@ -1397,24 +1408,28 @@ get_trigger_type(Oid triggerid)
 bool
 trigger_enabled(Oid triggerid)
 {
+	Relation	rel;
 	HeapTuple	tp;
 	bool		result;
-	cqContext  *pcqCtx;
+	ScanKeyData	scankey;
+	SysScanDesc sscan;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_trigger "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(triggerid)));
+	ScanKeyInit(&scankey, ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(triggerid));
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	sscan = systable_beginscan(rel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &scankey);
 
-	tp = caql_getnext(pcqCtx);
-
+	tp = systable_getnext(sscan);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for trigger %u", triggerid);
 
 	result = ((Form_pg_trigger) GETSTRUCT(tp))->tgenabled;
 
-	caql_endscan(pcqCtx);
+	systable_endscan(sscan);
+	heap_close(rel, AccessShareLock);
+
 	return result;
 }
 
@@ -1429,21 +1444,22 @@ trigger_enabled(Oid triggerid)
 char *
 get_func_name(Oid funcid)
 {
-	char	   *result = NULL;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getcstring_plus(
-					NULL,
-					&fetchCount,
-					NULL,
-					cql("SELECT proname FROM pg_proc "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(funcid)));
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_proc functup = (Form_pg_proc) GETSTRUCT(tp);
+		char	   *result;
 
-	if (!fetchCount)
+		result = pstrdup(NameStr(functup->proname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return NULL;
-
-	return result;
 }
 
 /*
@@ -1455,21 +1471,22 @@ get_func_name(Oid funcid)
 char *
 get_type_name(Oid oid)
 {
-       char       *result = NULL;
-        int                     fetchCount;
+	HeapTuple	tp;
 
-        result = caql_getcstring_plus(
-                                        NULL,
-                                        &fetchCount,
-                                        NULL,
-                                        cql("SELECT typname FROM pg_type "
-                                                " WHERE oid = :1 ",
-                                                ObjectIdGetDatum(oid)));
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(oid),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		char	   *result;
 
-        if (!fetchCount)
-                return NULL;
-
-        return result;
+		result = pstrdup(NameStr(typtup->typname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return NULL;
 }
 
 /*
@@ -1517,51 +1534,23 @@ get_func_rows(Oid funcid)
 /*				---------- RELATION CACHE ----------					 */
  
 /*
- * get_func_namespace
- *		Returns the pg_namespace OID associated with a given procedure.
- *
- */
-Oid
-get_func_namespace(Oid funcid)
-{
-	Oid			result;
-	int			fetchCount;
-
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT pronamespace FROM pg_proc "
-				 " WHERE oid = :1 ",
-				 ObjectIdGetDatum(funcid)));
-
-	if (!fetchCount)
-		return InvalidOid;
-
-	return result;
-}
-
-/*
  * get_func_rettype
  *		Given procedure id, return the function's result type.
  */
 Oid
 get_func_rettype(Oid funcid)
 {
+	HeapTuple	tp;
 	Oid			result;
-	int			fetchCount;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT prorettype FROM pg_proc "
-				 " WHERE oid = :1 ",
-				 ObjectIdGetDatum(funcid)));
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", funcid);
 
-	if (!fetchCount)
-		return InvalidOid;
-
+	result = ((Form_pg_proc) GETSTRUCT(tp))->prorettype;
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1572,21 +1561,16 @@ get_func_rettype(Oid funcid)
 Oid
 get_agg_transtype(Oid aggid)
 {
-        Oid                     result;
-        int                     fetchCount;
+	HeapTuple	tp;
+	Oid			result;
 
-        result = caql_getoid_plus(
-                        NULL,
-                        &fetchCount,
-                        NULL,
-                        cql("SELECT aggtranstype FROM pg_aggregate "
-                                 " WHERE aggfnoid = :1 ",
-                                 ObjectIdGetDatum(aggid)));
+	tp = SearchSysCache1(AGGFNOID, ObjectIdGetDatum(aggid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for aggregate %u", aggid);
 
-        if (!fetchCount)
-                elog(ERROR, "cache lookup failed for aggregate %u", aggid);
-
-        return result;
+	result = ((Form_pg_aggregate) GETSTRUCT(tp))->aggtranstype;
+	ReleaseSysCache(tp);
+	return result;
 }
 
 /*
@@ -1596,27 +1580,20 @@ get_agg_transtype(Oid aggid)
 bool
 is_agg_ordered(Oid aggid)
 {
-	Relation aggRelation = heap_open(AggregateRelationId, AccessShareLock);
-	cqContext	cqc;
-	HeapTuple aggTuple = caql_getfirst(
-			caql_addrel(cqclr(&cqc), aggRelation),
-			cql("SELECT * from pg_aggregate"
-				" WHERE aggfnoid = :1",
-				ObjectIdGetDatum(aggid)));
+	HeapTuple	aggTuple;
+	bool		is_ordered;
+	bool		isnull = false;
 
+	aggTuple = SearchSysCache1(AGGFNOID,
+							   ObjectIdGetDatum(aggid));
 	if (!HeapTupleIsValid(aggTuple))
-	{
 		elog(ERROR, "cache lookup failed for aggregate %u", aggid);
-	}
 
-	bool isnull = false;
-	bool is_ordered = false;
-	is_ordered = DatumGetBool(heap_getattr(aggTuple, Anum_pg_aggregate_aggordered, RelationGetDescr(aggRelation), &isnull));
-
-	heap_freetuple(aggTuple);
-	heap_close(aggRelation, AccessShareLock);
-
+	is_ordered = DatumGetBool(SysCacheGetAttr(AGGFNOID, aggTuple,
+											  Anum_pg_aggregate_aggordered, &isnull));
 	Assert(!isnull);
+
+	ReleaseSysCache(aggTuple);
 
 	return is_ordered;
 }
@@ -1625,26 +1602,21 @@ is_agg_ordered(Oid aggid)
  * has_agg_prelimfunc
  *		Given aggregate id, check if it is has a prelim function
  */
-bool has_agg_prelimfunc(Oid aggid)
+bool
+has_agg_prelimfunc(Oid aggid)
 {
-	Relation aggRelation = heap_open(AggregateRelationId, AccessShareLock);
-	cqContext	cqc;
-	HeapTuple aggTuple = caql_getfirst(
-			caql_addrel(cqclr(&cqc), aggRelation),
-			cql("SELECT * from pg_aggregate"
-				" WHERE aggfnoid = :1",
-				ObjectIdGetDatum(aggid)));
+	HeapTuple	aggTuple;
+	Form_pg_aggregate aggform;
+	bool		has_prelimfunc;
 
+	aggTuple = SearchSysCache1(AGGFNOID,
+							   ObjectIdGetDatum(aggid));
 	if (!HeapTupleIsValid(aggTuple))
-	{
 		elog(ERROR, "cache lookup failed for aggregate %u", aggid);
-	}
+	aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
+	has_prelimfunc = (aggform->aggprelimfn != InvalidOid);
 
-	Form_pg_aggregate aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
-	bool has_prelimfunc = (InvalidOid != aggform->aggprelimfn);
-	
-	heap_freetuple(aggTuple);
-	heap_close(aggRelation, AccessShareLock);
+	ReleaseSysCache(aggTuple);
 
 	return has_prelimfunc;
 }
@@ -1654,27 +1626,23 @@ bool has_agg_prelimfunc(Oid aggid)
  * agg_has_prelim_or_invprelim_func
  *		Given aggregate id, check if it is has a prelim or inverse prelim function
  */
-bool agg_has_prelim_or_invprelim_func(Oid aggid)
+bool
+agg_has_prelim_or_invprelim_func(Oid aggid)
 {
-	Relation aggRelation = heap_open(AggregateRelationId, AccessShareLock);
-	cqContext	cqc;
-	HeapTuple aggTuple = caql_getfirst(
-			caql_addrel(cqclr(&cqc), aggRelation),
-			cql("SELECT * from pg_aggregate"
-				" WHERE aggfnoid = :1",
-				ObjectIdGetDatum(aggid)));
+	HeapTuple aggTuple;
+	Form_pg_aggregate aggform;
+	bool		has_prelimfunc;
+	bool		has_invprelimfunc;
 
+	aggTuple = SearchSysCache1(AGGFNOID,
+							   ObjectIdGetDatum(aggid));
 	if (!HeapTupleIsValid(aggTuple))
-	{
 		elog(ERROR, "cache lookup failed for aggregate %u", aggid);
-	}
+	aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
+	has_prelimfunc = (aggform->aggprelimfn != InvalidOid);
+	has_invprelimfunc = (aggform->agginvprelimfn != InvalidOid);
 
-	Form_pg_aggregate aggform = (Form_pg_aggregate) GETSTRUCT(aggTuple);
-	bool has_prelimfunc = (InvalidOid != aggform->aggprelimfn);
-	bool has_invprelimfunc = (InvalidOid != aggform->agginvprelimfn);
-
-	heap_freetuple(aggTuple);
-	heap_close(aggRelation, AccessShareLock);
+	ReleaseSysCache(aggTuple);
 
 	return has_prelimfunc || has_invprelimfunc;
 }
@@ -1716,25 +1684,18 @@ get_rel_tablespace(Oid relid)
 int
 get_func_nargs(Oid funcid)
 {
-       HeapTuple       tp;
-        int                     result;
-        cqContext  *pcqCtx;
+	HeapTuple	tp;
+	int			result;
 
-        pcqCtx = caql_beginscan(
-                        NULL,
-                        cql("SELECT * FROM pg_proc "
-                                " WHERE oid = :1 ",
-                                ObjectIdGetDatum(funcid)));
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", funcid);
 
-        tp = caql_getnext(pcqCtx);
-
-        if (!HeapTupleIsValid(tp))
-                elog(ERROR, "cache lookup failed for function %u", funcid);
-
-        result = ((Form_pg_proc) GETSTRUCT(tp))->pronargs;
-
-        caql_endscan(pcqCtx);
-        return result;
+	result = ((Form_pg_proc) GETSTRUCT(tp))->pronargs;
+	ReleaseSysCache(tp);
+	return result;
 }
 
 /*
@@ -1750,16 +1711,10 @@ get_func_signature(Oid funcid, Oid **argtypes, int *nargs)
 	HeapTuple	tp;
 	Form_pg_proc procstruct;
 	Oid			result;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
@@ -1771,7 +1726,7 @@ get_func_signature(Oid funcid, Oid **argtypes, int *nargs)
 	*argtypes = (Oid *) palloc(*nargs * sizeof(Oid));
 	memcpy(*argtypes, procstruct->proargtypes.values, *nargs * sizeof(Oid));
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1803,56 +1758,49 @@ pfree_ptr_array(char **ptrarray, int nelements)
 List *
 get_func_output_arg_types(Oid funcid)
 {
-        HeapTuple       tp;
-        int             numargs;
-        Oid             *argtypes = NULL;
-        char    **argnames = NULL;
-        char    *argmodes = NULL;
-        List    *l_argtypes = NIL;
-        int             i;
-        cqContext  *pcqCtx;
+	HeapTuple	tp;
+	int			numargs;
+	Oid		   *argtypes = NULL;
+	char	  **argnames = NULL;
+	char	   *argmodes = NULL;
+	List	   *l_argtypes = NIL;
+	int			i;
 
-        pcqCtx = caql_beginscan(
-                        NULL,
-                        cql("SELECT * FROM pg_proc "
-                                " WHERE oid = :1 ",
-                                ObjectIdGetDatum(funcid)));
+	tp = SearchSysCache1(PROCOID,
+						 ObjectIdGetDatum(funcid));
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for function %u", funcid);
 
-        tp = caql_getnext(pcqCtx);
+	numargs = get_func_arg_info(tp, &argtypes, &argnames, &argmodes);
 
-        if (!HeapTupleIsValid(tp))
-                elog(ERROR, "cache lookup failed for function %u", funcid);
+	if (NULL == argmodes)
+	{
+		pfree_ptr_array(argnames, numargs);
+		if (NULL != argtypes)
+		{
+			pfree(argtypes);
+		}
+		ReleaseSysCache(tp);
+		return NULL;
+	}
 
-        numargs = get_func_arg_info(tp, &argtypes, &argnames, &argmodes);
+	for (i = 0; i < numargs; i++)
+	{
+		Oid			argtype = argtypes[i];
+		char		argmode = argmodes[i];
 
-        if (NULL == argmodes)
-        {
-                pfree_ptr_array(argnames, numargs);
-                if (NULL != argtypes)
-                {
-                        pfree(argtypes);
-                }
-                caql_endscan(pcqCtx);
-                return NULL;
-        }
+		if (PROARGMODE_INOUT == argmode || PROARGMODE_OUT == argmode || PROARGMODE_TABLE == argmode)
+		{
+			l_argtypes = lappend_oid(l_argtypes, argtype);
+		}
+	}
 
-        for (i = 0; i < numargs; i++)
-        {
-                Oid argtype = argtypes[i];
-                char argmode = argmodes[i];
+	pfree_ptr_array(argnames, numargs);
+	pfree(argtypes);
+	pfree(argmodes);
 
-                if (PROARGMODE_INOUT == argmode || PROARGMODE_OUT == argmode || PROARGMODE_TABLE == argmode)
-                {
-                        l_argtypes = lappend_oid(l_argtypes, argtype);
-                }
-        }
-
-        pfree_ptr_array(argnames, numargs);
-        pfree(argtypes);
-        pfree(argmodes);
-
-        caql_endscan(pcqCtx);
-        return l_argtypes;
+	ReleaseSysCache(tp);
+	return l_argtypes;
 }
 
 /*
@@ -1862,14 +1810,11 @@ get_func_output_arg_types(Oid funcid)
 List *
 get_func_arg_types(Oid funcid)
 {
-	cqContext *pcqCtx = caql_beginscan(
-							NULL,
-							cql("SELECT * FROM pg_proc "
-								" WHERE oid = :1 ",
-								ObjectIdGetDatum(funcid)));
+	HeapTuple	tp;
 
-	HeapTuple tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
@@ -1880,7 +1825,7 @@ get_func_arg_types(Oid funcid)
 		result = lappend_oid(result, args.values[i]);
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1893,22 +1838,15 @@ get_func_retset(Oid funcid)
 {
 	HeapTuple	tp;
 	bool		result;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
 	result = ((Form_pg_proc) GETSTRUCT(tp))->proretset;
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1921,22 +1859,15 @@ func_strict(Oid funcid)
 {
 	HeapTuple	tp;
 	bool		result;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
 	result = ((Form_pg_proc) GETSTRUCT(tp))->proisstrict;
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1949,22 +1880,15 @@ func_volatile(Oid funcid)
 {
 	HeapTuple	tp;
 	char		result;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
 	result = ((Form_pg_proc) GETSTRUCT(tp))->provolatile;
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 	return result;
 }
 
@@ -1977,23 +1901,17 @@ func_data_access(Oid funcid)
 {
 	HeapTuple	tp;
 	char		result;
-	cqContext  *pcqCtx;
 	bool		isnull;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(funcid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(PROCOID,
+						ObjectIdGetDatum(funcid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 
 	result = DatumGetChar(
-			caql_getattr(pcqCtx, Anum_pg_proc_prodataaccess, &isnull));
-	caql_endscan(pcqCtx);
+		SysCacheGetAttr(PROCOID, tp, Anum_pg_proc_prodataaccess, &isnull));
+	ReleaseSysCache(tp);
 
 	Assert(!isnull);
 	return result;
@@ -2010,23 +1928,10 @@ func_data_access(Oid funcid)
 Oid
 get_relname_relid(const char *relname, Oid relnamespace)
 {
-	Oid			result;
-	int			fetchCount;
-
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT oid FROM pg_class "
-				" WHERE relname = :1 "
-				" AND relnamespace = :2 ",
-				CStringGetDatum((char *) relname),
-				ObjectIdGetDatum(relnamespace)));
-
-	if (!fetchCount)
-		return InvalidOid;
-
-	return result;
+	return GetSysCacheOid(RELNAMENSP,
+						  PointerGetDatum(relname),
+						  ObjectIdGetDatum(relnamespace),
+						  0, 0);
 }
 
 #ifdef NOT_USED
@@ -2039,26 +1944,21 @@ int
 get_relnatts(Oid relid)
 {
 	HeapTuple	tp;
-	int			result = InvalidAttrNumber;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(RELOID,
+						ObjectIdGetDatum(relid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+		int			result;
 
 		result = reltup->relnatts;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return InvalidAttrNumber;
 }
 #endif
 
@@ -2074,21 +1974,22 @@ get_relnatts(Oid relid)
 char *
 get_rel_name(Oid relid)
 {
-	char	   *result = NULL;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getcstring_plus(
-					NULL,
-					&fetchCount,
-					NULL,
-					cql("SELECT relname FROM pg_class "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(relid)));
+	tp = SearchSysCache(RELOID,
+						ObjectIdGetDatum(relid),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+		char	   *result;
 
-	if (!fetchCount)
+		result = pstrdup(NameStr(reltup->relname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return NULL;
-
-	return result;
 }
 
 
@@ -2149,21 +2050,22 @@ get_rel_name_partition(Oid relid)
 Oid
 get_rel_namespace(Oid relid)
 {
-	Oid			result = InvalidOid;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT relnamespace FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relid)));
+	tp = SearchSysCache(RELOID,
+						ObjectIdGetDatum(relid),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+		Oid			result;
 
-	if (!fetchCount)
+		result = reltup->relnamespace;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return InvalidOid;
-
-	return result;
 }
 
 /*
@@ -2177,21 +2079,22 @@ get_rel_namespace(Oid relid)
 Oid
 get_rel_type_id(Oid relid)
 {
-	Oid			result = InvalidOid;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT reltype FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relid)));
+	tp = SearchSysCache(RELOID,
+						ObjectIdGetDatum(relid),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+		Oid			result;
 
-	if (!fetchCount)
+		result = reltup->reltype;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return InvalidOid;
-
-	return result;
 }
 
 /*
@@ -2203,57 +2106,21 @@ char
 get_rel_relkind(Oid relid)
 {
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	char		result = '\0';
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(RELOID,
+						ObjectIdGetDatum(relid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+		char		result;
 
 		result = reltup->relkind;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
-}
-
-/*
- * get_rel_reltuples
- *
- *		Returns the estimated number of tuples of a given relation.
- */
-float4
-get_rel_reltuples(Oid relid)
-{
-	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	float4 result = 0;
-
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relid)));
-
-	tp = caql_getnext(pcqCtx);
-
-	if (HeapTupleIsValid(tp))
-	{
-		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
-
-		result = reltup->reltuples;
-	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return '\0';
 }
 
 /*
@@ -2265,26 +2132,21 @@ char
 get_rel_relstorage(Oid relid)
 {
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	char		result = '\0';
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(RELOID,
+						ObjectIdGetDatum(relid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+		char		result;
 
 		result = reltup->relstorage;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return '\0';
 }
 
 /*				---------- TYPE CACHE ----------						 */
@@ -2299,26 +2161,21 @@ bool
 get_typisdefined(Oid typid)
 {
 	HeapTuple	tp;
-	bool		result = false;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		bool		result;
 
 		result = typtup->typisdefined;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return false;
 }
 
 /*
@@ -2330,26 +2187,21 @@ int16
 get_typlen(Oid typid)
 {
 	HeapTuple	tp;
-	int16		result = 0;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		int16		result;
 
 		result = typtup->typlen;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return 0;
 }
 
 /*
@@ -2362,26 +2214,21 @@ bool
 get_typbyval(Oid typid)
 {
 	HeapTuple	tp;
-	bool		result = false;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		bool		result;
 
 		result = typtup->typbyval;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return false;
 }
 
 /*
@@ -2399,23 +2246,16 @@ get_typlenbyval(Oid typid, int16 *typlen, bool *typbyval)
 {
 	HeapTuple	tp;
 	Form_pg_type typtup;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for type %u", typid);
 	typtup = (Form_pg_type) GETSTRUCT(tp);
 	*typlen = typtup->typlen;
 	*typbyval = typtup->typbyval;
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 }
 
 /*
@@ -2429,24 +2269,17 @@ get_typlenbyvalalign(Oid typid, int16 *typlen, bool *typbyval,
 {
 	HeapTuple	tp;
 	Form_pg_type typtup;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (!HeapTupleIsValid(tp))
 		elog(ERROR, "cache lookup failed for type %u", typid);
 	typtup = (Form_pg_type) GETSTRUCT(tp);
 	*typlen = typtup->typlen;
 	*typbyval = typtup->typbyval;
 	*typalign = typtup->typalign;
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tp);
 }
 
 /*
@@ -2499,7 +2332,6 @@ get_type_io_data(Oid typid,
 {
 	HeapTuple	typeTuple;
 	Form_pg_type typeStruct;
-	cqContext  *pcqCtx;
 
 	/*
 	 * In bootstrap mode, pass it off to bootstrap.c.  This hack allows us to
@@ -2533,14 +2365,9 @@ get_type_io_data(Oid typid,
 		return;
 	}
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	typeTuple = caql_getnext(pcqCtx);
-
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(typid),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", typid);
 	typeStruct = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -2565,8 +2392,7 @@ get_type_io_data(Oid typid,
 			*func = typeStruct->typsend;
 			break;
 	}
-
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(typeTuple);
 }
 
 #ifdef NOT_USED
@@ -2574,26 +2400,21 @@ char
 get_typalign(Oid typid)
 {
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	char		result = 'i';
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		char		result;
 
 		result = typtup->typalign;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return 'i';
 }
 #endif
 
@@ -2601,26 +2422,21 @@ char
 get_typstorage(Oid typid)
 {
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	char		result = 'p';
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		char		result;
 
 		result = typtup->typstorage;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return 'p';
 }
 
 /*
@@ -2641,16 +2457,10 @@ get_typdefault(Oid typid)
 	Datum		datum;
 	bool		isNull;
 	Node	   *expr;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	typeTuple = caql_getnext(pcqCtx);
-
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(typid),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", typid);
 	type = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -2658,11 +2468,12 @@ get_typdefault(Oid typid)
 	/*
 	 * typdefault and typdefaultbin are potentially null, so don't try to
 	 * access 'em as struct fields. Must do it the hard way with
-	 * caql_getattr.
+	 * SysCacheGetAttr.
 	 */
-	datum = caql_getattr(pcqCtx,
-						 Anum_pg_type_typdefaultbin,
-						 &isNull);
+	datum = SysCacheGetAttr(TYPEOID,
+							typeTuple,
+							Anum_pg_type_typdefaultbin,
+							&isNull);
 
 	if (!isNull)
 	{
@@ -2672,9 +2483,10 @@ get_typdefault(Oid typid)
 	else
 	{
 		/* Perhaps we have a plain literal default */
-		datum = caql_getattr(pcqCtx,
-							 Anum_pg_type_typdefault,
-							 &isNull);
+		datum = SysCacheGetAttr(TYPEOID,
+								typeTuple,
+								Anum_pg_type_typdefault,
+								&isNull);
 
 		if (!isNull)
 		{
@@ -2701,7 +2513,7 @@ get_typdefault(Oid typid)
 		}
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(typeTuple);
 
 	return expr;
 }
@@ -2825,26 +2637,21 @@ char
 get_typtype(Oid typid)
 {
 	HeapTuple	tp;
-	cqContext  *pcqCtx;
-	char		result = '\0';
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		char		result;
 
 		result = typtup->typtype;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return '\0';
 }
 
 /*
@@ -2908,27 +2715,24 @@ Oid
 get_element_type(Oid typid)
 {
 	HeapTuple	tp;
-	Oid			result = InvalidOid;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(typid)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(TYPEOID,
+						ObjectIdGetDatum(typid),
+						0, 0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		Oid			result;
 
 		if (typtup->typlen == -1)
 			result = typtup->typelem;
+		else
+			result = InvalidOid;
+		ReleaseSysCache(tp);
+		return result;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	else
+		return InvalidOid;
 }
 
 /*
@@ -2973,21 +2777,10 @@ get_base_element_type(Oid typid)
 	{
 		HeapTuple	tup;
 		Form_pg_type typTup;
-		cqContext  *pcqCtx;
-		
-		pcqCtx = caql_beginscan(
-				NULL,
-				cql("SELECT * FROM pg_type "
-					" WHERE oid = :1 ",
-					ObjectIdGetDatum(typid)));
 
-		tup = caql_getnext(pcqCtx);
-
+		tup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
 		if (!HeapTupleIsValid(tup))
-		{
-			caql_endscan(pcqCtx);
 			break;
-		}
 
 		typTup = (Form_pg_type) GETSTRUCT(tup);
 		if (typTup->typtype != TYPTYPE_DOMAIN)
@@ -3001,12 +2794,12 @@ get_base_element_type(Oid typid)
 			else
 				result = InvalidOid;
 
-			caql_endscan(pcqCtx);
+			ReleaseSysCache(tup);
 			return result;
 		}
 
 		typid = typTup->typbasetype;
-		caql_endscan(pcqCtx);
+		ReleaseSysCache(tup);
 	}
 
 	/* Like get_element_type, silently return InvalidOid for bogus input */
@@ -3023,16 +2816,10 @@ getTypeInputInfo(Oid type, Oid *typInput, Oid *typIOParam)
 {
 	HeapTuple	typeTuple;
 	Form_pg_type pt;
-	cqContext  *pcqCtx;
 		
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(type)));
-
-	typeTuple = caql_getnext(pcqCtx);
-
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(type),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", type);
 	pt = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -3051,7 +2838,7 @@ getTypeInputInfo(Oid type, Oid *typInput, Oid *typIOParam)
 	*typInput = pt->typinput;
 	*typIOParam = getTypeIOParam(typeTuple);
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(typeTuple);
 }
 
 /*
@@ -3064,16 +2851,10 @@ getTypeOutputInfo(Oid type, Oid *typOutput, bool *typIsVarlena)
 {
 	HeapTuple	typeTuple;
 	Form_pg_type pt;
-	cqContext  *pcqCtx;
 		
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(type)));
-
-	typeTuple = caql_getnext(pcqCtx);
-
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(type),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", type);
 	pt = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -3092,7 +2873,7 @@ getTypeOutputInfo(Oid type, Oid *typOutput, bool *typIsVarlena)
 	*typOutput = pt->typoutput;
 	*typIsVarlena = (!pt->typbyval) && (pt->typlen == -1);
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(typeTuple);
 }
 
 /*
@@ -3105,16 +2886,10 @@ getTypeBinaryInputInfo(Oid type, Oid *typReceive, Oid *typIOParam)
 {
 	HeapTuple	typeTuple;
 	Form_pg_type pt;
-	cqContext  *pcqCtx;
-		
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(type)));
 
-	typeTuple = caql_getnext(pcqCtx);
-
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(type),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", type);
 	pt = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -3133,7 +2908,7 @@ getTypeBinaryInputInfo(Oid type, Oid *typReceive, Oid *typIOParam)
 	*typReceive = pt->typreceive;
 	*typIOParam = getTypeIOParam(typeTuple);
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(typeTuple);
 }
 
 /*
@@ -3146,16 +2921,10 @@ getTypeBinaryOutputInfo(Oid type, Oid *typSend, bool *typIsVarlena)
 {
 	HeapTuple	typeTuple;
 	Form_pg_type pt;
-	cqContext  *pcqCtx;
-		
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_type "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(type)));
 
-	typeTuple = caql_getnext(pcqCtx);
-
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(type),
+							   0, 0, 0);
 	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", type);
 	pt = (Form_pg_type) GETSTRUCT(typeTuple);
@@ -3174,7 +2943,7 @@ getTypeBinaryOutputInfo(Oid type, Oid *typSend, bool *typIsVarlena)
 	*typSend = pt->typsend;
 	*typIsVarlena = (!pt->typbyval) && (pt->typlen == -1);
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(typeTuple);
 }
 
 /*
@@ -3244,58 +3013,20 @@ int32
 get_attavgwidth(Oid relid, AttrNumber attnum)
 {
 	HeapTuple	tp;
-	int32		result = 0;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_statistic "
-				" WHERE starelid = :1 "
-				" AND staattnum = :2 ",
-				ObjectIdGetDatum(relid),
-				Int16GetDatum(attnum)));
-
-	tp = caql_getnext(pcqCtx);
-
+	tp = SearchSysCache(STATRELATT,
+						ObjectIdGetDatum(relid),
+						Int16GetDatum(attnum),
+						0, 0);
 	if (HeapTupleIsValid(tp))
 	{
 		int32		stawidth = ((Form_pg_statistic) GETSTRUCT(tp))->stawidth;
 
+		ReleaseSysCache(tp);
 		if (stawidth > 0)
-			result = stawidth;
+			return stawidth;
 	}
-
-	caql_endscan(pcqCtx);
-	return result;
-}
-
-/*
- * get_attdistinct
- *
- *	  Given the table and attribute number of a column, get the number of
- *	  distinct values in the column.  Return zero if no data available.
- */
-float4
-get_attdistinct(Oid relid, AttrNumber attnum)
-{
-	cqContext *pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_statistic "
-				" WHERE starelid = :1 "
-				" AND staattnum = :2 ",
-				ObjectIdGetDatum(relid),
-				Int16GetDatum(attnum)));
-
-	HeapTuple tp = caql_getnext(pcqCtx);
-
-	float4 result = 0;
-	if (HeapTupleIsValid(tp))
-	{
-		result = ((Form_pg_statistic) GETSTRUCT(tp))->stadistinct;
-	}
-
-	caql_endscan(pcqCtx);
-	return result;
+	return 0;
 }
 
 /*
@@ -3326,52 +3057,8 @@ get_attdistinct(Oid relid, AttrNumber attnum)
  * But the caller must have the correct (or at least binary-compatible)
  * type ID to pass to free_attstatsslot later.
  */
-extern bool get_attstatsslot_desc(TupleDesc tupdesc, HeapTuple statstuple,
-				 Oid atttype, int32 atttypmod,
-				 int reqkind, Oid reqop,
-				 Datum **values, int *nvalues,
-				 float4 **numbers, int *nnumbers);
-
-bool 
-get_attstatsslot(HeapTuple statstuple,
-		 Oid atttype, int32 atttypmod,
-				 int reqkind, Oid reqop,
-				 Datum **values, int *nvalues,
-				 float4 **numbers, int *nnumbers)
-{
-	return get_attstatsslot_desc(NULL, statstuple,
-			atttype, atttypmod, reqkind, reqop,
-			values, nvalues, numbers, nnumbers
-			);
-}
-
-/* get an attribute any way you can! */
-static Datum
-attstatsslot_getattr(cqContext	*pcqCtx, 
-					 TupleDesc	 tupdesc,
-					 HeapTuple	 statstuple,
-					 AttrNumber	 attnum, bool *isnull)
-{
-	Datum		val;
-
-	if (pcqCtx)
-		val = caql_getattr(pcqCtx, attnum, isnull);
-	else
-	{
-		if(tupdesc)
-			val = heap_getattr(statstuple, attnum,
-							   tupdesc, isnull);
-		else
-			val = SysCacheGetAttr(STATRELATT, statstuple,
-								  attnum,
-								  isnull);
-	}
-		
-	return val;
-}
-
 bool
-get_attstatsslot_desc(TupleDesc tupdesc, HeapTuple statstuple,
+get_attstatsslot(HeapTuple statstuple,
 				 Oid atttype, int32 atttypmod,
 				 int reqkind, Oid reqop,
 				 Datum **values, int *nvalues,
@@ -3402,12 +3089,9 @@ get_attstatsslot_desc(TupleDesc tupdesc, HeapTuple statstuple,
 		*values = NULL;
 		*nvalues = 0;
 
-		val = attstatsslot_getattr(NULL, 
-								   tupdesc, 
-								   statstuple, 
-								   Anum_pg_statistic_stavalues1 + i, 
-								   &isnull);
-
+		val = SysCacheGetAttr(STATRELATT, statstuple,
+							  Anum_pg_statistic_stavalues1 + i,
+							  &isnull);
 		if (isnull)
 			elog(ERROR, "stavalues is null");
 		statarray = DatumGetArrayTypeP(val);
@@ -3457,6 +3141,7 @@ get_attstatsslot_desc(TupleDesc tupdesc, HeapTuple statstuple,
 
 			ReleaseSysCache(typeTuple);
 		}
+
 		/*
 		 * Free statarray if it's a detoasted copy.
 		 */
@@ -3469,12 +3154,9 @@ get_attstatsslot_desc(TupleDesc tupdesc, HeapTuple statstuple,
 		*numbers = NULL;
 		*nnumbers = 0;
 
-		val = attstatsslot_getattr(NULL, 
-								   tupdesc, 
-								   statstuple, 
-								   Anum_pg_statistic_stanumbers1 + i, 
-								   &isnull);
-
+		val = SysCacheGetAttr(STATRELATT, statstuple,
+							  Anum_pg_statistic_stanumbers1 + i,
+							  &isnull);
 		if (isnull)
 			elog(ERROR, "stanumbers is null");
 		statarray = DatumGetArrayTypeP(val);
@@ -3544,14 +3226,9 @@ free_attstatsslot(Oid atttype,
 HeapTuple
 get_att_stats(Oid relid, AttrNumber attrnum)
 {
-		return (
-			caql_getfirst(
-					NULL,
-					cql("SELECT * FROM pg_statistic "
-						" WHERE starelid = :1 "
-						" AND staattnum = :2 ",
-						ObjectIdGetDatum(relid),
-						Int16GetDatum(attrnum))));
+	return SearchSysCacheCopy2(STATRELATT,
+							   ObjectIdGetDatum(relid),
+							   Int16GetDatum(attrnum));
 }
 
 /*				---------- PG_NAMESPACE CACHE ----------				 */
@@ -3565,21 +3242,22 @@ get_att_stats(Oid relid, AttrNumber attrnum)
 char *
 get_namespace_name(Oid nspid)
 {
-	char	   *result = NULL;
-	int			fetchCount;
+	HeapTuple	tp;
 
-	result = caql_getcstring_plus(
-					NULL,
-					&fetchCount,
-					NULL,
-					cql("SELECT nspname FROM pg_namespace "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(nspid)));
+	tp = SearchSysCache(NAMESPACEOID,
+						ObjectIdGetDatum(nspid),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_namespace nsptup = (Form_pg_namespace) GETSTRUCT(tp);
+		char	   *result;
 
-	if (!fetchCount)
+		result = pstrdup(NameStr(nsptup->nspname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
 		return NULL;
-
-	return result;
 }
 
 /*				---------- PG_AUTHID CACHE ----------					 */
@@ -3592,21 +3270,9 @@ get_namespace_name(Oid nspid)
 Oid
 get_roleid(const char *rolname)
 {
-	Oid			result;
-	int			fetchCount;
-
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT * FROM pg_authid "
-				" WHERE rolname = :1 ",
-				CStringGetDatum((char *) rolname)));
-
-	if (!fetchCount)
-		return InvalidOid;
-
-	return result;
+	return GetSysCacheOid(AUTHNAME,
+						  PointerGetDatum(rolname),
+						  0, 0, 0);
 }
 
 /*
@@ -3787,20 +3453,19 @@ aggregate_exists(Oid oid)
 Oid
 get_aggregate(const char *aggname, Oid oidType)
 {
-	HeapTuple htup = NULL;
-	
-	// lookup pg_proc for functions with the given name and arg type
-	cqContext *pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_proc "
-				" WHERE proname = :1",
-				CStringGetDatum((char *) aggname)));
+	CatCList   *catlist;
+	int			i;
+	Oid			oidResult;
 
-	Oid oidResult = InvalidOid;
-	while (HeapTupleIsValid(htup = caql_getnext(pcqCtx)))
+	// lookup pg_proc for functions with the given name and arg type
+	catlist = SearchSysCacheList1(PROCNAMEARGSNSP,
+								  CStringGetDatum((char *) aggname));
+
+	oidResult = InvalidOid;
+	for (i = 0; i < catlist->n_members; i++)
 	{
+		HeapTuple htup = &catlist->members[i]->tuple;
 		Oid oidProc = HeapTupleGetOid(htup);
-		
 		Form_pg_proc proctuple = (Form_pg_proc) GETSTRUCT(htup);
 
 		// skip functions with the wrong number of type of arguments
@@ -3809,18 +3474,14 @@ get_aggregate(const char *aggname, Oid oidType)
 			continue;
 		}
 
-		if (caql_getcount(
-					NULL,
-					cql("SELECT COUNT(*) FROM pg_aggregate "
-						" WHERE aggfnoid = :1 ",
-						ObjectIdGetDatum(oidProc))) > 0)
+		if (SearchSysCacheExists(AGGFNOID, ObjectIdGetDatum(oidProc), 0, 0, 0))
 		{
 			oidResult = oidProc;
 			break;
 		}
 	}
-	
-	caql_endscan(pcqCtx);
+
+	ReleaseSysCacheList(catlist);
 
 	return oidResult;
 }
@@ -3832,11 +3493,26 @@ get_aggregate(const char *aggname, Oid oidType)
 bool
 trigger_exists(Oid oid)
 {
-	return (caql_getcount(
-					NULL,
-					cql("SELECT COUNT(*) FROM pg_trigger "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(oid))) > 0);
+	ScanKeyData	scankey;
+	Relation	rel;
+	SysScanDesc sscan;
+	bool		result;
+
+	ScanKeyInit(&scankey, ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(oid));
+
+	rel = heap_open(TriggerRelationId, AccessShareLock);
+	sscan = systable_beginscan(rel, TriggerOidIndexId, true,
+							   SnapshotNow, 1, &scankey);
+
+	result = (systable_getnext(sscan) != NULL);
+
+	systable_endscan(sscan);
+
+	heap_close(rel, AccessShareLock);
+
+	return result;
 }
 
 /*
@@ -3911,11 +3587,7 @@ get_relation_keys(Oid relid)
 bool
 check_constraint_exists(Oid oidCheckconstraint)
 {
-	return (caql_getcount(
-					NULL,
-					cql("SELECT COUNT(*) FROM pg_constraint "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(oidCheckconstraint))) > 0);
+	return SearchSysCacheExists1(CONSTROID, ObjectIdGetDatum(oidCheckconstraint));
 }
 
 /*
@@ -3925,23 +3597,22 @@ check_constraint_exists(Oid oidCheckconstraint)
 Oid
 get_check_constraint_relid(Oid oidCheckconstraint)
 {
-	Oid	result = InvalidOid;
-	int	iFetchCount = 0;
+	HeapTuple	tp;
 
-	result  = caql_getoid_plus(
-			NULL,
-			&iFetchCount,
-			NULL,
-			cql("SELECT conrelid FROM pg_constraint "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(oidCheckconstraint)));
-
-	if (0 == iFetchCount)
+	tp = SearchSysCache(CONSTROID,
+						ObjectIdGetDatum(oidCheckconstraint),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
 	{
-		return InvalidOid;
-	}
+		Form_pg_constraint contup = (Form_pg_constraint) GETSTRUCT(tp);
+		Oid			result;
 
-	return result;
+		result = contup->conrelid;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return InvalidOid;
 }
 
 /*
@@ -3951,18 +3622,27 @@ get_check_constraint_relid(Oid oidCheckconstraint)
 List *
 get_check_constraint_oids(Oid oidRel)
 {
-	List *plConstraints = NIL;
-	HeapTuple htup = NULL;
-	cqContext *pcqCtx = NULL;
+	List	   *plConstraints = NIL;
+	HeapTuple	htup;
+	Relation	conrel;
+	ScanKeyData scankey;
+	SysScanDesc sscan;
 
-	// lookup constraints for relation from the catalog table
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_constraint "
-				" WHERE conrelid = :1 ",
-				ObjectIdGetDatum(oidRel)));
+	/*
+	 * lookup constraints for relation from the catalog table
+	 *
+	 * SELECT * FROM pg_constraint WHERE conrelid = :1
+	 */
+	conrel = heap_open(ConstraintRelationId, AccessShareLock);
 
-	while (HeapTupleIsValid(htup = caql_getnext(pcqCtx)))
+	ScanKeyInit(&scankey,
+				Anum_pg_constraint_conrelid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(oidRel));
+	sscan = systable_beginscan(conrel, ConstraintRelidIndexId, true,
+							   SnapshotNow, 1, &scankey);
+
+	while (HeapTupleIsValid(htup = systable_getnext(sscan)))
 	{
 		Form_pg_constraint contuple = (Form_pg_constraint) GETSTRUCT(htup);
 
@@ -3975,7 +3655,8 @@ get_check_constraint_oids(Oid oidRel)
 		plConstraints = lappend_oid(plConstraints, HeapTupleGetOid(htup));
 	}
 
-	caql_endscan(pcqCtx);
+	systable_endscan(sscan);
+	heap_close(conrel, AccessShareLock);
 
 	return plConstraints;
 }
@@ -3989,25 +3670,7 @@ get_check_constraint_oids(Oid oidRel)
 char *
 get_check_constraint_name(Oid oidCheckconstraint)
 {
-	char *szResult = NULL;
-	int iFetchCount = 0;
-	szResult = caql_getcstring_plus
-				(
-				NULL,
-				&iFetchCount,
-				NULL,
-				cql("SELECT conname FROM pg_constraint "
-					" WHERE oid = :1 ",
-					ObjectIdGetDatum(oidCheckconstraint)
-					)
-				);
-
-	if (0 == iFetchCount)
-	{
-		return NULL;
-	}
-
-	return szResult;
+	return get_constraint_name(oidCheckconstraint);
 }
 
 /*
@@ -4020,25 +3683,25 @@ get_check_constraint_name(Oid oidCheckconstraint)
 Node *
 get_check_constraint_expr_tree(Oid oidCheckconstraint)
 {
-	char *szResult = NULL;
-	int iFetchCount = 0;
-	szResult = caql_getcstring_plus
-				(
-				NULL,
-				&iFetchCount,
-				NULL,
-				cql("SELECT conbin FROM pg_constraint "
-					" WHERE oid = :1 ",
-					ObjectIdGetDatum(oidCheckconstraint)
-					)
-				);
+	HeapTuple	tp;
+	Node	   *result = NULL;
 
-	if (0 == iFetchCount)
+	tp = SearchSysCache(CONSTROID,
+						ObjectIdGetDatum(oidCheckconstraint),
+						0, 0, 0);
+	if (HeapTupleIsValid(tp))
 	{
-		return NULL;
-	}
+		Datum		conbin;
+		bool		isnull;
 
-	return stringToNode(szResult);
+		conbin = SysCacheGetAttr(CONSTROID, tp,
+								 Anum_pg_constraint_conbin, &isnull);
+		if (!isnull)
+			result = stringToNode(TextDatumGetCString(conbin));
+
+		ReleaseSysCache(tp);
+	}
+	return result;
 }
 
 /*
@@ -4123,10 +3786,12 @@ get_comparison_type(Oid oidOp, Oid oidLeft, Oid oidRight)
 Oid
 get_comparison_operator(Oid oidLeft, Oid oidRight, CmpType cmpt)
 {
-	int			opstrat;
-	cqContext  *pcqCtx;
+	int16		opstrat;
 	HeapTuple	ht;
 	Oid			result = InvalidOid;
+	Relation	pg_amop;
+	ScanKeyData scankey[4];
+	SysScanDesc sscan;
 
 	switch(cmpt)
 	{
@@ -4149,18 +3814,35 @@ get_comparison_operator(Oid oidLeft, Oid oidRight, CmpType cmpt)
 			return InvalidOid;
 	}
 
+	pg_amop = heap_open(AccessMethodOperatorRelationId, AccessShareLock);
+
+	/*
+	 * SELECT * FROM pg_amop
+	 * WHERE amoplefttype = :1 and amoprighttype = :2 and amopmethod = :3 and amopstrategy = :4
+	 */
+	ScanKeyInit(&scankey[0],
+				Anum_pg_amop_amoplefttype,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(oidLeft));
+	ScanKeyInit(&scankey[1],
+				Anum_pg_amop_amoprighttype,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(oidRight));
+	ScanKeyInit(&scankey[2],
+				Anum_pg_amop_amopmethod,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(BTREE_AM_OID));
+	ScanKeyInit(&scankey[3],
+				Anum_pg_amop_amopstrategy,
+				BTEqualStrategyNumber, F_INT2EQ,
+				Int16GetDatum(opstrat));
+
 	/* XXX: There is no index for this, so this is slow! */
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_amop "
-				" WHERE amoplefttype = :1 and amoprighttype = :2 and amopmethod = :3 and amopstrategy = :4 ",
-				ObjectIdGetDatum(oidLeft),
-				ObjectIdGetDatum(oidRight),
-				ObjectIdGetDatum(BTREE_AM_OID),
-				Int32GetDatum(opstrat)));
+	sscan = systable_beginscan(pg_amop, InvalidOid, false,
+							   SnapshotNow, 4, scankey);
 
 	/* XXX: There can be multiple results. Arbitrarily use the first one */
-	while (HeapTupleIsValid(ht = caql_getnext(pcqCtx)))
+	while (HeapTupleIsValid(ht = systable_getnext(sscan)))
 	{
 		Form_pg_amop amoptup = (Form_pg_amop) GETSTRUCT(ht);
 
@@ -4168,7 +3850,8 @@ get_comparison_operator(Oid oidLeft, Oid oidRight, CmpType cmpt)
 		break;
 	}
 
-	caql_endscan(pcqCtx);
+	systable_endscan(sscan);
+	heap_close(pg_amop, AccessShareLock);
 
 	return result;
 }
@@ -4190,22 +3873,15 @@ has_subclass_fast(Oid relationId)
 {
 	HeapTuple	tuple;
 	bool		result;
-	cqContext  *pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_class "
-				" WHERE oid = :1 ",
-				ObjectIdGetDatum(relationId)));
-	
-	tuple = caql_getnext(pcqCtx);
-
+	tuple = SearchSysCache1(RELOID,
+							ObjectIdGetDatum(relationId));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation %u", relationId);
 
 	result = ((Form_pg_class) GETSTRUCT(tuple))->relhassubclass;
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(tuple);
 	return result;
 }
 
@@ -4220,16 +3896,33 @@ has_subclass_fast(Oid relationId)
 bool
 has_subclass(Oid relationId)
 {
+	ScanKeyData	scankey;
+	Relation	rel;
+	SysScanDesc sscan;
+	bool		result;
+
 	if (!has_subclass_fast(relationId))
 	{
 		return false;
 	}
-	
-	return (0 < caql_getcount(
-					NULL,
-					cql("SELECT COUNT(*) FROM pg_inherits "
-						" WHERE inhparent = :1 ",
-						ObjectIdGetDatum(relationId))));
+
+	rel = heap_open(InheritsRelationId, AccessShareLock);
+
+	ScanKeyInit(&scankey, Anum_pg_inherits_inhparent,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relationId));
+
+	/* no index on inhparent */
+	sscan = systable_beginscan(rel, InvalidOid, false,
+							   SnapshotNow, 1, &scankey);
+
+	result = (systable_getnext(sscan) != NULL);
+
+	systable_endscan(sscan);
+
+	heap_close(rel, AccessShareLock);
+
+	return result;
 }
 
 /*
@@ -4241,24 +3934,25 @@ has_subclass(Oid relationId)
 List *
 get_operator_opfamilies(Oid opno)
 {
-	HeapTuple	htup;
 	List	   *opfam_oids;
-	cqContext  *pcqCtx;
-
-	pcqCtx = caql_beginscan(NULL,
-							cql("SELECT * FROM pg_amop "
-								" WHERE amopopr = :1 ",
-								ObjectIdGetDatum(opno)));
+	CatCList   *catlist;
+	int			i;
 
 	opfam_oids = NIL;
-	while (HeapTupleIsValid(htup = caql_getnext(pcqCtx)))
-	{		
+
+	/* SELECT * FROM pg_amop WHERE amopopr = :1 */
+	catlist = SearchSysCacheList(AMOPOPID, 1,
+								 ObjectIdGetDatum(opno),
+								 0, 0, 0);
+	for (i = 0; i < catlist->n_members; i++)
+	{
+		HeapTuple	htup = &catlist->members[i]->tuple;
 		Form_pg_amop amop_tuple = (Form_pg_amop) GETSTRUCT(htup);
 
 		opfam_oids = lappend_oid(opfam_oids, amop_tuple->amopfamily);
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCacheList(catlist);
 
 	return opfam_oids;
 } 
@@ -4270,7 +3964,6 @@ get_operator_opfamilies(Oid opno)
 List *
 get_index_opfamilies(Oid oidIndex)
 {
-	cqContext  *pcqCtx;
 	HeapTuple	htup;
 	List	   *opfam_oids;
     bool		isnull = false;
@@ -4278,23 +3971,19 @@ get_index_opfamilies(Oid oidIndex)
 	Datum		indclassDatum;
 	oidvector  *indclass;
 
-	pcqCtx = caql_beginscan(
-							NULL,
-							cql("SELECT * FROM pg_index "
-								" WHERE indexrelid = :1 ",
-								ObjectIdGetDatum(oidIndex)));
-	htup = caql_getnext(pcqCtx);
+	htup = SearchSysCache1(INDEXRELID,
+						   ObjectIdGetDatum(oidIndex));
 	if (!HeapTupleIsValid(htup))
 		elog(ERROR, "Index %u not found", oidIndex);
 
     /*
-     * use caql_getattr() to retrieve number of index attributes, and the oid
+     * use SysCacheGetAttr() to retrieve number of index attributes, and the oid
 	 * vector of indclass
      */
-    indnatts = DatumGetInt16(caql_getattr(pcqCtx, Anum_pg_index_indnatts, &isnull));
+    indnatts = DatumGetInt16(SysCacheGetAttr(INDEXRELID, htup, Anum_pg_index_indnatts, &isnull));
 	Assert(!isnull);
 
-    indclassDatum = caql_getattr(pcqCtx, Anum_pg_index_indclass, &isnull);
+    indclassDatum = SysCacheGetAttr(INDEXRELID, htup, Anum_pg_index_indclass, &isnull);
     if (isnull)
 		return NIL;
     indclass = (oidvector *) DatumGetPointer(indclassDatum);
@@ -4308,7 +3997,7 @@ get_index_opfamilies(Oid oidIndex)
 		opfam_oids = lappend_oid(opfam_oids, opfam);
 	}
 
-	caql_endscan(pcqCtx);
+	ReleaseSysCache(htup);
 	return opfam_oids;
 }
 

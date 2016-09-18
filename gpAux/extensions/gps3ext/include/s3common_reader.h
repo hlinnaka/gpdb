@@ -6,7 +6,7 @@
 
 class S3CommonReader : public Reader {
    public:
-    S3CommonReader() {
+    S3CommonReader() : upstreamReader(NULL), s3service(NULL) {
     }
 
     virtual ~S3CommonReader() {
@@ -14,14 +14,14 @@ class S3CommonReader : public Reader {
 
     virtual void open(const ReaderParams& params);
 
-    // read() attempts to read up to count bytes into the buffer starting at
-    // buffer.
+    // read() attempts to read up to count bytes into the buffer.
     // Return 0 if EOF. Throw exception if encounters errors.
     virtual uint64_t read(char* buf, uint64_t count);
 
     // This should be reentrant, has no side effects when called multiple times.
     virtual void close();
 
+    // Used by Mock, DO NOT call it in other places.
     void setS3service(S3Interface* s3service) {
         this->s3service = s3service;
     }

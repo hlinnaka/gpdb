@@ -15,7 +15,6 @@
  */
 #include "postgres.h"
 
-#include "catalog/catquery.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "lib/stringinfo.h"
@@ -421,7 +420,7 @@ TypeNameListToString(List *typenames)
 }
 
 /* return a Type structure, given a type id */
-/* NB: caller must ReleaseType the type tuple when done with it */
+/* NB: caller must ReleaseSysCache the type tuple when done with it */
 Type
 typeidType(Oid id)
 {
@@ -506,20 +505,19 @@ stringTypeDatum(Type tp, char *string, int32 atttypmod)
 Oid
 typeidTypeRelid(Oid type_id)
 {
+	HeapTuple	typeTuple;
+	Form_pg_type type;
 	Oid			result;
-	int			fetchCount = 0;
 
-	result = caql_getoid_plus(
-					NULL,
-					&fetchCount,
-					NULL,
-					cql("SELECT typrelid FROM pg_type "
-						" WHERE oid = :1 ",
-						ObjectIdGetDatum(type_id)));
-
-	if (0 == fetchCount)
+	typeTuple = SearchSysCache(TYPEOID,
+							   ObjectIdGetDatum(type_id),
+							   0, 0, 0);
+	if (!HeapTupleIsValid(typeTuple))
 		elog(ERROR, "cache lookup failed for type %u", type_id);
 
+	type = (Form_pg_type) GETSTRUCT(typeTuple);
+	result = type->typrelid;
+	ReleaseSysCache(typeTuple);
 	return result;
 }
 

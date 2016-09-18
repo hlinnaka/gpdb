@@ -15,7 +15,6 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
-#include "catalog/catquery.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
@@ -42,27 +41,31 @@ Oid binary_upgrade_next_pg_type_oid = InvalidOid;
 void
 add_type_encoding(Oid typid, Datum typoptions)
 {
+	Relation	pg_type_encoding_desc;
+	TupleDesc	tupDesc;
 	Datum		 values[Natts_pg_type_encoding];
 	bool		 nulls[Natts_pg_type_encoding];
 	HeapTuple	 tuple;
-	cqContext	*pcqCtx;
 
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("INSERT INTO pg_type_encoding ",
-				NULL));
+	/*
+	 * open pg_type
+	 */
+	pg_type_encoding_desc = heap_open(TypeEncodingRelationId, RowExclusiveLock);
+	tupDesc = pg_type_encoding_desc->rd_att;
 
 	MemSet(nulls, false, sizeof(nulls));
 	
 	values[Anum_pg_type_encoding_typid - 1] = ObjectIdGetDatum(typid);
 	values[Anum_pg_type_encoding_typoptions - 1] = typoptions;
 
-	tuple = caql_form_tuple(pcqCtx, values, nulls);
+	tuple = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert tuple into the relation */
-	caql_insert(pcqCtx, tuple); /* implicit update of index as well */
+	simple_heap_insert(pg_type_encoding_desc, tuple);
 
-	caql_endscan(pcqCtx);
+	CatalogUpdateIndexes(pg_type_encoding_desc, tuple);
+
+	heap_close(pg_type_encoding_desc, RowExclusiveLock);
 }
 
 /* ----------------------------------------------------------------
@@ -82,23 +85,22 @@ Oid
 TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 			  Oid shelloid)
 {
+	Relation	pg_type_desc;
+	TupleDesc	tupDesc;
 	int			i;
 	HeapTuple	tup;
 	Datum		values[Natts_pg_type];
 	bool		nulls[Natts_pg_type];
 	Oid			typoid;
 	NameData	name;
-	cqContext  *pcqCtx;
 
 	Assert(PointerIsValid(typeName));
 
 	/*
 	 * open pg_type
 	 */
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("INSERT INTO pg_type ",
-				NULL));
+	pg_type_desc = heap_open(TypeRelationId, RowExclusiveLock);
+	tupDesc = pg_type_desc->rd_att;
 
 	/*
 	 * initialize our *nulls and *values arrays
@@ -149,7 +151,7 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	/*
 	 * create a new type tuple
 	 */
-	tup = caql_form_tuple(pcqCtx, values, nulls);
+	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
 	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
@@ -166,7 +168,9 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	/*
 	 * insert the tuple in the relation and get the tuple's oid.
 	 */
-	typoid = caql_insert(pcqCtx, tup); /* implicit update of index as well */
+	typoid = simple_heap_insert(pg_type_desc, tup);
+
+	CatalogUpdateIndexes(pg_type_desc, tup);
 
 	/*
 	 * Create dependencies.  We can/must skip this in bootstrap mode.
@@ -194,7 +198,7 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	 * clean up and return the type-oid
 	 */
 	heap_freetuple(tup);
-	caql_endscan(pcqCtx);
+	heap_close(pg_type_desc, RowExclusiveLock);
 
 	return typoid;
 }

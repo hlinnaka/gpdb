@@ -4,23 +4,22 @@
 #include <zlib.h>
 #include "reader.h"
 
-// 256K by default
-extern uint64_t S3_ZIP_CHUNKSIZE;
+// 2MB by default
+extern uint64_t S3_ZIP_DECOMPRESS_CHUNKSIZE;
 
 class DecompressReader : public Reader {
    public:
     DecompressReader();
     virtual ~DecompressReader();
 
-    void open(const ReaderParams &params);
+    virtual void open(const ReaderParams &params);
 
-    // read() attempts to read up to count bytes into the buffer starting at
-    // buffer.
+    // read() attempts to read up to count bytes into the buffer.
     // Return 0 if EOF. Throw exception if encounters errors.
-    uint64_t read(char *buf, uint64_t count);
+    virtual uint64_t read(char *buf, uint64_t count);
 
     // This should be reentrant, has no side effects when called multiple times.
-    void close();
+    virtual void close();
 
     void setReader(Reader *reader);
 
@@ -30,7 +29,7 @@ class DecompressReader : public Reader {
     void decompress();
 
     uint64_t getDecompressedBytesNum() {
-        return S3_ZIP_CHUNKSIZE - this->zstream.avail_out;
+        return S3_ZIP_DECOMPRESS_CHUNKSIZE - this->zstream.avail_out;
     }
 
     Reader *reader;

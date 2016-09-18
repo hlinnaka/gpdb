@@ -1,3 +1,9 @@
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <sstream>
+#include <string>
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -6,11 +12,6 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
-#include <cstdarg>
-#include <cstdio>
-#include <cstring>
-#include <sstream>
-#include <string>
 
 #include "gpcommon.h"
 #include "s3conf.h"
@@ -43,6 +44,7 @@ string s3ext_token;
 
 bool s3ext_encryption = true;
 bool s3ext_debug_curl = false;
+bool s3ext_autocompress = true;
 
 int32_t s3ext_segid = -1;
 int32_t s3ext_segnum = -1;
@@ -50,7 +52,7 @@ int32_t s3ext_segnum = -1;
 int32_t s3ext_logsock_udp = -1;
 struct sockaddr_in s3ext_logserveraddr;
 
-// not thread safe!!
+// not thread safe
 bool InitConfig(const string& conf_path, const string section = "default") {
     if (conf_path == "") {
 #ifndef S3_STANDALONE
@@ -117,9 +119,11 @@ bool InitConfig(const string& conf_path, const string section = "default") {
         S3INFO("The given chunksize is too large, use max value 128MB");
         s3ext_chunksize = 128 * 1024 * 1024;
     }
-    if (s3ext_chunksize < 2 * 1024 * 1024) {
-        S3INFO("The given chunksize is too small, use min value 2MB");
-        s3ext_chunksize = 2 * 1024 * 1024;
+    if (s3ext_chunksize < 8 * 1024 * 1024) {
+        // multipart uploading requires the chunksize larger than 5MB(only the last part to upload
+        // could be smaller than 5MB)
+        S3INFO("The given chunksize is too small, use min value 8MB");
+        s3ext_chunksize = 8 * 1024 * 1024;
     }
 
     ret = s3cfg->Scan(section.c_str(), "low_speed_limit", "%d", &s3ext_low_speed_limit);
@@ -136,6 +140,9 @@ bool InitConfig(const string& conf_path, const string section = "default") {
 
     content = s3cfg->Get(section.c_str(), "encryption", "true");
     s3ext_encryption = to_bool(content);
+
+    content = s3cfg->Get(section.c_str(), "autocompress", "true");
+    s3ext_autocompress = to_bool(content);
 
 #ifdef S3_STANDALONE
     s3ext_segid = 0;

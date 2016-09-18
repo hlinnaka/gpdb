@@ -10,20 +10,37 @@
 //
 //---------------------------------------------------------------------------
 
+#include <assert.h>
+#include <cstdint>
+#include <memory>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include "codegen/expr_tree_generator.h"
 #include "codegen/op_expr_tree_generator.h"
+#include "codegen/pg_func_generator.h"
+#include "codegen/pg_func_generator_interface.h"
+#include "codegen/utils/gp_codegen_utils.h"
+#include "codegen/pg_arith_func_generator.h"
+#include "codegen/pg_date_func_generator.h"
 
-#include "include/codegen/pg_arith_func_generator.h"
-#include "include/codegen/pg_date_func_generator.h"
-
-#include "llvm/IR/Value.h"
+#include "llvm/IR/IRBuilder.h"
 
 extern "C" {
-#include "c.h"  // NOLINT(build/include)
 #include "postgres.h"  // NOLINT(build/include)
-#include "utils/elog.h"
+#include "c.h"  // NOLINT(build/include)
 #include "nodes/execnodes.h"
+#include "utils/elog.h"
+#include "nodes/nodes.h"
+#include "nodes/pg_list.h"
+#include "nodes/primnodes.h"
 }
+
+namespace llvm {
+class Value;
+}  // namespace llvm
 
 using gpcodegen::OpExprTreeGenerator;
 using gpcodegen::ExprTreeGenerator;
@@ -33,6 +50,7 @@ using gpcodegen::PGFuncGenerator;
 using gpcodegen::CodeGenFuncMap;
 using llvm::IRBuilder;
 
+
 CodeGenFuncMap
 OpExprTreeGenerator::supported_function_;
 
@@ -40,54 +58,78 @@ void OpExprTreeGenerator::InitializeSupportedFunction() {
   if (!supported_function_.empty()) { return; }
 
   supported_function_[141] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<int32_t, int32_t>(
+      new PGGenericFuncGenerator<int32_t, int32_t, int32_t>(
           141,
           "int4mul",
           &PGArithFuncGenerator<int32_t, int32_t, int32_t>::MulWithOverflow));
 
   supported_function_[149] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGIRBuilderFuncGenerator<decltype(&IRBuilder<>::CreateICmpSLE),
-      int32_t, int32_t>(149, "int4le", &IRBuilder<>::CreateICmpSLE));
+      new PGIRBuilderFuncGenerator<bool, int32_t, int32_t>(
+          149,
+          "int4le",
+          &IRBuilder<>::CreateICmpSLE));
 
   supported_function_[177] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<int32_t, int32_t>(
+      new PGGenericFuncGenerator<int32_t, int32_t, int32_t>(
           177,
           "int4pl",
           &PGArithFuncGenerator<int32_t, int32_t, int32_t>::AddWithOverflow));
 
+  supported_function_[1841] = std::unique_ptr<PGFuncGeneratorInterface>(
+      new PGGenericFuncGenerator<int64_t, int64_t, int32_t>(
+          1841,
+          "int4_sum",
+          &PGArithFuncGenerator<int64_t, int64_t, int32_t>::AddWithOverflow));
+
   supported_function_[181] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<int32_t, int32_t>(
+      new PGGenericFuncGenerator<int32_t, int32_t, int32_t>(
           181,
           "int4mi",
           &PGArithFuncGenerator<int32_t, int32_t, int32_t>::SubWithOverflow));
 
+  supported_function_[463] = std::unique_ptr<PGFuncGeneratorInterface>(
+      new PGGenericFuncGenerator<int64_t, int64_t, int64_t>(
+          463,
+          "int8pl",
+          &PGArithFuncGenerator<int64_t, int64_t, int64_t>::AddWithOverflow));
+
   supported_function_[216] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<float8, float8>(
+      new PGGenericFuncGenerator<float8, float8, float8>(
           216,
           "float8mul",
           &PGArithFuncGenerator<float8, float8, float8>::MulWithOverflow));
 
   supported_function_[218] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<float8, float8>(
+      new PGGenericFuncGenerator<float8, float8, float8>(
           218,
           "float8pl",
           &PGArithFuncGenerator<float8, float8, float8>::AddWithOverflow));
 
   supported_function_[219] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<float8, float8>(
+      new PGGenericFuncGenerator<float8, float8, float8>(
           219,
           "float8mi",
           &PGArithFuncGenerator<float8, float8, float8>::SubWithOverflow));
 
   supported_function_[1088] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGIRBuilderFuncGenerator<decltype(&IRBuilder<>::CreateICmpSLE),
-      int32_t, int32_t>(1088, "date_le", &IRBuilder<>::CreateICmpSLE));
+      new PGIRBuilderFuncGenerator<bool, int32_t, int32_t>(
+          1088, "date_le", &IRBuilder<>::CreateICmpSLE));
 
   supported_function_[2339] = std::unique_ptr<PGFuncGeneratorInterface>(
-      new PGGenericFuncGenerator<int32_t, int64_t>(
+      new PGGenericFuncGenerator<bool, int32_t, int64_t>(
           2339,
           "date_le_timestamp",
           &PGDateFuncGenerator::DateLETimestamp));
+}
+
+PGFuncGeneratorInterface* OpExprTreeGenerator::GetPGFuncGenerator(
+      unsigned int oid) {
+  InitializeSupportedFunction();
+  auto itr = supported_function_.find(oid);
+  if (itr == supported_function_.end()) {
+    return nullptr;
+  }
+  return itr->second.get();
 }
 
 OpExprTreeGenerator::OpExprTreeGenerator(
@@ -109,9 +151,8 @@ bool OpExprTreeGenerator::VerifyAndCreateExprTree(
 
   OpExpr* op_expr = reinterpret_cast<OpExpr*>(expr_state->expr);
   expr_tree->reset(nullptr);
-  CodeGenFuncMap::iterator itr =  supported_function_.find(op_expr->opfuncid);
-  if (itr == supported_function_.end()) {
-    // Operators are stored in pg_proc table. See postgres.bki for more details.
+  PGFuncGeneratorInterface* pg_func_gen = GetPGFuncGenerator(op_expr->opfuncid);
+  if (nullptr == pg_func_gen) {
     elog(DEBUG1, "Unsupported operator %d.", op_expr->opfuncid);
     return false;
   }
@@ -120,7 +161,7 @@ bool OpExprTreeGenerator::VerifyAndCreateExprTree(
   assert(nullptr != arguments);
   // In ExecEvalFuncArgs
   assert(list_length(arguments) ==
-        static_cast<int>(itr->second->GetTotalArgCount()));
+        static_cast<int>(pg_func_gen->GetTotalArgCount()));
 
   ListCell   *arg = nullptr;
   bool supported_tree = true;

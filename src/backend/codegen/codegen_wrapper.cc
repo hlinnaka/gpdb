@@ -11,11 +11,18 @@
 //---------------------------------------------------------------------------
 
 #include "codegen/codegen_wrapper.h"
-#include "codegen/codegen_manager.h"
-#include "codegen/exec_variable_list_codegen.h"
-#include "codegen/exec_eval_expr_codegen.h"
 
+#include <assert.h>
+#include <string>
+#include <type_traits>
+
+#include "codegen/base_codegen.h"
+#include "codegen/codegen_manager.h"
+#include "codegen/exec_eval_expr_codegen.h"
+#include "codegen/exec_variable_list_codegen.h"
+#include "codegen/expr_tree_generator.h"
 #include "codegen/utils/gp_codegen_utils.h"
+#include "codegen/advance_aggregates_codegen.h"
 
 extern "C" {
 #include "lib/stringinfo.h"
@@ -25,6 +32,7 @@ using gpcodegen::CodegenManager;
 using gpcodegen::BaseCodegen;
 using gpcodegen::ExecVariableListCodegen;
 using gpcodegen::ExecEvalExprCodegen;
+using gpcodegen::AdvanceAggregatesCodegen;
 
 // Current code generator manager that oversees all code generators
 static void* ActiveCodeGeneratorManager = nullptr;
@@ -124,7 +132,10 @@ ClassType* CodegenEnroll(FuncType regular_func_ptr,
     }
 
   ClassType* generator = new ClassType(
-      regular_func_ptr, ptr_to_chosen_func_ptr, std::forward<Args>(args)...);
+      manager,
+      regular_func_ptr,
+      ptr_to_chosen_func_ptr,
+      std::forward<Args>(args)...);
     bool is_enrolled = manager->EnrollCodeGenerator(
         CodegenFuncLifespan_Parameter_Invariant, generator);
     assert(is_enrolled);
@@ -156,5 +167,12 @@ void* ExecEvalExprCodegenEnroll(
   return generator;
 }
 
-
+void* AdvanceAggregatesCodegenEnroll(
+    AdvanceAggregatesFn regular_func_ptr,
+    AdvanceAggregatesFn* ptr_to_chosen_func_ptr,
+    AggState *aggstate) {
+  AdvanceAggregatesCodegen* generator = CodegenEnroll<AdvanceAggregatesCodegen>(
+      regular_func_ptr, ptr_to_chosen_func_ptr, aggstate);
+  return generator;
+}
 

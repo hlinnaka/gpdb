@@ -19,33 +19,14 @@
 #ifndef PG_OPFAMILY_H
 #define PG_OPFAMILY_H
 
+#include "catalog/genbki.h"
+
 /* ----------------
  *		postgres.h contains the system type definitions and the
  *		CATALOG(), BKI_BOOTSTRAP and DATA() sugar words so this file
  *		can be read by both genbki.sh and the C compiler.
  * ----------------
  */
-
-/* TIDYCAT_BEGINFAKEDEF
-
-   CREATE TABLE pg_opfamily
-   with (camelcase=OperatorFamily, shared=false, relid=2753)
-   (
-   opfmethod     oid     ,
-   opfname       name    ,
-   opfnamespace  oid     ,
-   opfowner      oid
-   );
-
-   create unique index on pg_opfamily(opfmethod, opfname, opfnamespace) with (indexid=2754, CamelCase=OpfamilyAmNameNsp, syscacheid=OPFAMILYAMNAMENSP, syscache_nbuckets=64);
-   create unique index on pg_opfamily(oid) with (indexid=2755, CamelCase=OpfamilyOid, syscacheid=OPFAMILYOID, syscache_nbuckets=64);
-
-   alter table pg_opfamily add fk opfmethod on pg_am(oid);
-   alter table pg_opfamily add fk opfnamespace on pg_namespace(oid);
-   alter table pg_opfamily add fk opfowner on pg_authid(oid);
-
-   TIDYCAT_ENDFAKEDEF
-*/
 
 /* ----------------
  *		pg_opfamily definition. cpp turns this into
@@ -61,6 +42,11 @@ CATALOG(pg_opfamily,2753)
 	Oid			opfnamespace;	/* namespace of this opfamily */
 	Oid			opfowner;		/* opfamily owner */
 } FormData_pg_opfamily;
+
+/* GPDB added foreign key definitions for gpcheckcat. */
+FOREIGN_KEY(opfmethod REFERENCES pg_am(oid));
+FOREIGN_KEY(opfnamespace REFERENCES pg_namespace(oid));
+FOREIGN_KEY(opfowner REFERENCES pg_authid(oid));
 
 /* ----------------
  *		Form_pg_opfamily corresponds to a pointer to a tuple with

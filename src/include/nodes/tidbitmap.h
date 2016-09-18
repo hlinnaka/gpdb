@@ -169,6 +169,7 @@ extern bool tbm_iterate(Node *tbm, TBMIterateResult *output);
 
 extern void stream_add_node(StreamBitmap *strm, StreamNode *node, StreamType kind);
 extern StreamNode *tbm_create_stream_node(HashBitmap *tbm);
+extern StreamNode *tbm_create_stream_node_ref(HashBitmap *tbm);
 extern bool bitmap_stream_iterate(StreamNode *n, PagetableEntry *e);
 
 /* These functions accept either a HashBitmap or a StreamBitmap... */
@@ -176,7 +177,6 @@ extern void tbm_bitmap_free(Node *bm);
 extern void tbm_bitmap_set_instrument(Node *bm, struct Instrumentation *instr);
 extern void tbm_bitmap_upd_instrument(Node *bm);
 
-extern void tbm_convert_appendonly_tid_in(AOTupleId *aoTid, ItemPointer psudeoHeapTid);
 extern void tbm_convert_appendonly_tid_out(ItemPointer psudeoHeapTid, AOTupleId *aoTid);
 
 #endif   /* TIDBITMAP_H */

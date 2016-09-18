@@ -139,7 +139,7 @@ sub lazy_pod2usage
 
 my %glob_atmsort_args;
 # need gnu diff on solaris
-our $ATMDIFF = ($Config{'osname'} =~ m/solaris|sunos/i) ? 'gdiff' : 'diff';
+our $ATMDIFF = ($Config{'osname'} =~ m/solaris|sunos/) ? 'gdiff' : 'diff';
 
 my $glob_ignore_plans;
 my $glob_init_file = [];
@@ -169,12 +169,6 @@ sub gpdiff_files
     my $newf1;
     my $newf2;
 
-    # need gnu diff on solaris
-    if ($Config{'osname'} =~ m/solaris|sunos/i)
-    {
-        $ATMDIFF = "gdiff";
-    }
-
     if (defined($d2d) && exists($d2d->{equiv}))
     {
         # assume f1 and f2 are the same...
@@ -191,7 +185,7 @@ sub gpdiff_files
         $newf2 = atmsort::run($f2);
     }
 
-    my $args = join(" ", @ARGV, $newf1, $newf2);
+    my $args = join(' ', @ARGV, $newf1, $newf2);
 
 #   print "args: $args\n";
 
@@ -274,13 +268,13 @@ sub filefunc
         my $dir = $f1;
         my ($dir_h, $stat);
 
-        if ( opendir($dir_h, $dir) )
+        if (opendir($dir_h, $dir))
         {
             my $fnam;
             while ($fnam = readdir($dir_h))
             {
                 # ignore ., ..
-                next unless ($fnam !~ m/^(\.)(\.)*$/);
+                next if ($fnam eq '.' || $fnam eq '..');
 
                 my $absname = File::Spec->rel2abs(
                                  File::Spec->catfile($dir, $fnam));

@@ -13,15 +13,16 @@
 #include "postgres.h"
 
 #include "catalog/pg_appendonly.h"
+#include "catalog/pg_appendonly_fn.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_proc.h"
 #include "catalog/gp_fastsequence.h"
 #include "access/genam.h"
 #include "access/heapam.h"
-#include "catalog/catquery.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "utils/builtins.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "utils/fmgroids.h"
@@ -50,31 +51,30 @@ InsertAppendOnlyEntry(Oid relid,
 {
 	Relation	pg_appendonly_rel;
 	HeapTuple	pg_appendonly_tuple = NULL;
+	NameData	compresstype_name;
 	bool	   *nulls;
 	Datum	   *values;
 	int			natts = 0;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 
     /*
      * Open and lock the pg_appendonly catalog.
      */
 	pg_appendonly_rel = heap_open(AppendOnlyRelationId, RowExclusiveLock);
 
-	pcqCtx = caql_beginscan(
-			caql_addrel(cqclr(&cqc), pg_appendonly_rel),
-			cql("INSERT INTO pg_appendonly",
-				NULL));
-
 	natts = Natts_pg_appendonly;
 	values = palloc0(sizeof(Datum) * natts);
 	nulls = palloc0(sizeof(bool) * natts);
-	
+
+	if (compresstype)
+		namestrcpy(&compresstype_name, compresstype);
+	else
+		namestrcpy(&compresstype_name, "");
 	values[Anum_pg_appendonly_relid - 1] = ObjectIdGetDatum(relid);
 	values[Anum_pg_appendonly_blocksize - 1] = Int32GetDatum(blocksize);
 	values[Anum_pg_appendonly_safefswritesize - 1] = Int32GetDatum(safefswritesize);
 	values[Anum_pg_appendonly_compresslevel - 1] = Int32GetDatum(compresslevel);
 	values[Anum_pg_appendonly_checksum - 1] = BoolGetDatum(checksum);
+	values[Anum_pg_appendonly_compresstype - 1] = NameGetDatum(&compresstype_name);
 	values[Anum_pg_appendonly_columnstore - 1] = BoolGetDatum(columnstore);
 	values[Anum_pg_appendonly_segrelid - 1] = ObjectIdGetDatum(segrelid);
 	values[Anum_pg_appendonly_segidxid - 1] = ObjectIdGetDatum(segidxid);
@@ -83,40 +83,15 @@ InsertAppendOnlyEntry(Oid relid,
 	values[Anum_pg_appendonly_visimaprelid - 1] = ObjectIdGetDatum(visimaprelid);
 	values[Anum_pg_appendonly_visimapidxid - 1] = ObjectIdGetDatum(visimapidxid);
 
-	if(compresstype)
-	{
-		/*
-		 * check compresstype string length.
-		 * 
-		 * when compresstype column was added to pg_appendonly (release 3.3) we
-		 * skipped the creation of a toast table even though it's normally
-		 * required for tables with text columns. In this case it's not
-		 * necessary because compresstype is always very short (or NULL) and we
-		 * never expect it to be toasted. so, for sanity, make sure that it's 
-		 * indeed very short. otherwise, it's an internal error.
-		 */
-		Insist(strlen(compresstype) < 100);
-		
-		values[Anum_pg_appendonly_compresstype - 1] = DirectFunctionCall1(textin,
-																		  CStringGetDatum(compresstype));
-					
-	}
-	else
-	{
-		nulls[Anum_pg_appendonly_compresstype - 1] = true;
-	}
-	
 	/*
 	 * form the tuple and insert it
 	 */
-	pg_appendonly_tuple = caql_form_tuple(pcqCtx, values, nulls);
+	pg_appendonly_tuple = heap_form_tuple(RelationGetDescr(pg_appendonly_rel), values, nulls);
 
 	/* insert a new tuple */
-	caql_insert(pcqCtx, pg_appendonly_tuple); 
-	/* and Update indexes (implicit) */
+	simple_heap_insert(pg_appendonly_rel, pg_appendonly_tuple);
+	CatalogUpdateIndexes(pg_appendonly_rel, pg_appendonly_tuple);
 
-	caql_endscan(pcqCtx);
-	
 	/*
      * Close the pg_appendonly_rel relcache entry without unlocking.
      * We have updated the catalog: consequently the lock must be 
@@ -146,9 +121,11 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 						  Oid *visimaprelid,
 						  Oid *visimapidxid)
 {
+	Relation	pg_appendonly;
+	TupleDesc	tupDesc;
+	ScanKeyData key[1];
+	SysScanDesc scan;
 	HeapTuple	tuple;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 	Datum auxOid;
 	bool isNull;
 	
@@ -156,24 +133,28 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 	 * Check the pg_appendonly relation to be certain the ao table 
 	 * is there. 
 	 */
-	pcqCtx = caql_beginscan(
-			caql_snapshot(cqclr(&cqc), appendOnlyMetaDataSnapshot),
-			cql("SELECT * FROM pg_appendonly "
-				" WHERE relid = :1 ",
-				ObjectIdGetDatum(relid)));
+	pg_appendonly = heap_open(AppendOnlyRelationId, AccessShareLock);
+	tupDesc = RelationGetDescr(pg_appendonly);
 
-	tuple = caql_getnext(pcqCtx);
+	ScanKeyInit(&key[0],
+				Anum_pg_appendonly_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
 
+	scan = systable_beginscan(pg_appendonly, AppendOnlyRelidIndexId, true,
+							  appendOnlyMetaDataSnapshot, 1, key);
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("missing pg_appendonly entry for relation \"%s\"",
 						get_rel_name(relid))));
-	
+
 	if (segrelid != NULL)
 	{
-		auxOid = caql_getattr(pcqCtx,
+		auxOid = heap_getattr(tuple,
 							  Anum_pg_appendonly_segrelid,
+							  tupDesc,
 							  &isNull);
 		Assert(!isNull);
 		if(isNull)
@@ -186,8 +167,9 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 	
 	if (segidxid != NULL)
 	{
-		auxOid = caql_getattr(pcqCtx,
+		auxOid = heap_getattr(tuple,
 							  Anum_pg_appendonly_segidxid,
+							  tupDesc,
 							  &isNull);
 		Assert(!isNull);
 		if(isNull)
@@ -200,8 +182,9 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 	
 	if (blkdirrelid != NULL)
 	{
-		auxOid = caql_getattr(pcqCtx,
+		auxOid = heap_getattr(tuple,
 							  Anum_pg_appendonly_blkdirrelid,
+							  tupDesc,
 							  &isNull);
 		Assert(!isNull);
 		if(isNull)
@@ -214,8 +197,9 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 
 	if (blkdiridxid != NULL)
 	{
-		auxOid = caql_getattr(pcqCtx,
+		auxOid = heap_getattr(tuple,
 							  Anum_pg_appendonly_blkdiridxid,
+							  tupDesc,
 							  &isNull);
 		Assert(!isNull);
 		if(isNull)
@@ -228,8 +212,9 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 
 	if (visimaprelid != NULL)
 	{
-		auxOid = caql_getattr(pcqCtx,
+		auxOid = heap_getattr(tuple,
 							  Anum_pg_appendonly_visimaprelid,
+							  tupDesc,
 							  &isNull);
 		Assert(!isNull);
 		if(isNull)
@@ -242,8 +227,9 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 
 	if (visimapidxid != NULL)
 	{
-		auxOid = caql_getattr(pcqCtx,
+		auxOid = heap_getattr(tuple,
 							  Anum_pg_appendonly_visimapidxid,
+							  tupDesc,
 							  &isNull);
 		Assert(!isNull);
 		if(isNull)
@@ -254,246 +240,8 @@ GetAppendOnlyEntryAuxOids(Oid relid,
 		*visimapidxid = DatumGetObjectId(auxOid);
 	}
 	/* Finish up scan and close pg_appendonly catalog. */
-	caql_endscan(pcqCtx);
-}
-
-/*
- * Get the catalog entry for an appendonly relation
- */
-AppendOnlyEntry *
-GetAppendOnlyEntry(Oid relid, Snapshot appendOnlyMetaDataSnapshot)
-{
-	
-	Relation	pg_appendonly_rel;
-	TupleDesc	pg_appendonly_dsc;
-	HeapTuple	tuple;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
-
-	AppendOnlyEntry *aoentry;
-
-	Oid			relationId;
-	
-	/*
-	 * Check the pg_appendonly relation to be certain the ao table 
-	 * is there. 
-	 */
-	pg_appendonly_rel = heap_open(AppendOnlyRelationId, RowExclusiveLock);
-	pg_appendonly_dsc = RelationGetDescr(pg_appendonly_rel);
-	
-	pcqCtx = caql_beginscan(
-			caql_snapshot(caql_addrel(cqclr(&cqc), pg_appendonly_rel), 
-						  appendOnlyMetaDataSnapshot),				
-			cql("SELECT * FROM pg_appendonly "
-				" WHERE relid = :1 "
-				" FOR UPDATE ",
-				ObjectIdGetDatum(relid)));
-
-	tuple = caql_getnext(pcqCtx);
-
-	if (!HeapTupleIsValid(tuple))
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("missing pg_appendonly entry for relation \"%s\"",
-						get_rel_name(relid))));
-
-	aoentry = GetAppendOnlyEntryFromTuple(
-								pg_appendonly_rel,
-								pg_appendonly_dsc,
-								tuple,
-								&relationId);
-	Assert(relid == relationId);
-									
-	/* Finish up scan and close pg_appendonly catalog. */
-	caql_endscan(pcqCtx);
-	heap_close(pg_appendonly_rel, RowExclusiveLock);
-
-	return aoentry;
-}
-
-/*
- * Get the catalog entry for an appendonly relation tuple.
- */
-AppendOnlyEntry *
-GetAppendOnlyEntryFromTuple(
-	Relation	pg_appendonly_rel,
-	TupleDesc	pg_appendonly_dsc,
-	HeapTuple	tuple,
-	Oid			*relationId)
-{
-	Datum		relid,
-				blocksize,
-				safefswritesize,
-				compresslevel,
-				compresstype,
-                checksum,
-				columnstore,
-				segrelid,
-				segidxid,
-				blkdirrelid,
-				blkdiridxid,
-				visimaprelid,
-				visimapidxid
-				;
-
-	bool		isNull;
-	AppendOnlyEntry *aoentry;
-
-	aoentry = (AppendOnlyEntry *) palloc(sizeof(AppendOnlyEntry));
-
-	/* get the relid */
-	relid = heap_getattr(tuple, 
-							 Anum_pg_appendonly_relid, 
-							 pg_appendonly_dsc, 
-							 &isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid relid value: NULL")));	
-	
-	/* get the blocksize */
-	blocksize = heap_getattr(tuple, 
-							 Anum_pg_appendonly_blocksize, 
-							 pg_appendonly_dsc, 
-							 &isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid blocksize value: NULL")));	
-	
-	/* get the safefswritesize */
-	safefswritesize = heap_getattr(tuple, 
-								   Anum_pg_appendonly_safefswritesize, 
-								   pg_appendonly_dsc, 
-								   &isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid safe fs write size value: NULL")));	
-	
-	/* get the compresslevel */
-	compresslevel = heap_getattr(tuple, 
-								 Anum_pg_appendonly_compresslevel, 
-								 pg_appendonly_dsc, 
-								 &isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid compresslevel value: NULL")));	
-
-	checksum = heap_getattr(tuple, 
-							Anum_pg_appendonly_checksum, 
-							pg_appendonly_dsc, 
-							&isNull);
-	
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid checksum value: NULL")));	
-
-	columnstore = heap_getattr(tuple, 
-							Anum_pg_appendonly_columnstore, 
-							pg_appendonly_dsc, 
-							&isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid columnstore value: NULL")));	
-
-	/* get the compressor type */
-	compresstype = heap_getattr(tuple, 
-								Anum_pg_appendonly_compresstype, 
-								pg_appendonly_dsc, 
-								&isNull);
-	
-	if(isNull)
-	{
-		aoentry->compresstype = NULL;
-	}
-	else
-		aoentry->compresstype = DatumGetCString(DirectFunctionCall1(textout, compresstype));
-	
-    segrelid = heap_getattr(tuple, 
-							Anum_pg_appendonly_segrelid,
-							pg_appendonly_dsc, 
-							&isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid segrelid value: NULL")));	
-
-    segidxid = heap_getattr(tuple, 
-							Anum_pg_appendonly_segidxid,
-							pg_appendonly_dsc, 
-							&isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid segidxid value: NULL")));	
-
-    blkdirrelid = heap_getattr(tuple, 
-							   Anum_pg_appendonly_blkdirrelid,
-							   pg_appendonly_dsc, 
-							   &isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid blkdirrelid value: NULL")));	
-
-    blkdiridxid = heap_getattr(tuple, 
-							   Anum_pg_appendonly_blkdiridxid,
-							   pg_appendonly_dsc, 
-							   &isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid blkdiridxid value: NULL")));	
-
-	/* get visimap rel id and visimap index id */
-    visimaprelid = heap_getattr(tuple, 
-							   Anum_pg_appendonly_visimaprelid,
-							   pg_appendonly_dsc, 
-							   &isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid visimaprelid value: NULL")));	
-
-    visimapidxid = heap_getattr(tuple, 
-							   Anum_pg_appendonly_visimapidxid,
-							   pg_appendonly_dsc, 
-							   &isNull);
-    Assert(!isNull);
-	if(isNull)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("got invalid visimapidxid value: NULL")));	
-
-	aoentry->blocksize = DatumGetInt32(blocksize);
-	aoentry->safefswritesize = DatumGetInt32(safefswritesize);
-	aoentry->compresslevel = DatumGetInt16(compresslevel);
-	aoentry->checksum = DatumGetBool(checksum);
-    aoentry->columnstore = DatumGetBool(columnstore);
-    aoentry->segrelid = DatumGetObjectId(segrelid);
-    aoentry->segidxid = DatumGetObjectId(segidxid);
-    aoentry->blkdirrelid = DatumGetObjectId(blkdirrelid);
-    aoentry->blkdiridxid = DatumGetObjectId(blkdiridxid);
-	aoentry->visimaprelid = DatumGetObjectId(visimaprelid);
-	aoentry->visimapidxid = DatumGetObjectId(visimapidxid);
-
-    *relationId = DatumGetObjectId(relid);
-	
-	return aoentry;
+	systable_endscan(scan);
+	heap_close(pg_appendonly, AccessShareLock);
 }
 
 /*
@@ -509,8 +257,10 @@ UpdateAppendOnlyEntryAuxOids(Oid relid,
 							 Oid newVisimaprelid,
 							 Oid newVisimapidxid)
 {
+	Relation	pg_appendonly;
+	ScanKeyData key[1];
+	SysScanDesc scan;
 	HeapTuple	tuple, newTuple;
-	cqContext  *pcqCtx;
 	Datum		newValues[Natts_pg_appendonly];
 	bool		newNulls[Natts_pg_appendonly];
 	bool		replace[Natts_pg_appendonly];
@@ -519,21 +269,22 @@ UpdateAppendOnlyEntryAuxOids(Oid relid,
 	 * Check the pg_appendonly relation to be certain the ao table 
 	 * is there. 
 	 */
-	pcqCtx = caql_beginscan(
-			NULL,
-			cql("SELECT * FROM pg_appendonly "
-				" WHERE relid = :1 "
-				" FOR UPDATE ",
-				ObjectIdGetDatum(relid)));
+	pg_appendonly = heap_open(AppendOnlyRelationId, RowExclusiveLock);
 
-	tuple = caql_getnext(pcqCtx);
+	ScanKeyInit(&key[0],
+				Anum_pg_appendonly_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
 
+	scan = systable_beginscan(pg_appendonly, AppendOnlyRelidIndexId, true,
+							  SnapshotNow, 1, key);
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("missing pg_appendonly entry for relation \"%s\"",
 						get_rel_name(relid))));
-	
+
 	MemSet(newValues, 0, sizeof(newValues));
 	MemSet(newNulls, false, sizeof(newNulls));
 	MemSet(replace, false, sizeof(replace));
@@ -573,16 +324,19 @@ UpdateAppendOnlyEntryAuxOids(Oid relid,
 		replace[Anum_pg_appendonly_visimapidxid - 1] = true;
 		newValues[Anum_pg_appendonly_visimapidxid - 1] = newVisimapidxid;
 	}
-	newTuple = caql_modify_current(pcqCtx,
-								   newValues, newNulls, replace);
-	caql_update_current(pcqCtx, newTuple);
-	/* and Update indexes (implicit) */
+	newTuple = heap_modify_tuple(tuple, RelationGetDescr(pg_appendonly),
+								 newValues, newNulls, replace);
+	simple_heap_update(pg_appendonly, &newTuple->t_self, newTuple);
+	CatalogUpdateIndexes(pg_appendonly, newTuple);
 
 	heap_freetuple(newTuple);
-	
-	/* Finish up scan and close appendonly catalog. */
-	caql_endscan(pcqCtx);
 
+	/* Finish up scan and close appendonly catalog. */
+	systable_endscan(scan);
+	heap_close(pg_appendonly, RowExclusiveLock);
+
+	/* Also cause flush the relcache entry for the parent relation. */
+	CacheInvalidateRelcacheByRelid(relid);
 }
 
 /*
@@ -596,25 +350,24 @@ void
 RemoveAppendonlyEntry(Oid relid)
 {
 	Relation	pg_appendonly_rel;
+	ScanKeyData key[1];
+	SysScanDesc scan;
 	HeapTuple	tuple;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 	Oid aosegrelid = InvalidOid;
 	
 	/*
 	 * now remove the pg_appendonly entry 
 	 */
 	pg_appendonly_rel = heap_open(AppendOnlyRelationId, RowExclusiveLock);
-	
-	pcqCtx = caql_beginscan(
-			caql_addrel(cqclr(&cqc), pg_appendonly_rel),
-			cql("SELECT * FROM pg_appendonly "
-				" WHERE relid = :1 "
-				" FOR UPDATE ",
-				ObjectIdGetDatum(relid)));
 
-	tuple = caql_getnext(pcqCtx);
+	ScanKeyInit(&key[0],
+				Anum_pg_appendonly_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
 
+	scan = systable_beginscan(pg_appendonly_rel, AppendOnlyRelidIndexId, true,
+							  SnapshotNow, 1, key);
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -623,8 +376,9 @@ RemoveAppendonlyEntry(Oid relid)
 	
 	{
 		bool isNull;
-		Datum datum = caql_getattr(pcqCtx, 
+		Datum datum = heap_getattr(tuple,
 								   Anum_pg_appendonly_segrelid,
+								   RelationGetDescr(pg_appendonly_rel),
 								   &isNull);
 
 		Assert(!isNull);
@@ -638,11 +392,10 @@ RemoveAppendonlyEntry(Oid relid)
 	/*
 	 * Delete the appendonly table entry from the catalog (pg_appendonly).
 	 */
-	caql_delete_current(pcqCtx);
-	
+	simple_heap_delete(pg_appendonly_rel, &tuple->t_self);
 	
 	/* Finish up scan and close appendonly catalog. */
-	caql_endscan(pcqCtx);
+	systable_endscan(scan);
 	heap_close(pg_appendonly_rel, NoLock);
 }
 
@@ -686,27 +439,28 @@ GetAppendEntryForMove(
 	Oid 		*aoblkdirrelid,
 	Oid         *aovisimaprelid)
 {
+	ScanKeyData key[1];
+	SysScanDesc scan;
 	HeapTuple	tuple;
-	cqContext	cqc;
-	cqContext  *pcqCtx;
 	bool		isNull;
 
-	pcqCtx = caql_addrel(cqclr(&cqc), pg_appendonly_rel);
+	ScanKeyInit(&key[0],
+				Anum_pg_appendonly_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relId));
 
-	tuple = caql_getfirst(
-			pcqCtx,
-			cql("SELECT * FROM pg_appendonly "
-				" WHERE relid = :1 ",
-				ObjectIdGetDatum(relId)));
-
+	scan = systable_beginscan(pg_appendonly_rel, AppendOnlyRelidIndexId, true,
+							  SnapshotNow, 1, key);
+	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("appendonly table relid \"%d\" does not exist in "
 						"pg_appendonly", relId)));
 
-    *aosegrelid = caql_getattr(pcqCtx,
+    *aosegrelid = heap_getattr(tuple,
 							   Anum_pg_appendonly_segrelid,
+							   pg_appendonly_dsc,
 							   &isNull);
     Assert(!isNull);
 	if(isNull)
@@ -714,8 +468,9 @@ GetAppendEntryForMove(
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("got invalid segrelid value: NULL")));	
 
-    *aoblkdirrelid = caql_getattr(pcqCtx,
+    *aoblkdirrelid = heap_getattr(tuple,
 								  Anum_pg_appendonly_blkdirrelid,
+								  pg_appendonly_dsc,
 								  &isNull);
     Assert(!isNull);
 	if(isNull)
@@ -723,18 +478,20 @@ GetAppendEntryForMove(
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("got invalid blkdirrelid value: NULL")));	
  
-	*aovisimaprelid = caql_getattr(pcqCtx,
-								  Anum_pg_appendonly_visimaprelid,
-								  &isNull);
+	*aovisimaprelid = heap_getattr(tuple,
+								   Anum_pg_appendonly_visimaprelid,
+								   pg_appendonly_dsc,
+								   &isNull);
     Assert(!isNull);
 	if(isNull)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("got invalid visimaprelid value: NULL")));	
 
-	/* tupleCopy = heap_copytuple(tuple); XXX XXX already a copy */
+	tuple = heap_copytuple(tuple);
 
-	/* Finish up scan and close appendonly catalog. */
+	/* Finish up the scan. */
+	systable_endscan(scan);
 
 	return tuple;
 }

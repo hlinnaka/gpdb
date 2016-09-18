@@ -18,7 +18,6 @@
 #include "access/heapam.h"
 #include "access/transam.h"
 #include "access/xact.h"
-#include "catalog/catquery.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/namespace.h"
@@ -598,8 +597,7 @@ DefineSequence(CreateSeqStmt *seq)
 		XLogRecData rdata[2];
 
 		xlrec.node = rel->rd_node;
-		xlrec.persistentTid = rel->rd_segfile0_relationnodeinfo.persistentTid;
-		xlrec.persistentSerialNum = rel->rd_segfile0_relationnodeinfo.persistentSerialNum;
+		RelationGetPTInfo(rel, &xlrec.persistentTid, &xlrec.persistentSerialNum);
 
 		rdata[0].data = (char *) &xlrec;
 		rdata[0].len = sizeof(xl_seq_rec);
@@ -728,8 +726,7 @@ AlterSequence(AlterSeqStmt *stmt)
 		Page		page = BufferGetPage(buf);
 
 		xlrec.node = seqrel->rd_node;
-		xlrec.persistentTid = seqrel->rd_segfile0_relationnodeinfo.persistentTid;
-		xlrec.persistentSerialNum = seqrel->rd_segfile0_relationnodeinfo.persistentSerialNum;
+		RelationGetPTInfo(seqrel, &xlrec.persistentTid, &xlrec.persistentSerialNum);
 
 		rdata[0].data = (char *) &xlrec;
 		rdata[0].len = sizeof(xl_seq_rec);
@@ -1078,8 +1075,7 @@ cdb_sequence_nextval(SeqTable elm,
 		seq->log_cnt = 0;
 
 		xlrec.node = seqrel->rd_node;
-		xlrec.persistentTid = seqrel->rd_segfile0_relationnodeinfo.persistentTid;
-		xlrec.persistentSerialNum = seqrel->rd_segfile0_relationnodeinfo.persistentSerialNum;
+		RelationGetPTInfo(seqrel, &xlrec.persistentTid, &xlrec.persistentSerialNum);
 		rdata[0].data = (char *) &xlrec;
 		rdata[0].len = sizeof(xl_seq_rec);
 		rdata[0].buffer = InvalidBuffer;
@@ -1183,16 +1179,12 @@ lastval(PG_FUNCTION_ARGS)
 				 errmsg("lastval is not yet defined in this session")));
 
 	/* Someone may have dropped the sequence since the last nextval() */
-	if (0 == caql_getcount(
-				NULL,
-				cql("SELECT COUNT(*) FROM pg_class "
-					" WHERE oid = :1 ",
-					ObjectIdGetDatum(last_used_seq->relid))))
-	{
+	if (!SearchSysCacheExists(RELOID,
+							  ObjectIdGetDatum(last_used_seq->relid),
+							  0, 0, 0))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("lastval is not yet defined in this session")));
-	}
 
 	seqrel = open_share_lock(last_used_seq);
 
@@ -1308,8 +1300,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 		Page		page = BufferGetPage(buf);
 
 		xlrec.node = seqrel->rd_node;
-		xlrec.persistentTid = seqrel->rd_segfile0_relationnodeinfo.persistentTid;
-		xlrec.persistentSerialNum = seqrel->rd_segfile0_relationnodeinfo.persistentSerialNum;
+		RelationGetPTInfo(seqrel, &xlrec.persistentTid, &xlrec.persistentSerialNum);
 
 		rdata[0].data = (char *) &xlrec;
 		rdata[0].len = sizeof(xl_seq_rec);

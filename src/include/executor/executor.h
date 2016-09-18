@@ -234,20 +234,12 @@ extern void ExecConstraints(ResultRelInfo *resultRelInfo,
 extern TupleTableSlot *EvalPlanQual(EState *estate, Index rti,
 			 ItemPointer tid, TransactionId priorXmax);
 extern PlanState *ExecGetActivePlanTree(QueryDesc *queryDesc);
-extern HeapTuple GetUpdatedTuple_Int(Relation relation,
-									 ItemPointer tid, 
-									 TransactionId priorXmax, 
-									 CommandId curCid);
 extern DestReceiver *CreateIntoRelDestReceiver(void);
 
 extern AttrMap *makeAttrMap(int base_count, AttrNumber *base_map);
-extern AttrMap *invertedAttrMap(AttrMap *base_map, int inv_count);
-extern AttrMap *compositeAttrMap(AttrMap *input_map, AttrMap *output_map);
 extern AttrNumber attrMap(AttrMap *map, AttrNumber anum);
-extern List *attrMapIntList(AttrMap *map, List *attrs);
 extern Node *attrMapExpr(AttrMap *map, Node *expr);
 extern bool map_part_attrs(Relation base, Relation part, AttrMap **map_ptr, bool throwerror);
-extern void map_part_attrs_from_targetdesc(TupleDesc target, TupleDesc part, AttrMap **map_ptr);
 extern PartitionState *createPartitionState(PartitionNode *partsAndRules, int resultPartSize);
 extern TupleTableSlot *reconstructMatchingTupleSlot(TupleTableSlot *slot,
 													ResultRelInfo *resultRelInfo);
@@ -301,6 +293,9 @@ extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
+#ifdef USE_CODEGEN
+extern bool ExecTargetList(List *targetlist, ExprContext *econtext, Datum *values, bool *isnull, ExprDoneCond *itemIsDone, ExprDoneCond *isDone);
+#endif
 extern int	ExecCleanTargetListLength(List *targetlist);
 extern TupleTableSlot *ExecProject(ProjectionInfo *projInfo,
 			ExprDoneCond *isDone);

@@ -2344,6 +2344,15 @@ typedef struct SortState
  *	expressions and run the aggregate transition functions.
  * -------------------------
  */
+
+typedef struct AdvanceAggregatesCodegenInfo
+{
+	/* Pointer to store AdvanceAggregatesCodegen from Codegen */
+	void* code_generator;
+	/* Function pointer that points to either regular or generated advance_aggregates */
+	AdvanceAggregatesFn AdvanceAggregates_fn;
+} AdvanceAggregatesCodegenInfo;
+
 /* these structs are private in nodeAgg.c: */
 typedef struct AggStatePerAggData *AggStatePerAgg;
 typedef struct AggStatePerGroupData *AggStatePerGroup;
@@ -2392,6 +2401,9 @@ typedef struct AggState
 	/* set if the operator created workfiles */
 	bool		workfiles_created;
 
+#ifdef USE_CODEGEN
+	AdvanceAggregatesCodegenInfo AdvanceAggregates_gen_info;
+#endif
 } AggState;
 
 
@@ -2703,7 +2715,6 @@ extern void initGpmonPktForMotion(Plan *planNode, gpmon_packet_t *gpmon_pkt, ESt
 extern void initGpmonPktForShareInputScan(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate);
 extern void initGpmonPktForWindow(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate);
 extern void initGpmonPktForRepeat(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate);
-extern void initGpmonPktForDefunctOperators(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate);
 extern void initGpmonPktForDML(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate);
 extern void initGpmonPktForPartitionSelector(Plan *planNode, gpmon_packet_t *gpmon_pkt, EState *estate);
 

@@ -224,9 +224,8 @@ AppendOnlyStorageRead_DoOpenFile(AppendOnlyStorageRead *storageRead,
 								 char *filePathName)
 {
 	int			fileFlags = O_RDONLY | PG_BINARY;
-	int			fileMode = 0400;
-
 	/* File mode is S_IRUSR 00400 user has read permission */
+	int			fileMode = 0400;
 	File		file;
 
 	Assert(storageRead != NULL);
@@ -726,7 +725,8 @@ AppendOnlyStorageRead_StorageContentHeaderStr(AppendOnlyStorageRead *storageRead
 
 	header = BufferedReadGetCurrentBuffer(&storageRead->bufferedRead);
 
-	return AppendOnlyStorageFormat_BlockHeaderStr(header,
+	return AppendOnlyStorageFormat_BlockHeaderStr(
+												  header,
 									 storageRead->storageAttributes.checksum,
 												  storageRead->formatVersion);
 }
@@ -783,9 +783,7 @@ AppendOnlyStorageRead_ReadNextBlock(AppendOnlyStorageRead *storageRead)
 {
 	uint8	   *header;
 	AOHeaderCheckError checkError;
-	int32		blockLimitLen = 0;
-
-	/* Shutup compiler. */
+	int32		blockLimitLen = 0;	/* Shutup compiler. */
 	pg_crc32	storedChecksum;
 	pg_crc32	computedChecksum;
 
@@ -814,7 +812,8 @@ AppendOnlyStorageRead_ReadNextBlock(AppendOnlyStorageRead *storageRead)
 		   "before AppendOnlyStorageRead_PositionToNextBlock, storageRead->current.headerOffsetInFile is" INT64_FORMAT "storageRead->current.overallBlockLen is %d",
 		   storageRead->current.headerOffsetInFile, storageRead->current.overallBlockLen);
 
-	if (!AppendOnlyStorageRead_PositionToNextBlock(storageRead,
+	if (!AppendOnlyStorageRead_PositionToNextBlock(
+												   storageRead,
 									&storageRead->current.headerOffsetInFile,
 												   &header,
 												   &blockLimitLen))

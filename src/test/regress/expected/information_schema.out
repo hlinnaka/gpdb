@@ -12,7 +12,7 @@ from pg_attribute
 where attnum > 0 and attrelid = 'r'::regclass;
                           QUERY PLAN
 --------------------------------------------------------------
- Seq Scan on pg_attribute  (cost=0.00..376.30 rows=5 width=2)
+ Seq Scan on pg_attribute  (cost=0.00..376.30 rows=6 width=2)
    Filter: attnum > 0 AND attrelid = 1699317::oid
  Settings:  enable_bitmapscan=off; enable_indexscan=off
 (3 rows)
@@ -87,7 +87,7 @@ where ordinal_position = 20;
  information_schema | attributes           | datetime_precision |               20
  pg_catalog         | pg_type              | typstorage         |               20
  pg_catalog         | pg_proc              | proargnames        |               20
- pg_catalog         | pg_class             | reltriggers        |               20
+ pg_catalog         | pg_class             | relfkeys           |               20
  pg_catalog         | pg_am                | amrestrpos         |               20
  information_schema | columns              | collation_catalog  |               20
  information_schema | domains              | udt_catalog        |               20

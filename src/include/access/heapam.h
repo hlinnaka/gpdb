@@ -187,8 +187,7 @@ inline static void xl_heaptid_set(
 	ItemPointer tid)
 {
 	heaptid->node = rel->rd_node;
-	heaptid->persistentTid = rel->rd_segfile0_relationnodeinfo.persistentTid;
-	heaptid->persistentSerialNum = rel->rd_segfile0_relationnodeinfo.persistentSerialNum;
+	RelationGetPTInfo(rel, &heaptid->persistentTid, &heaptid->persistentSerialNum);
 	heaptid->tid = *tid;
 }
 
@@ -198,8 +197,7 @@ inline static void xl_heapnode_set(
 	Relation rel)
 {
 	heapnode->node = rel->rd_node;
-	heapnode->persistentTid = rel->rd_segfile0_relationnodeinfo.persistentTid;
-	heapnode->persistentSerialNum = rel->rd_segfile0_relationnodeinfo.persistentSerialNum;
+	RelationGetPTInfo(rel, &heapnode->persistentTid, &heapnode->persistentSerialNum);
 }
 
 /* in heap/heapam.c */
@@ -216,8 +214,6 @@ extern void relation_close(Relation relation, LOCKMODE lockmode);
 extern Relation heap_open(Oid relationId, LOCKMODE lockmode);
 extern Relation heap_openrv(const RangeVar *relation, LOCKMODE lockmode);
 extern Relation try_heap_open(Oid relationId, LOCKMODE lockmode, bool noWait);
-extern Relation try_heap_openrv(const RangeVar *relation, LOCKMODE lockmode,
-								bool noWait);
 
 #define heap_close(r,l)  relation_close(r,l)
 

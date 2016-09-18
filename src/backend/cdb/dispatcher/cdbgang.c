@@ -280,7 +280,8 @@ createGang(GangType type, int gang_id, int size, int content)
 /*
  * Test if the connections of the primary writer gang are alive.
  */
-bool isPrimaryWriterGangAlive(void)
+bool
+isPrimaryWriterGangAlive(void)
 {
 	if (primaryWriterGang == NULL)
 		return false;
@@ -303,15 +304,15 @@ bool isPrimaryWriterGangAlive(void)
 /*
  * Check the segment failure reason by comparing connection error message.
  */
-bool segment_failure_due_to_recovery(SegmentDatabaseDescriptor *segdbDesc)
+bool segment_failure_due_to_recovery(struct PQExpBufferData* error_message)
 {
 	char *fatal = NULL, *message = NULL, *ptr = NULL;
 	int fatal_len = 0;
 
-	if (segdbDesc == NULL)
+	if (error_message == NULL)
 		return false;
 
-	message = segdbDesc->error_message.data;
+	message = error_message->data;
 
 	if (message == NULL)
 		return false;
@@ -872,81 +873,6 @@ static void addGangToAllocated(Gang *gp)
 	}
 }
 
-/*
- * When we are the dispatch agent, we get told which gang to use by its "gang_id"
- * We need to find the gang in our lists.
- *
- * keeping the gangs in the "available" lists on the Dispatch Agent is a hack,
- * as the dispatch agent doesn't differentiate allocated from available, or 1 gangs
- * from n-gangs.  It assumes the QD keeps track of all that.
- *
- * It might be nice to pass gang type and size to this routine as safety checks.
- *
- * TODO: dispatch agent. remove or re-implement.
- */
-
-Gang *
-findGangById(int gang_id)
-{
-	Assert(gang_id >= PRIMARY_WRITER_GANG_ID);
-
-	if (primaryWriterGang && primaryWriterGang->gang_id == gang_id)
-		return primaryWriterGang;
-
-	if (gang_id == PRIMARY_WRITER_GANG_ID)
-	{
-		elog(LOG, "findGangById: primary writer didn't exist when we expected it to");
-		return allocateWriterGang();
-	}
-
-	/*
-	 * Now we iterate through the list of reader gangs
-	 * to find the one that matches
-	 */
-	ListCell *cell = NULL;
-	foreach(cell, availableReaderGangsN)
-	{
-		Gang *gp = (Gang*) lfirst(cell);
-		Assert(gp != NULL);
-		if (gp->gang_id == gang_id)
-		{
-			return gp;
-		}
-	}
-
-	foreach(cell, availableReaderGangs1)
-	{
-		Gang *gp = (Gang*) lfirst(cell);
-		Assert(gp != NULL);
-		if (gp->gang_id == gang_id)
-		{
-			return gp;
-		}
-	}
-
-	/*
-	 * 1-gangs can exist on some dispatch agents, and not on others.
-	 *
-	 * so, we can't tell if not finding the gang is an error or not.
-	 *
-	 * It would be good if we knew if this was a 1-gang on not.
-	 *
-	 * The writer gangs are always n-gangs.
-	 *
-	 */
-
-	if (gang_id <= 2)
-	{
-		insist_log(false, "could not find segworker group %d", gang_id);
-	}
-	else
-	{
-		ELOG_DISPATCHER_DEBUG("could not find segworker group %d", gang_id);
-	}
-
-	return NULL;
-}
-
 struct SegmentDatabaseDescriptor *
 getSegmentDescriptorFromGang(const Gang *gp, int seg)
 {
@@ -1445,10 +1371,7 @@ void freeGangsForPortal(char *portal_name)
 		primaryWriterGang != NULL &&
 		!cleanupGang(primaryWriterGang))
 	{
-		primaryWriterGang = NULL;
 		disconnectAndDestroyAllGangs(true);
-
-		elog(ERROR, "could not temporarily connect to one or more segments");
 		return;
 	}
 
@@ -1770,13 +1693,6 @@ bool gangsExist(void)
 			availableReaderGangs1 != NIL);
 }
 
-bool readerGangsExist(void)
-{
-	return (allocatedReaderGangsN != NIL ||
-			availableReaderGangsN != NIL ||
-			allocatedReaderGangs1 != NIL||
-			availableReaderGangs1 != NIL);
-}
 
 int largestGangsize(void)
 {

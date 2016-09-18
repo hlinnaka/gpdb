@@ -175,20 +175,6 @@ AppendOnlyStorageWrite_Init(AppendOnlyStorageWrite *storageWrite,
 	storageWrite->bufferedAppend.mirroredOpen.primaryFile = -1;
 }
 
-
-/*
- * Return (read-only) pointer to relation name.
- */
-char *
-AppendOnlyStorageWrite_RelationName(AppendOnlyStorageWrite *storageWrite)
-{
-	Assert(storageWrite != NULL);
-	Assert(storageWrite->isActive);
-
-	return storageWrite->relationName;
-}
-
-
 /*
  * Finish using the AppendOnlyStorageWrite session created with ~Init.
  */
@@ -708,17 +694,10 @@ AppendOnlyStorageWrite_TransactionFlushAndCloseFile(
  * The complete header length is the fixed header plus optional information.
  */
 
-/*
- * Returns the Append-Only Storage Block fixed header length in bytes.
+/*----------------------------------------------------------------
+ * Usable Block Length
+ *----------------------------------------------------------------
  */
-int32
-AppendOnlyStorageWrite_FixedHeaderLen(AppendOnlyStorageWrite *storageWrite)
-{
-	Assert(storageWrite != NULL);
-	Assert(storageWrite->isActive);
-
-	return storageWrite->regularHeaderLen;
-}
 
 /*
  * Returns the Append-Only Storage Block complete header length in bytes.
@@ -795,7 +774,8 @@ static char *
 AppendOnlyStorageWrite_BlockHeaderStr(AppendOnlyStorageWrite *storageWrite,
 									  uint8 *header)
 {
-	return AppendOnlyStorageFormat_BlockHeaderStr(header,
+	return AppendOnlyStorageFormat_BlockHeaderStr(
+												  header,
 									storageWrite->storageAttributes.checksum,
 												  storageWrite->formatVersion);
 }
@@ -1017,8 +997,7 @@ AppendOnlyStorageWrite_VerifyWriteBlock(AppendOnlyStorageWrite *storageWrite,
 	pg_crc32	computedChecksum;
 
 	if (storageWrite->storageAttributes.compress && storageWrite->verifyWriteBuffer == NULL)
-		return;
-	/* GUC must have been turned on mid - transaction. */
+		return;		/* GUC must have been turned on mid-transaction. */
 
 	if (gp_appendonly_verify_write_block == false)
 		elog(WARNING, "The GUC gp_appendonly_verify_write_block is false. Compressed write not checked.");
@@ -1108,7 +1087,6 @@ AppendOnlyStorageWrite_VerifyWriteBlock(AppendOnlyStorageWrite *storageWrite,
 				errdetail_appendonly_write_storage_block_header(storageWrite),
 				   errcontext_appendonly_write_storage_block(storageWrite)));
 
-
 			if (compressedLen != expectedCompressedLen)
 				ereport(ERROR,
 						(errmsg("Verify block during write found append-only storage block header. "
@@ -1149,6 +1127,14 @@ AppendOnlyStorageWrite_VerifyWriteBlock(AppendOnlyStorageWrite *storageWrite,
 													  header);
 			}
 
+			if (rowCount != expectedRowCount)
+				ereport(ERROR,
+						(errmsg("Verify block during write found append-only storage block header. "
+							  "RowCount %d does not equal expected value %d",
+								rowCount,
+								expectedRowCount),
+				errdetail_appendonly_write_storage_block_header(storageWrite),
+				   errcontext_appendonly_write_storage_block(storageWrite)));
 
 			if (isCompressed)
 			{
@@ -1186,7 +1172,6 @@ AppendOnlyStorageWrite_VerifyWriteBlock(AppendOnlyStorageWrite *storageWrite,
 									test),
 							 errdetail_appendonly_write_storage_block_header(storageWrite),
 					errcontext_appendonly_write_storage_block(storageWrite)));
-
 			}
 			else
 			{
@@ -1280,9 +1265,7 @@ AppendOnlyStorageWrite_CompressAppend(AppendOnlyStorageWrite *storageWrite,
 {
 	uint8	   *header;
 	uint8	   *dataBuffer;
-	int32		dataRoundedUpLen = 0;
-
-	/* Shutup compiler. */
+	int32		dataRoundedUpLen = 0;	/* Shutup compiler. */
 	int32		dataBufferWithOverrrunLen;
 	PGFunction *cfns = storageWrite->compression_functions;
 	PGFunction	compressor;
@@ -1845,8 +1828,7 @@ AppendOnlyStorageWrite_Content(AppendOnlyStorageWrite *storageWrite,
 		/*
 		 * Now write the fragments as type Block.
 		 */
-		storageWrite->isFirstRowNumSet = false;
-		/* Not written with fragments. */
+		storageWrite->isFirstRowNumSet = false;		/* Not written with fragments. */
 
 		smallContentHeaderLen =
 			AppendOnlyStorageWrite_CompleteHeaderLen(storageWrite,

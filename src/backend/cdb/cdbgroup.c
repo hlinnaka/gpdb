@@ -3845,53 +3845,23 @@ Node* finalize_split_expr_mutator(Node *node, MppGroupContext *ctx)
  * Return the transition type Oid of the given aggregate fuction or throw
  * an error, if none.
  */
-Oid lookup_agg_transtype(Aggref *aggref)
+Oid
+lookup_agg_transtype(Aggref *aggref)
 {
 	Oid			aggid = aggref->aggfnoid;
 	Oid			result;
-	int			fetchCount;
+	HeapTuple	tuple;
 
 	/* XXX: would have been get_agg_transtype() */
-	result = caql_getoid_plus(
-			NULL,
-			&fetchCount,
-			NULL,
-			cql("SELECT aggtranstype FROM pg_aggregate "
-				 " WHERE aggfnoid = :1 ",
-				 ObjectIdGetDatum(aggid)));
-
-	if (!fetchCount)
+	tuple = SearchSysCache1(AGGFNOID, ObjectIdGetDatum(aggid));
+	if (!tuple)
 		elog(ERROR, "cache lookup failed for aggregate %u", aggid);
 
+	result = ((Form_pg_aggregate) GETSTRUCT(tuple))->aggtranstype;
+
+	ReleaseSysCache(tuple);
+
 	return result;
-}
-
-/* Function:  adapt_flow_to_targetlist
- *
- * Sometimes we replace the targetlist (especially subplan of an Agg).
- * In this case, we need to assure that any hash expressions in the
- * node's flow remain in the targetlist OR null out the hash leaving,
- * in effect, a strewn flow.
- */
-void adapt_flow_to_targetlist(Plan *plan)
-{
-	ListCell   *c;
-	Flow *flow;
-
-	Assert(plan != NULL);
-	flow = plan->flow;
-
-	Assert(flow); 
-
-	foreach(c, flow->hashExpr)
-	{
-		Node *expr = (Node*)lfirst(c);
-		if (!tlist_member(expr, plan->targetlist))
-        {
-		    flow->hashExpr = NIL;
-			break;
-        }
-	}
 }
 
 /**
