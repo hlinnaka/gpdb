@@ -61,12 +61,6 @@ XERCES_LIBDIR = $(XERCES)/lib
 LIBGPOS = $(BLD_TOP)/ext/$(BLD_ARCH)/libgpos
 LIBGPOS_LIBDIR = $(LIBGPOS)/$(OBJDIR_DEFAULT)
 
-OPTIMIZER = $(BLD_TOP)/ext/$(BLD_ARCH)
-LIBGPOPT_LIBDIR = $(OPTIMIZER)/libgpopt/$(OBJDIR_DEFAULT)
-LIBGPOPTUDF_LIBDIR = $(OPTIMIZER)/libgpoptudf/$(OBJDIR_DEFAULT)
-LIBNAUCRATES_LIBDIR = $(OPTIMIZER)/libnaucrates/$(OBJDIR_DEFAULT)
-LIBGPDBCOST_LIBDIR = $(OPTIMIZER)/libgpdbcost/$(OBJDIR_DEFAULT)
-
 LIBSTDC++_BASEDIR = $(BLD_TOP)/ext/$(BLD_ARCH)
 
 ifeq (Darwin, $(UNAME))
@@ -171,8 +165,14 @@ sync_tools: opt_write_test /opt/releng/apache-ant
 	fi
 
 	@cd releng/make/dependencies; \
-	 (umask 002; ANT_OPTS="-Djavax.net.ssl.trustStore=$(BLD_TOP)/releng/make/dependencies/cacerts" /opt/releng/apache-ant/bin/ant -DBLD_ARCH=$(BLD_ARCH) resolve);
+	 (umask 002; ANT_OPTS="-Djavax.net.ssl.trustStore=$(BLD_TOP)/releng/make/dependencies/cacerts" \
+	/opt/releng/apache-ant/bin/ant -DBLD_ARCH=$(BLD_ARCH) \
+	-Divyrepo.host=$(IVYREPO_HOST) -Divyrepo.realm="$(IVYREPO_REALM)" \
+	-Divyrepo.user=$(IVYREPO_USER) -Divyrepo.passwd=$(IVYREPO_PASSWD) resolve);
 	@echo "Resolve finished";
+
+	wget -O - https://github.com/greenplum-db/gpos/releases/download/v1.145/bin_gpos_centos5_release.tar.gz | tar zxf - -C $(BLD_TOP)/ext/$(BLD_ARCH)
+	wget -O - https://github.com/greenplum-db/gporca/releases/download/v1.674/bin_orca_centos5_release.tar.gz | tar zxf - -C $(BLD_TOP)/ext/$(BLD_ARCH)
 
 clean_tools: opt_write_test
 	@cd releng/make/dependencies; \

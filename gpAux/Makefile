@@ -376,8 +376,7 @@ define BUILD_STEPS
 	@$(MAKE) mkplatform INSTLOC=$(INSTLOC)
 	if [ "$(findstring $(BLD_ARCH),$(SERVER_PLATFORMS))" != "" ]; then \
 	  $(MAKE) mkgphdfs INSTLOC=$(INSTLOC) && \
-	  $(MAKE) mkorafce INSTLOC=$(INSTLOC) && \
-	  $(MAKE) mkpljava INSTLOC=$(INSTLOC); \
+	  $(MAKE) mkorafce INSTLOC=$(INSTLOC); \
 	fi
 	cd extensions/gpmapreduce/ && $(MAKE) install
 	cd extensions/gp_filedump/ && $(MAKE) install
@@ -1027,9 +1026,6 @@ mkgphdfs:
 mkgps3ext:
 	@cd extensions && $(MAKE) mks3ext OPT="$(INSTCFLAGS)" INSTLOC=$(INSTLOC)
 
-mkpljava:
-	@cd extensions && $(MAKE) mkpljava OPT="$(INSTCFLAGS)" INSTLOC=$(INSTLOC)
-
 mkorafce:
 	@cd extensions && $(MAKE) mkorafce OPT="$(INSTCFLAGS)" INSTLOC=$(INSTLOC)
 
@@ -1079,9 +1075,6 @@ copydocs :
 	        echo "Copying postgresql contrib documentation" ; \
 		cp -r $(INSTLOC)/doc/postgresql/contrib/* $(INSTLOC)/docs/contrib ; \
 	    fi ; \
-	    echo "Copying $(BLD_TOP)/extensions/pljava/PLJAVA_README" ; \
-	    mkdir -p $(INSTLOC)/share/postgresql/pljava ; \
-	    cp -p $(BLD_TOP)/extensions/pljava/PLJAVA_README $(INSTLOC)/share/postgresql/pljava ; \
 	fi
 	@if [ -d $(INSTLOC)/doc ] ; then \
 	    echo "Removing $(INSTLOC)/doc" ; \
@@ -1146,7 +1139,7 @@ libcopy=(cd $(1) && $(TAR) cf - $(2)) | (cd $(3) && $(TAR) xvf -)$(check_pipe_fo
 
 copy-nbu-libs:
 	#Copy NetBackup libs
-ifeq "$(BLD_ARCH)" "rhel5_x86_64"
+ifeq ($(BLD_ARCH),$(filter $(BLD_ARCH),rhel6_x86_64 rhel5_x86_64))
 	rm -f $(INSTLOC)/lib/libxbsa64.so;
 	rm -f $(INSTLOC)/lib/libnbclientcST.so;
 	rm -f $(INSTLOC)/lib/libnbbasecST.so;
@@ -1252,18 +1245,6 @@ endif
 copyoptimizerlibs :
 ifneq "$(BLD_GPDB_BUILDSET)" "partial"
 ifeq "$(ORCA_CONFIG)" "--enable-orca"
-	# Copy GP Optimizer libraries 
-	echo "Copying Orca libraries";
-	for b in libnaucrates libgpdbcost libgpopt; do \
-		rm -f $(INSTLOC)/lib/$$b.$(LDSFX); \
-		echo "Copying $$b"; \
-		cp  $(OPTIMIZER)/$$b/$(OBJDIR_DEFAULT)/$$b.$(LDSFX) $(INSTLOC)/lib ; \
-	done
-	rm -f $(INSTLOC)/lib/libgpos.$(LDSFX);
-	cp $(LIBGPOS_LIBDIR)/libgpos.$(LDSFX) $(INSTLOC)/lib;
-	rm -f $(INSTLOC)/lib/libxerces-c-3.1.$(LDSFX);
-	cp $(XERCES_LIBDIR)/libxerces-c-3.1.$(LDSFX) $(INSTLOC)/lib;
-
 	cd $(LIBSTDC++_LIBDIR); tar cvf - * | (cd $(INSTLOC)/lib; tar xfp -)
 
 	# Create GP Optimizer UDFs library  
@@ -1392,17 +1373,21 @@ gccVersionCheck :
 
 ## ----------------------------------------------------------------------
 
-ifeq ($(BLD_ARCH),$(filter $(BLD_ARCH),rhel6_x86_64 suse11_x86_64))
+ifeq ($(BLD_ARCH),$(filter $(BLD_ARCH),rhel6_x86_64))
 GPPKG_SOURCES = \
 	../src/pl/plperl \
 	$(NULL)
 else
+# Removed filtering logic for building gppkg as on suse11. It was only building
+# pl/perl package and essentially since gpdb-server is now being built for suse11
+# we should build the gppkg for suse11.
+# As of now we build for centos5 / rhel5 and suse 11
+# TODO: As we build for centos6 we can add filtering logic if necessary
 GPPKG_SOURCES = \
 	../contrib/pgcrypto \
 	../src/pl/plperl \
 	../src/bin/pg_dump/cdb/ddboost \
 	extensions/postgis-2.0.3 \
-	extensions/pljava \
 	extensions/plr \
 	$(NULL)
 	ifneq ($(wildcard ../contrib/pgpool),)

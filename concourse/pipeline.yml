@@ -33,7 +33,7 @@ resources:
     source:
       access_key_id: {{aws-access-key-id}}
       bucket: gporca-concourse-bucket
-      region_name: us-west-2
+      region_name: {{aws-region}}
       secret_access_key: {{aws-secret-access-key}}
       versioned_file: bin_gpdb_with_orca_centos6.tar.gz
 

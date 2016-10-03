@@ -230,7 +230,7 @@ AppendOnlySegmentFileTruncateToEOF(Relation aorel,
 		CloseAOSegmentFile(&mirroredOpened);
 
 		elogif(Debug_appendonly_print_compaction, LOG,
-				 "Successfully truncated AO ROL relation \"%s.%s\", relation id %u, relfilenode %u (physical segment file #%d, logical EOF " INT64_FORMAT ")",
+				 "Successfully truncated AO ROW relation \"%s.%s\", relation id %u, relfilenode %u (physical segment file #%d, logical EOF " INT64_FORMAT ")",
 				 get_namespace_name(RelationGetNamespace(aorel)),
 				 relname,
 				 aorel->rd_id,
@@ -420,7 +420,7 @@ AppendOnlySegmentFileFullCompaction(Relation aorel,
 		}
 
 		/* 
-		 * Check for vacuum delay point after approximatly a var block
+		 * Check for vacuum delay point after approximately a var block
 		 */
 		tupleCount++;
 		if (VacuumCostActive && tupleCount % tuplePerPage == 0)
@@ -461,7 +461,7 @@ AppendOnlySegmentFileFullCompaction(Relation aorel,
 /*
  * Checks if the correct relation lock is held.
  * It does so be acquiring the lock in a no-wait mode.
- * If it didn't held the lock before, it is release it immediatelly.
+ * If it didn't hold the lock before, it is released immediately.
  */ 
 bool 
 HasLockForSegmentFileDrop(Relation aorel)

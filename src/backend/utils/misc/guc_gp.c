@@ -257,6 +257,7 @@ bool		gp_startup_integrity_checks = true;
 bool		gp_change_tracking = true;
 bool		gp_persistent_skip_free_list = false;
 bool		gp_persistent_repair_global_sequence = false;
+bool		gp_validate_pt_info_relcache = false;
 bool		Debug_print_xlog_relation_change_info = false;
 bool		Debug_print_xlog_relation_change_info_skip_issues_only = false;
 bool		Debug_print_xlog_relation_change_info_backtrace_skip_issues = false;
@@ -545,6 +546,7 @@ double		optimizer_damping_factor_groupby;
 int			optimizer_segments;
 int			optimizer_join_arity_for_associativity_commutativity;
 int         optimizer_array_expansion_threshold;
+int         optimizer_join_order_threshold;
 bool		optimizer_analyze_root_partition;
 bool		optimizer_analyze_midlevel_partition;
 bool		optimizer_enable_constant_expression_evaluation;
@@ -2188,6 +2190,16 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
 		},
 		&gp_persistent_repair_global_sequence,
+		false, NULL, NULL
+	},
+
+	{
+		{"gp_validate_pt_info_relcache", PGC_SUSET, DEVELOPER_OPTIONS,
+			gettext_noop("Validate persistent TID and serial number in relcache entry."),
+			NULL,
+			GUC_SUPERUSER_ONLY | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&gp_validate_pt_info_relcache,
 		false, NULL, NULL
 	},
 
@@ -4092,7 +4104,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_UNIT_S
 		},
 		&gp_fts_probe_timeout,
-		20, 0, INT_MAX, NULL, NULL
+		20, 0, 3600, NULL, NULL
 	},
 
 	{
@@ -4102,7 +4114,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_UNIT_S
 		},
 		&gp_fts_probe_interval,
-		60, 10, INT_MAX, NULL, NULL
+		60, 10, 3600, NULL, NULL
 	},
 
 	{
@@ -4611,6 +4623,15 @@ struct config_int ConfigureNamesInt_gp[] =
 		},
 		&optimizer_array_expansion_threshold,
 		25, 0, INT_MAX, NULL, NULL
+	},
+
+	{
+		{"optimizer_join_order_threshold", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Maximum number of join children to use dynamic programming based join ordering algorithm."),
+			NULL
+		},
+		&optimizer_join_order_threshold,
+		10, 0, INT_MAX, NULL, NULL
 	},
 
 	{

@@ -5,7 +5,7 @@
 # Portions Copyright (c) 1996-2002, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
-# $Header: /var/cvsroot/cdb/cdb-pg/src/bin/pg_dump/cdb/Makefile,v 1.2 2004/08/06 23:25:50 donniep Exp $
+# src/bin/pg_dump/cdb/Makefile
 #
 #-------------------------------------------------------------------------
 
@@ -28,10 +28,11 @@ DDBOOSTLIB += -lDDBoost
 endif
 
 ifeq ($(enable_netbackup), yes)
-NETBACKUPLIB75 += -L../../../../gpAux/ext/rhel5_x86_64/Netbackup/nbu75/lib -lxbsa64 -lnbclientcST -lnbbasecST -lvxcPBXST
-NETBACKUPLIB71 += -L../../../../gpAux/ext/rhel5_x86_64/Netbackup/nbu71/lib -lxbsa64 -lnbclientcST -lnbbasecST -lvxcPBXST
-GPBSALIB += -L$(top_builddir)/src/bin/pg_dump/cdb -lgpbsa -Wl,-rpath-link,'../../../../gpAux/ext/rhel5_x86_64/Netbackup/nbu75/lib'
+NETBACKUPLIB75 += -L../../../../gpAux/ext/$(BLD_ARCH)/Netbackup/nbu75/lib -lxbsa64 -lnbclientcST -lnbbasecST -lvxcPBXST
+NETBACKUPLIB71 += -L../../../../gpAux/ext/$(BLD_ARCH)/Netbackup/nbu71/lib -lxbsa64 -lnbclientcST -lnbbasecST -lvxcPBXST
+GPBSALIB += -L$(top_builddir)/src/bin/pg_dump/cdb -lgpbsa -Wl,-rpath-link,'../../../../gpAux/ext/$(BLD_ARCH)/Netbackup/nbu75/lib'
 override CFLAGS += -I$(top_builddir)/gpAux/ext/$(BLD_ARCH)/Netbackup/nbu75/include
+override CPPFLAGS += -I$(top_builddir)/gpAux/ext/$(BLD_ARCH)/Netbackup/nbu75/include
 endif
 
 PGDUMP_SRCDIR= $(top_srcdir)/src/bin/pg_dump
