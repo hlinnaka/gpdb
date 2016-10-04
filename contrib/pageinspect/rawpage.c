@@ -21,6 +21,7 @@
 #include "access/transam.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
+#include "cdb/cdbfilerepprimary.h"
 #include "utils/builtins.h"
 #include "miscadmin.h"
 
