@@ -1,7 +1,7 @@
 /*
  *	gpdb4_heap_convert.c
  *
- *	Support for convertion heap tables from GPDB4 format.
+ *	Support for converting heap tables from GPDB4 format.
  */
 
 #include "pg_upgrade.h"
@@ -198,7 +198,7 @@ make_room(migratorContext *ctx, char *page)
 		return;
 
 	maxoff = (oldhdr->pd_lower - VERSION4_SizeOfPageHeaderData) / sizeof(ItemIdData); /* PageGetMaxOffsetNumber */
-	
+
 	/* First see if we can squeeze out enough unused line pointers to make space. */
 	for (i = maxoff; i >= 1; i--)
 	{
@@ -327,9 +327,9 @@ overflow_tuple(migratorContext *ctx, HeapTupleHeader htup, int size)
 		overflow_tuple(ctx, htup, size);
 		return;
 	}
-	
+
 	/* OK to insert the item. */
-	
+
 	itemId = PageGetItemId(phdr, offsetNumber);
 
 	/* set the item pointer */
@@ -451,7 +451,7 @@ convert_gpdb4_heap_file(migratorContext *ctx,
 	}
 
 	curr_dstfd = dstfd;
-	
+
 	while ((bytesRead = read(src_fd, buf, BLCKSZ)) == BLCKSZ)
 	{
 		msg = convert_gpdb4_heap_page(ctx, buf);
@@ -466,7 +466,7 @@ convert_gpdb4_heap_file(migratorContext *ctx,
 	}
 
 	flush_overflow_page(ctx);
-	
+
 	close(src_fd);
 	close(dstfd);
 
