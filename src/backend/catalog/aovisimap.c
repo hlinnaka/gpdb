@@ -23,9 +23,9 @@
 #include "utils/guc.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_aovisimap_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aovisimap_pg_type_oid = InvalidOid;
+List	*binary_upgrade_next_aovisimap_pg_class_oid = InvalidOid;
+List	*binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
+List	*binary_upgrade_next_aovisimap_pg_type_oid = InvalidOid;
 
 void
 AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
@@ -100,23 +100,44 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	coloptions[1] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aovisimap_pg_class_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_aovisimap_pg_class_oid != NIL)
 	{
 		Assert(newOid == InvalidOid);
-		newOid = binary_upgrade_next_aovisimap_pg_class_oid;
-		binary_upgrade_next_aovisimap_pg_class_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_aovisimap_pg_class_oid){
+			if ( relOid == ((RelationOidOid)cell->data->ptr_value)->targetOid )
+			{
+				newOid = ((RelationNameOid)cell->data->ptr_value)->reloid;
+				break;
+			}
+		}
 	}
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aovisimap_index_pg_class_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_aovisimap_index_pg_class_oid != NIL)
 	{
 		Assert(newIndexOid == InvalidOid);
-		newIndexOid = binary_upgrade_next_aovisimap_index_pg_class_oid;
-		binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_aovisimap_index_pg_class_oid){
+			if ( relOid == ((RelationOidOid)cell->data->ptr_value)->targetOid )
+			{
+				newOid = ((RelationNameOid)cell->data->ptr_value)->reloid;
+				break;
+			}
+		}
 	}
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aovisimap_pg_type_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_aovisimap_pg_type_oid != NIL)
 	{
 		Assert(*comptypeOid == InvalidOid);
-		*comptypeOid = binary_upgrade_next_aovisimap_pg_type_oid;
-		binary_upgrade_next_aovisimap_pg_type_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_aovisimap_pg_type_oid){
+			if ( relOid == ((RelationOidOid)cell->data->ptr_value)->targetOid )
+			{
+				*comptypeOid = ((RelationNameOid)cell->data->ptr_value)->reloid;
+				break;
+			}
+		}
 	}
 
 	(void) CreateAOAuxiliaryTable(rel,

@@ -74,8 +74,8 @@
 #include "cdb/cdbpersistentfilesysobj.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
+RelationNameOid		*binary_upgrade_next_index_pg_class_oid = NULL;
+RelationNameOid		*binary_upgrade_next_toast_index_pg_class_oid = NULL;
 
 /*
  * binary_upgrade_next_aosegments_index_pg_class_oid,
