@@ -19,12 +19,12 @@
 PG_MODULE_MAGIC;
 #endif
 
-extern PGDLLIMPORT Oid binary_upgrade_next_pg_type_oid;
+extern PGDLLIMPORT List *binary_upgrade_next_pg_type_oid;
 extern PGDLLIMPORT Oid binary_upgrade_next_array_pg_type_oid;
-extern PGDLLIMPORT Oid binary_upgrade_next_toast_pg_type_oid;
-extern PGDLLIMPORT Oid binary_upgrade_next_aosegments_pg_type_oid;
+extern PGDLLIMPORT List *binary_upgrade_next_toast_pg_type_oid;
+extern PGDLLIMPORT List *binary_upgrade_next_aosegments_pg_type_oid;
 extern PGDLLIMPORT Oid binary_upgrade_next_aoblockdir_pg_type_oid;
-extern PGDLLIMPORT Oid binary_upgrade_next_aovisimap_pg_type_oid;
+extern PGDLLIMPORT List * binary_upgrade_next_aovisimap_pg_type_oid;
 
 extern PGDLLIMPORT List *binary_upgrade_next_heap_pg_class_oid;
 extern PGDLLIMPORT List *binary_upgrade_next_index_pg_class_oid;
@@ -81,12 +81,20 @@ PG_FUNCTION_INFO_V1(set_next_aovisimap_index_pg_class_oid);
 
 PG_FUNCTION_INFO_V1(set_next_pg_authid_oid);
 
+static List * 
+appendNameOid(List *dest, char *relname, Oid oid);
+static List *
+appendOidOid(List *dest, Oid targetOid, Oid oid);
+
+
 Datum
 set_next_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			typoid = PG_GETARG_OID(0);
+	char		*typname = PG_GETARG_CSTRING(0);
+	Oid			typoid = PG_GETARG_OID(1);
 
-	binary_upgrade_next_pg_type_oid = typoid;
+	binary_upgrade_next_pg_type_oid =
+			appendNameOid(binary_upgrade_next_pg_type_oid, typname, typoid);
 
 	PG_RETURN_VOID();
 }
@@ -104,9 +112,11 @@ set_next_array_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_toast_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			typoid = PG_GETARG_OID(0);
+	char	*relName = PG_GETARG_CSTRING(0);
+	Oid		reloid = PG_GETARG_OID(1);
 
-	binary_upgrade_next_toast_pg_type_oid = typoid;
+	binary_upgrade_next_toast_pg_type_oid =
+		appendNameOid(binary_upgrade_next_toast_pg_type_oid, relName, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -114,9 +124,11 @@ set_next_toast_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aosegments_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			typoid = PG_GETARG_OID(0);
+	Oid			targetOid 	= PG_GETARG_OID(0);
+	Oid			typoid = PG_GETARG_OID(1);
 
-	binary_upgrade_next_aosegments_pg_type_oid = typoid;
+	binary_upgrade_next_aosegments_pg_type_oid = 
+		appendOidOid(binary_upgrade_next_aosegments_pg_type_oid, targetOid, typoid);
 
 	PG_RETURN_VOID();
 }
@@ -137,7 +149,8 @@ set_next_aovisimap_pg_type_oid(PG_FUNCTION_ARGS)
 	Oid			targetOid 	= PG_GETARG_OID(0);
 	Oid			typoid 		= PG_GETARG_OID(1);
 
-	appendOidOid(binary_upgrade_next_aovisimap_pg_type_oid,targetOid, typoid);
+	binary_upgrade_next_aovisimap_pg_type_oid = 
+		appendOidOid(binary_upgrade_next_aovisimap_pg_type_oid,targetOid, typoid);
 
 	PG_RETURN_VOID();
 }
@@ -148,30 +161,40 @@ Datum
 clear_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
 {
 	MemoryContextSwitchTo(TopMemoryContext);
-	List *cur, *tmp = binary_upgrade_next_heap_pg_class_oid;
 
-	binary_upgrade_next_heap_pg_class_oid = NULL;
+	binary_upgrade_next_heap_pg_class_oid = NIL;
+	binary_upgrade_next_index_pg_class_oid = NIL;
+	binary_upgrade_next_toast_pg_class_oid = NIL;
+	binary_upgrade_next_toast_index_pg_class_oid = NIL;
+	binary_upgrade_next_aosegments_pg_class_oid = NIL;
+	binary_upgrade_next_aosegments_index_pg_class_oid = NIL;
+	binary_upgrade_next_aoblockdir_pg_class_oid = NIL;
+	binary_upgrade_next_aoblockdir_index_pg_class_oid = NIL;
+	binary_upgrade_next_aovisimap_pg_class_oid = NIL;
+	binary_upgrade_next_aovisimap_index_pg_class_oid = NIL;
 	PG_RETURN_VOID();
 }
 Datum
 set_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char		*tablename = PG_GETARG_CSTRING(0);
+	char	*tablename = PG_GETARG_CSTRING(0);
 	Oid		reloid = PG_GETARG_OID(1);
-	appendNameOid(binary_upgrade_next_heap_pg_class_oid, tablename, reloid);
+
+	binary_upgrade_next_heap_pg_class_oid = 
+		appendNameOid(binary_upgrade_next_heap_pg_class_oid, tablename, reloid);
 
 	PG_RETURN_VOID();
 }
 
 
-
-
 Datum
 set_next_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	Oid			reloid = PG_GETARG_OID(0);
+	char	*tablename = PG_GETARG_CSTRING(0);
+	Oid		reloid = PG_GETARG_OID(1);
 
-	binary_upgrade_next_index_pg_class_oid = reloid;
+	binary_upgrade_next_index_pg_class_oid = 
+		appendNameOid(binary_upgrade_next_index_pg_class_oid, tablename, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -179,10 +202,11 @@ set_next_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_toast_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*tablename = PG_GETARG_CSTRING(0);
-	Oid		reloid = PG_GETARG_OID(1);
+        Oid	targetOid = PG_GETARG_OID(0);	
+	Oid	reloid = PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_toast_pg_class_oid, tablename, reloid);
+	binary_upgrade_next_toast_pg_class_oid = 
+		appendOidOid(binary_upgrade_next_toast_pg_class_oid, targetOid, reloid);
 
 
 	PG_RETURN_VOID();
@@ -198,10 +222,11 @@ set_next_toast_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*tablename = PG_GETARG_CSTRING(0);
-	Oid		reloid = PG_GETARG_OID(1);
+        Oid	targetOid = PG_GETARG_OID(0);	
+	Oid	reloid = PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_toast_index_pg_class_oid, tablename, reloid);
+	binary_upgrade_next_toast_index_pg_class_oid = 
+		appendOidOid(binary_upgrade_next_toast_index_pg_class_oid, targetOid, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -209,10 +234,11 @@ set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*tablename = PG_GETARG_CSTRING(0);
+	Oid		target_oid = PG_GETARG_OID(0);
 	Oid		reloid = PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_aosegments_pg_class_oid, tablename, reloid);
+	binary_upgrade_next_aosegments_pg_class_oid = 
+		appendOidOid(binary_upgrade_next_aosegments_pg_class_oid, target_oid, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -220,10 +246,11 @@ set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aosegments_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*tablename = PG_GETARG_CSTRING(0);
+	Oid		target_oid = PG_GETARG_OID(0);
 	Oid		reloid = PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_aosegments_index_pg_class_oid, tablename, reloid);
+	binary_upgrade_next_aosegments_index_pg_class_oid = 
+		appendOidOid(binary_upgrade_next_aosegments_index_pg_class_oid, target_oid, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -234,7 +261,8 @@ set_next_aoblockdir_pg_class_oid(PG_FUNCTION_ARGS)
 	char	*tablename = PG_GETARG_CSTRING(0);
 	Oid		reloid = PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_aoblockdir_pg_class_oid, tablename, reloid);
+	binary_upgrade_next_aoblockdir_pg_class_oid = 
+		appendNameOid(binary_upgrade_next_aoblockdir_pg_class_oid, tablename, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -245,7 +273,8 @@ set_next_aoblockdir_index_pg_class_oid(PG_FUNCTION_ARGS)
 	char	*tablename = PG_GETARG_CSTRING(0);
 	Oid		reloid = PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_aoblockdir_index_pg_class_oid, tablename, reloid);
+	binary_upgrade_next_aoblockdir_index_pg_class_oid = 
+		appendNameOid(binary_upgrade_next_aoblockdir_index_pg_class_oid, tablename, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -256,7 +285,8 @@ set_next_aovisimap_pg_class_oid(PG_FUNCTION_ARGS)
 	Oid		targetOid 	= PG_GETARG_OID(0);
 	Oid		reloid		= PG_GETARG_OID(1);
 
-	appendOidOid(binary_upgrade_next_aovisimap_pg_class_oid, targetOid, reloid);
+	binary_upgrade_next_aovisimap_pg_class_oid = 
+		appendOidOid(binary_upgrade_next_aovisimap_pg_class_oid, targetOid, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -267,7 +297,8 @@ set_next_aovisimap_index_pg_class_oid(PG_FUNCTION_ARGS)
 	Oid		targetOid 	= PG_GETARG_OID(0);
 	Oid		reloid 		= PG_GETARG_OID(1);
 
-	appendNameOid(binary_upgrade_next_aovisimap_index_pg_class_oid, targetOid, reloid);
+	binary_upgrade_next_aovisimap_index_pg_class_oid =
+		appendOidOid(binary_upgrade_next_aovisimap_index_pg_class_oid, targetOid, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -281,7 +312,7 @@ set_next_pg_authid_oid(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-static void
+static List *
 appendNameOid(List *dest, char *relname, Oid oid)
 {
 	MemoryContextSwitchTo(TopMemoryContext);
@@ -290,9 +321,9 @@ appendNameOid(List *dest, char *relname, Oid oid)
 	strncpy(name_oid->tablename,relname,NAMEDATALEN);
 	name_oid->reloid = oid;
 
-	lappend(dest, name_oid);
+	return lappend(dest, name_oid);
 }
-static void
+static List *
 appendOidOid(List *dest, Oid targetOid, Oid oid)
 {
 	MemoryContextSwitchTo(TopMemoryContext);
@@ -301,5 +332,5 @@ appendOidOid(List *dest, Oid targetOid, Oid oid)
 	oid_oid->targetOid = targetOid;
 	oid_oid->reloid = oid;
 
-	lappend(dest, oid_oid);
+	return lappend(dest, oid_oid);
 }

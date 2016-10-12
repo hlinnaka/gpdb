@@ -23,9 +23,9 @@
 #include "utils/guc.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-List	*binary_upgrade_next_aovisimap_pg_class_oid = InvalidOid;
-List	*binary_upgrade_next_aovisimap_index_pg_class_oid = InvalidOid;
-List	*binary_upgrade_next_aovisimap_pg_type_oid = InvalidOid;
+List	*binary_upgrade_next_aovisimap_pg_class_oid = NIL;
+List	*binary_upgrade_next_aovisimap_index_pg_class_oid = NIL;
+List	*binary_upgrade_next_aovisimap_pg_type_oid = NIL;
 
 void
 AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
@@ -106,9 +106,9 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		ListCell *cell;
 		foreach(cell, binary_upgrade_next_aovisimap_pg_class_oid){
-			if ( relOid == ((RelationOidOid)cell->data->ptr_value)->targetOid )
+			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid )
 			{
-				newOid = ((RelationNameOid)cell->data->ptr_value)->reloid;
+				newOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
 				break;
 			}
 		}
@@ -119,9 +119,9 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		ListCell *cell;
 		foreach(cell, binary_upgrade_next_aovisimap_index_pg_class_oid){
-			if ( relOid == ((RelationOidOid)cell->data->ptr_value)->targetOid )
+			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid )
 			{
-				newOid = ((RelationNameOid)cell->data->ptr_value)->reloid;
+				newOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
 				break;
 			}
 		}
@@ -132,9 +132,9 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		ListCell *cell;
 		foreach(cell, binary_upgrade_next_aovisimap_pg_type_oid){
-			if ( relOid == ((RelationOidOid)cell->data->ptr_value)->targetOid )
+			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid )
 			{
-				*comptypeOid = ((RelationNameOid)cell->data->ptr_value)->reloid;
+				*comptypeOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
 				break;
 			}
 		}

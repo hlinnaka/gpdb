@@ -238,8 +238,8 @@ static int	dumpBlobComments(Archive *AH, void *arg __attribute__((unused)));
 static void dumpDatabase(Archive *AH);
 static void dumpEncoding(Archive *AH);
 static void dumpStdStrings(Archive *AH);
-static void binary_upgrade_set_type_oids_by_type_oid(
-								PQExpBuffer upgrade_buffer, Oid pg_type_oid);
+static void binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
+							char *pg_type_name, Oid pg_type_oid);
 static bool binary_upgrade_set_type_oids_by_rel_oid(
 								 PQExpBuffer upgrade_buffer, Oid pg_rel_oid);
 static void binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer,
@@ -2083,7 +2083,7 @@ binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
 	appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type oid\n");
 	appendPQExpBuffer(upgrade_buffer,
 	 "SELECT binary_upgrade.set_next_pg_type_oid('%s'::CSTRING,'%u'::pg_catalog.oid);\n\n",
-					  pg_type_oid);
+					  pg_type_name, pg_type_oid);
 
 	if (g_fout->remoteVersion >= 80300)
 	{
@@ -2160,7 +2160,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltype AS crel, c.relname AS crelname, "
-					  "       t.reltype AS trel, t.relname trelname, "
+					  "       t.reltype AS trel, t.relname as trelname, "
 					  "       aoseg.reltype AS aosegrel, aoseg.relname as aosegrelname, "
 					  "       aoblkdir.reltype AS aoblkdirrel, aoblkdir.relname as aoblkdirrelname, "
 					  "       aovisimap.reltype AS aovisimaprel, aovisimap.relname as aovismaprelname "
@@ -2223,8 +2223,8 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aosegments oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aosegments_pg_type_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n\n",
-						  pg_type_aosgements_name, pg_type_aosegments_oid);
+						  "SELECT binary_upgrade.set_next_aosegments_pg_type_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n\n",
+						  pg_rel_oid, pg_type_aosegments_oid);
 	}
 
 	if (!PQgetisnull(upgrade_res, 0, PQfnumber(upgrade_res, "aoblkdirrel")))
@@ -2247,7 +2247,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 		Oid			pg_type_aovisimap_oid = atooid(PQgetvalue(upgrade_res, 0,
 											PQfnumber(upgrade_res, "aovisimaprel")));
 		char		*pg_type_aovisimap_name = PQgetvalue(upgrade_res, 0,
-				PQfnumber(upgrade_res, "aovisimaprelname"));
+				PQfnumber(upgrade_res, "aovismaprelname"));
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aovisimap oid\n");
 		appendPQExpBuffer(upgrade_buffer,
@@ -2341,24 +2341,24 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 			 */
 
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
-							  pg_class_relname, pg_class_reltoastrelid);
+							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  pg_class_oid, pg_class_reltoastrelid);
 
 			/* every toast table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
-							  pg_class_relname, pg_class_reltoastidxid);
+							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  pg_class_oid, pg_class_reltoastidxid);
 		}
 		if (OidIsValid(pg_appendonly_segrelid))
 		{
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aosegments_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
-							  pg_class_relname, pg_appendonly_segrelid);
+							  "SELECT binary_upgrade.set_next_aosegments_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  pg_class_oid, pg_appendonly_segrelid);
 
 			/* every aosegments table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aosegments_index_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
-							  pg_class_relname, pg_appendonly_segidxid);
+							  "SELECT binary_upgrade.set_next_aosegments_index_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  pg_class_oid, pg_appendonly_segidxid);
 		}
 		if (OidIsValid(pg_appendonly_blkdirrelid))
 		{
@@ -5757,7 +5757,7 @@ dumpEnumType(Archive *fout, TypeInfo *tinfo)
 					  fmtId(tinfo->dobj.name));
 
 	if (binary_upgrade)
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
 
 	appendPQExpBuffer(q, "CREATE TYPE %s AS ENUM (\n",
 					  fmtId(tinfo->dobj.name));
@@ -6022,7 +6022,7 @@ dumpBaseType(Archive *fout, TypeInfo *tinfo)
 
 	/* We might already have a shell type, but setting pg_type_oid is harmless */
 	if (binary_upgrade)
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
 
 	appendPQExpBuffer(q,
 					  "CREATE TYPE %s (\n"
@@ -6224,7 +6224,7 @@ dumpDomain(Archive *fout, TypeInfo *tinfo)
 		typdefault = NULL;
 
 	if (binary_upgrade)
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
 
 	appendPQExpBuffer(q,
 					  "CREATE DOMAIN %s AS %s",
@@ -6336,7 +6336,7 @@ dumpCompositeType(Archive *fout, TypeInfo *tinfo)
 
 	if (binary_upgrade)
 	{
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
 		binary_upgrade_set_pg_class_oids(q, tinfo->typrelid, false);
 	}
 
@@ -6423,7 +6423,7 @@ dumpShellType(Archive *fout, ShellTypeInfo *stinfo)
 
 	if (binary_upgrade)
 		binary_upgrade_set_type_oids_by_type_oid(q,
-								stinfo->baseType->dobj.catId.oid);
+				stinfo->dobj.name, stinfo->baseType->dobj.catId.oid);
 
 	appendPQExpBuffer(q, "CREATE TYPE %s;\n",
 					  fmtId(stinfo->dobj.name));
