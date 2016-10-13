@@ -81,10 +81,9 @@ PG_FUNCTION_INFO_V1(set_next_aovisimap_index_pg_class_oid);
 
 PG_FUNCTION_INFO_V1(set_next_pg_authid_oid);
 
-static List * 
-appendNameOid(List *dest, char *relname, Oid oid);
-static List *
-appendOidOid(List *dest, Oid targetOid, Oid oid);
+static List * appendNameOid(List *dest, char *relname, Oid oid);
+static List *appendOidOid(List *dest, Oid targetOid, Oid oid);
+static List *freeList(List *list);
 
 
 Datum
@@ -162,16 +161,36 @@ clear_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
 {
 	MemoryContextSwitchTo(TopMemoryContext);
 
+	freeList(binary_upgrade_next_heap_pg_class_oid);
 	binary_upgrade_next_heap_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_index_pg_class_oid);
 	binary_upgrade_next_index_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_toast_pg_class_oid);
 	binary_upgrade_next_toast_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_toast_index_pg_class_oid);
 	binary_upgrade_next_toast_index_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_aosegments_pg_class_oid);
 	binary_upgrade_next_aosegments_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_aosegments_index_pg_class_oid);
 	binary_upgrade_next_aosegments_index_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_aoblockdir_pg_class_oid);
 	binary_upgrade_next_aoblockdir_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_aoblockdir_index_pg_class_oid);
 	binary_upgrade_next_aoblockdir_index_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_aovisimap_pg_class_oid);
 	binary_upgrade_next_aovisimap_pg_class_oid = NIL;
+
+	freeList(binary_upgrade_next_aovisimap_index_pg_class_oid);
 	binary_upgrade_next_aovisimap_index_pg_class_oid = NIL;
+
 	PG_RETURN_VOID();
 }
 Datum
@@ -333,4 +352,14 @@ appendOidOid(List *dest, Oid targetOid, Oid oid)
 	oid_oid->reloid = oid;
 
 	return lappend(dest, oid_oid);
+}
+static List *
+freeList(List *list)
+{
+
+	while (list != NIL && list->length > 0)
+	{
+		list = list_delete_first(list);
+	}
+	return list;
 }
