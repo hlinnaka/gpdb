@@ -18,6 +18,17 @@
 #include "parser/parse_node.h"
 #include "catalog/gp_persistent.h"
 
+
+typedef struct {
+	char tablename[NAMEDATALEN];
+	Oid  reloid;
+}RelationNameOid;
+
+typedef struct  {
+	Oid  targetOid;
+	Oid  reloid;
+}RelationOidOid;
+
 typedef struct CookedConstraint
 {
 	ConstrType	contype;		/* CONSTR_DEFAULT or CONSTR_CHECK */

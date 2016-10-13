@@ -21,9 +21,9 @@
 #include "nodes/makefuncs.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aosegments_pg_type_oid = InvalidOid;
+List		*binary_upgrade_next_aosegments_pg_class_oid = NIL;
+List		*binary_upgrade_next_aosegments_index_pg_class_oid = NIL;
+List		*binary_upgrade_next_aosegments_pg_type_oid = NIL;
 
 void
 AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
@@ -171,23 +171,45 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	coloptions[0] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_class_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_aosegments_pg_class_oid != NIL)
 	{
 		Assert(newOid == InvalidOid);
-		newOid = binary_upgrade_next_aosegments_pg_class_oid;
-		binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_aosegments_pg_class_oid){
+			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)
+			{
+				newOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
+				break;
+			}
+		}
 	}
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_index_pg_class_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_aosegments_index_pg_class_oid != NIL)
 	{
 		Assert(newIndexOid == InvalidOid);
-		newIndexOid = binary_upgrade_next_aosegments_index_pg_class_oid;
-		binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_aosegments_index_pg_class_oid){
+			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)
+			{
+				newIndexOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
+				break;
+			}
+		}
 	}
 	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_type_oid))
 	{
 		Assert(*comptypeOid == InvalidOid);
-		*comptypeOid = binary_upgrade_next_aosegments_pg_type_oid;
-		binary_upgrade_next_aosegments_pg_type_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_aosegments_pg_type_oid){
+			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)
+			{
+				*comptypeOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
+				break;
+			}
+		}
+
 	}
 
 	(void) CreateAOAuxiliaryTable(rel, prefix, RELKIND_AOSEGMENTS,

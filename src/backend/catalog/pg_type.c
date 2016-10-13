@@ -33,7 +33,12 @@
 
 #include "cdb/cdbvars.h"
 
-Oid binary_upgrade_next_pg_type_oid = InvalidOid;
+typedef struct {
+	char tablename[NAMEDATALEN];
+	Oid  reloid;
+}RelationNameOid;
+
+List  *binary_upgrade_next_pg_type_oid = NIL;
 
 /*
  * Record a type's default encoding clause in the catalog.
@@ -154,10 +159,19 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_pg_type_oid != NIL)
 	{
-		HeapTupleSetOid(tup, binary_upgrade_next_pg_type_oid);
-		binary_upgrade_next_pg_type_oid = InvalidOid;
+		Oid typeOid = InvalidOid;
+		ListCell *cell;
+
+		foreach(cell, binary_upgrade_next_pg_type_oid )
+		{
+			if ( strncmp(typeName,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
+			{
+				typeOid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
+			}
+		}
+		HeapTupleSetOid(tup, typeOid);
 	}
 
 	/*
@@ -401,10 +415,19 @@ TypeCreateWithOptions(Oid newTypeOid,
 		else if (Gp_role == GP_ROLE_EXECUTE)
 			elog(ERROR," newtypeOid NULL");
 		/* Use binary-upgrade override for pg_type.oid, if supplied. */
-		else if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
+		else if (IsBinaryUpgrade && binary_upgrade_next_pg_type_oid != NIL)
 		{
-			HeapTupleSetOid(tup, binary_upgrade_next_pg_type_oid);
-			binary_upgrade_next_pg_type_oid = InvalidOid;
+			Oid typeOid = InvalidOid;
+			ListCell *cell;
+
+			foreach(cell, binary_upgrade_next_pg_type_oid )
+			{
+				if ( strncmp(typeName,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
+				{
+					typeOid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
+				}
+			}
+			HeapTupleSetOid(tup, typeOid);
 		}
 		/* else allow system to assign oid */
 

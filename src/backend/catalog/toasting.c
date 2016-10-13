@@ -34,9 +34,10 @@
 #include "utils/guc.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-extern Oid	binary_upgrade_next_toast_pg_class_oid;
+extern List	*binary_upgrade_next_toast_pg_class_oid;
+extern List     *binary_upgrade_next_toast_index_pg_class_oid;
 
-Oid			binary_upgrade_next_toast_pg_type_oid = InvalidOid;
+List		*binary_upgrade_next_toast_pg_type_oid = NIL;
 
 static bool create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 							   Oid *comptypeOid, bool is_part_child);
@@ -143,7 +144,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	 */
 	if (!RelationNeedsToastTable(rel) &&
 		(!IsBinaryUpgrade ||
-		 !OidIsValid(binary_upgrade_next_toast_pg_class_oid)))
+		 binary_upgrade_next_toast_pg_class_oid == NIL ))
 		return false;
 
 	/*
@@ -206,13 +207,33 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	Oid unusedTypArrayOid = InvalidOid;
 
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_toast_pg_type_oid))
+	if (IsBinaryUpgrade && binary_upgrade_next_toast_pg_type_oid !=NIL)
 	{
-		toast_typid = binary_upgrade_next_toast_pg_type_oid;
-		binary_upgrade_next_toast_pg_type_oid = InvalidOid;
+
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_toast_pg_type_oid){
+			if ( strncmp(toast_relname,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
+			{
+				toast_typid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
+				break;
+			}
+		}
 	}
 	else if (comptypeOid)
 		toast_typid = *comptypeOid;
+	
+	/* Use binary-upgrade override for pg_class.oid, if supplied. */
+	if (IsBinaryUpgrade && binary_upgrade_next_toast_pg_class_oid !=NIL)
+	{
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_toast_pg_class_oid){
+		        if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)	
+			{
+				toastOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
+				break;
+			}
+		}
+	}
 
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
@@ -272,12 +293,26 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	coloptions[0] = 0;
 	coloptions[1] = 0;
 
+	/* Use binary-upgrade override for pg_class.oid, if supplied. */
+	if (IsBinaryUpgrade && binary_upgrade_next_toast_index_pg_class_oid !=NIL)
+	{
+		ListCell *cell;
+		foreach(cell, binary_upgrade_next_toast_index_pg_class_oid){
+		        if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)	
+			{
+				toastIndexOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
+				break;
+			}
+		}
+	}
+
 	toast_idxid = index_create(toast_relid, toast_idxname, toastIndexOid,
 							   indexInfo,
 							   BTREE_AM_OID,
 							   rel->rd_rel->reltablespace,
 							   classObjectId, coloptions, (Datum) 0,
 							   true, false, (Oid *) NULL, true, false, false, NULL);
+
 
 	/*
 	 * If this is a partitioned child, we can unlock since the master is

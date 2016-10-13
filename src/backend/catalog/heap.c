@@ -84,8 +84,8 @@
 
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+List	*binary_upgrade_next_heap_pg_class_oid = NIL;
+List	*binary_upgrade_next_toast_pg_class_oid = NIL;
 /*
  * binary_upgrade_next_aosegments_pg_class_oid,
  * binary_upgrade_next_aoblockdir_pg_class_oid, and
@@ -1559,20 +1559,31 @@ heap_create_with_catalog(const char *relname,
 		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
 		 * supplied.
 		 */
-		if (IsBinaryUpgrade &&
-			OidIsValid(binary_upgrade_next_heap_pg_class_oid) &&
+		if (IsBinaryUpgrade && (binary_upgrade_next_heap_pg_class_oid != NIL) &&
 			(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
 			 relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
 		{
-			relid = binary_upgrade_next_heap_pg_class_oid;
-			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
+			ListCell *cell;
+			foreach(cell, binary_upgrade_next_heap_pg_class_oid){
+				if ( strncmp(relname,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
+				{
+					relid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
+					break;
+				}
+			}
 		}
 		else if (IsBinaryUpgrade &&
-				 OidIsValid(binary_upgrade_next_toast_pg_class_oid) &&
+				 binary_upgrade_next_toast_pg_class_oid != NIL &&
 				 relkind == RELKIND_TOASTVALUE)
 		{
-			relid = binary_upgrade_next_toast_pg_class_oid;
-			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+			ListCell *cell;
+			foreach(cell, binary_upgrade_next_toast_pg_class_oid){
+				if ( strncmp(relname,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
+				{
+					relid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
+					break;
+				}
+			}
 		}
 		/*
 		 * AO segment, blockdir, and visimap tables are handled in upper level,
