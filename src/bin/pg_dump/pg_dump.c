@@ -2206,8 +2206,10 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 											PQfnumber(upgrade_res, "trelname"));
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type toast oid\n");
+
+		/* we have to make the type name unique as it is the same as the table name */
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_toast_pg_type_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  "SELECT binary_upgrade.set_next_toast_pg_type_oid('%s_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
 						  pg_type_toast_name, pg_type_toast_oid);
 
 		toast_set = true;
@@ -2222,10 +2224,13 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 												PQfnumber(upgrade_res, "aosegrelname"));
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aosegments oid\n");
+
+		/* we have to make the type name unique as it is the same as the table name */
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aosegments_pg_type_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n\n",
-						  pg_rel_oid, pg_type_aosegments_oid);
+						  "SELECT binary_upgrade.set_next_aosegments_pg_type_oid('%s_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  pg_type_aosgements_name, pg_type_aosegments_oid);
 	}
+
 
 	if (!PQgetisnull(upgrade_res, 0, PQfnumber(upgrade_res, "aoblkdirrel")))
 	{
@@ -2233,26 +2238,26 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 		Oid			pg_type_aoblockdir_oid = atooid(PQgetvalue(upgrade_res, 0,
 											PQfnumber(upgrade_res, "aoblkdirrel")));
 		char		*pg_type_aoblockdir_name = PQgetvalue(upgrade_res, 0,
-				PQfnumber(upgrade_res, "aoblkdirrelname"));
+						PQfnumber(upgrade_res, "aoblkdirrelname"));
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aoblockdir oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aoblockdir_pg_type_oid('%s'::CSTRING,'%u'::pg_catalog.oid);\n\n",
+						  "SELECT binary_upgrade.set_next_aoblockdir_pg_type_oid('%s_type'::CSTRING,'%u'::pg_catalog.oid);\n\n",
 						  pg_type_aoblockdir_name, pg_type_aoblockdir_oid);
 	}
 
 	if (!PQgetisnull(upgrade_res, 0, PQfnumber(upgrade_res, "aovisimaprel")))
 	{
 		/* AO visimap tables do not have pg_type array rows */
-		Oid			pg_type_aovisimap_oid = atooid(PQgetvalue(upgrade_res, 0,
+		Oid		pg_type_aovisimap_oid = atooid(PQgetvalue(upgrade_res, 0,
 											PQfnumber(upgrade_res, "aovisimaprel")));
-		char		*pg_type_aovisimap_name = PQgetvalue(upgrade_res, 0,
-				PQfnumber(upgrade_res, "aovismaprelname"));
+		char	*pg_type_aovisimap_name = PQgetvalue(upgrade_res, 0,
+						PQfnumber(upgrade_res, "aovismaprelname"));
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aovisimap oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n\n",
-						  pg_rel_oid, pg_type_aovisimap_oid);
+						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%u_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  pg_type_aovisimap_name, pg_type_aovisimap_oid);
 	}
 
 	PQclear(upgrade_res);
@@ -2341,12 +2346,12 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 			 */
 
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('pg_toast_%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_class_reltoastrelid);
 
 			/* every toast table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('pg_toast_%u_index'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_class_reltoastidxid);
 		}
 		if (OidIsValid(pg_appendonly_segrelid))

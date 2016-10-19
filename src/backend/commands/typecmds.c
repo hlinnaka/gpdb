@@ -462,7 +462,7 @@ DefineType(List *names, List *parameters, Oid newOid, Oid newArrayOid)
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
 	array_oid = newArrayOid;
 	if (!OidIsValid(array_oid))
-		array_oid = AssignTypeArrayOid();
+		array_oid = AssignTypeArrayOid(typeNamespace, typeName);
 
 	/*
 	 * now have TypeCreate do all the real work.
@@ -1143,7 +1143,7 @@ DefineEnum(CreateEnumStmt *stmt)
 	if (OidIsValid(stmt->enumArrayOid))
 		enumArrayOid = stmt->enumArrayOid;
 	else
-		enumArrayOid = AssignTypeArrayOid();
+		enumArrayOid = AssignTypeArrayOid(enumNamespace, enumName );
 
 	/* Create the pg_type entry */
 	enumTypeOid =
@@ -1492,15 +1492,17 @@ findTypeAnalyzeFunction(List *procname, Oid typeOid)
  *	Pre-assign the type's array OID for use in pg_type.typarray
  */
 Oid
-AssignTypeArrayOid(void)
+AssignTypeArrayOid(const char *typeNameSpace, const char *typeName)
 {
 	Oid		type_array_oid;
 
 	/* Use binary-upgrade override for pg_type.typarray, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_array_pg_type_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_array_pg_type_oid */
 	{
-		type_array_oid = binary_upgrade_next_array_pg_type_oid;
-		binary_upgrade_next_array_pg_type_oid = InvalidOid;
+		Oid *binaryTypeOid;
+		if( (binaryTypeOid = hash_search(relation_oid_hash, typeName, HASH_REMOVE, NULL)) != NULL)
+			type_array_oid = *binaryTypeOid;
+
 	}
 	else
 	{

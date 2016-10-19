@@ -73,9 +73,6 @@
 #include "cdb/cdbmirroredfilesysobj.h"
 #include "cdb/cdbpersistentfilesysobj.h"
 
-/* Potentially set by contrib/pg_upgrade_support functions */
-RelationNameOid		*binary_upgrade_next_index_pg_class_oid = NULL;
-RelationNameOid		*binary_upgrade_next_toast_index_pg_class_oid = NULL;
 
 /*
  * binary_upgrade_next_aosegments_index_pg_class_oid,
@@ -652,20 +649,20 @@ index_create(Oid heapRelationId,
 		 * supplied.
 		 */
 		char		relkind = heapRelation->rd_rel->relkind;
-
+		Oid *binaryOid;
 		if (IsBinaryUpgrade &&
 			relkind == RELKIND_RELATION &&
-			OidIsValid(binary_upgrade_next_index_pg_class_oid))
+			relation_oid_hash != NULL &&
+			(binaryOid = hash_search(relation_oid_hash, indexRelationName, HASH_REMOVE, NULL) ))
 		{
-			indexRelationId = binary_upgrade_next_index_pg_class_oid;
-			binary_upgrade_next_index_pg_class_oid = InvalidOid;
+			indexRelationId = *binaryOid;
 		}
 		else if (IsBinaryUpgrade &&
 				 relkind == RELKIND_TOASTVALUE &&
-				 OidIsValid(binary_upgrade_next_toast_index_pg_class_oid))
+				 relation_oid_hash != NULL &&
+				 (binaryOid = hash_search(relation_oid_hash, indexRelationName, HASH_REMOVE, NULL) ))
 		{
-			indexRelationId = binary_upgrade_next_toast_index_pg_class_oid;
-			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
+			indexRelationId = *binaryOid;
 		}
 		else
 		{

@@ -36,6 +36,10 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	TupleDesc	tupdesc;
 	Oid			classObjectId[2];
 	int16		coloptions[2];
+	Oid			*binaryOid;
+	Oid			*binaryIndexOid;
+	Oid			*binaryTypeOid;
+
 
 	elogif(Debug_appendonly_print_visimap, LOG,
 		   "Create visimap for relation %d, visimap relid %d, visimap idxid %d",
@@ -56,6 +60,7 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		heap_close(rel, NoLock);
 		return;
 	}
+
 
 	/* Create a tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(Natts_pg_aovisimap, false);
@@ -100,44 +105,37 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	coloptions[1] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && binary_upgrade_next_aovisimap_pg_class_oid != NIL)
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
 		Assert(newOid == InvalidOid);
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_aovisimap_pg_class_oid){
-			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid )
-			{
-				newOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		char aovismapRelname[NAMEDATALEN*3];
+		snprintf(aovismapRelname, NAMEDATALEN*3, "pg_aovisimap_%u",relOid);
+
+		binaryOid = hash_search(relation_oid_hash, aovismapRelname, HASH_REMOVE, NULL);
+		if (binaryOid != NULL)
+			newOid = *binaryOid;
 	}
-	if (IsBinaryUpgrade && binary_upgrade_next_aovisimap_index_pg_class_oid != NIL)
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
 		Assert(newIndexOid == InvalidOid);
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_aovisimap_index_pg_class_oid){
-			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid )
-			{
-				newOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		char aovismapRelname[NAMEDATALEN*3];
+		snprintf(aovismapRelname, NAMEDATALEN*3, "pg_aovisimap_%u_index",relOid);
+
+		if ( (binaryIndexOid = hash_search(relation_oid_hash, aovismapRelname, HASH_REMOVE, NULL)) != NULL )
+			newOid = *binaryOid;
 	}
-	if (IsBinaryUpgrade && binary_upgrade_next_aovisimap_pg_type_oid != NIL)
+
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_aovisimap_pg_type_oid */
 	{
 		Assert(*comptypeOid == InvalidOid);
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_aovisimap_pg_type_oid){
-			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid )
-			{
-				*comptypeOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		char aovismapTypname[NAMEDATALEN*3];
+		snprintf(aovismapTypname, NAMEDATALEN*3, "pg_aovisimap_%u_type",relOid);
+
+		if( (binaryTypeOid = hash_search(relation_oid_hash, aovismapTypname, HASH_REMOVE, NULL)) != NULL)
+			*comptypeOid = *binaryTypeOid;
 	}
 
 	(void) CreateAOAuxiliaryTable(rel,

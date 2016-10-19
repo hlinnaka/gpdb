@@ -35,6 +35,9 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	IndexInfo  *indexInfo;
 	Oid			classObjectId[1];
 	int16		coloptions[1];
+	Oid			*binaryOid;
+	Oid			*binaryIndexOid;
+	Oid			*binaryTypOid;
 
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release
@@ -171,44 +174,40 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	coloptions[0] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && binary_upgrade_next_aosegments_pg_class_oid != NIL)
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
 		Assert(newOid == InvalidOid);
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_aosegments_pg_class_oid){
-			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)
-			{
-				newOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
-	}
-	if (IsBinaryUpgrade && binary_upgrade_next_aosegments_index_pg_class_oid != NIL)
-	{
-		Assert(newIndexOid == InvalidOid);
+		char aosegRelname[NAMEDATALEN];
+		snprintf(aosegRelname, NAMEDATALEN, "%s_%u",prefix,relOid);
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_aosegments_index_pg_class_oid){
-			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)
-			{
-				newIndexOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		binaryOid = hash_search(relation_oid_hash, aosegRelname, HASH_REMOVE, NULL);
+		if (binaryOid != NULL)
+			newOid = *binaryOid;
+
 	}
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_type_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
+	{
+		Assert(newOid == InvalidOid)
+
+		char aosegIndexRelname[NAMEDATALEN];
+		snprintf(aosegIndexRelname, NAMEDATALEN, "%s_%u_index",prefix,relOid);
+
+		binaryIndexOid = hash_search(relation_oid_hash, aosegIndexRelname, HASH_REMOVE, NULL);
+
+		if (binaryIndexOid != NULL)
+			newOid = *binaryIndexOid;
+	}
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
 		Assert(*comptypeOid == InvalidOid);
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_aosegments_pg_type_oid){
-			if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)
-			{
-				*comptypeOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		char aosegTypName[NAMEDATALEN];
+		snprintf(aosegTypName, NAMEDATALEN, "%s_%u_type",prefix,relOid);
+		binaryTypOid = hash_search(relation_oid_hash, aosegTypName, HASH_REMOVE, NULL);
+
+		if ( binaryTypOid != NULL )
+			*comptypeOid = *binaryTypOid;
 
 	}
 

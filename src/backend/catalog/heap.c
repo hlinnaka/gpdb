@@ -84,6 +84,9 @@
 
 
 /* Potentially set by contrib/pg_upgrade_support functions */
+HTAB    *relation_oid_hash = NULL;
+
+/* Potentially set by contrib/pg_upgrade_support functions */
 List	*binary_upgrade_next_heap_pg_class_oid = NIL;
 List	*binary_upgrade_next_toast_pg_class_oid = NIL;
 /*
@@ -1559,31 +1562,20 @@ heap_create_with_catalog(const char *relname,
 		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
 		 * supplied.
 		 */
-		if (IsBinaryUpgrade && (binary_upgrade_next_heap_pg_class_oid != NIL) &&
-			(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
-			 relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
+		Oid *binaryOid;
+
+		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
+				(binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL) ) &&
+				(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
+				relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
 		{
-			ListCell *cell;
-			foreach(cell, binary_upgrade_next_heap_pg_class_oid){
-				if ( strncmp(relname,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
-				{
-					relid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
-					break;
-				}
-			}
+			relid = *binaryOid;
 		}
-		else if (IsBinaryUpgrade &&
-				 binary_upgrade_next_toast_pg_class_oid != NIL &&
-				 relkind == RELKIND_TOASTVALUE)
+		else if (IsBinaryUpgrade && (relkind == RELKIND_TOASTVALUE) &&
+				(relation_oid_hash != NULL) &&
+				(binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL) ) )
 		{
-			ListCell *cell;
-			foreach(cell, binary_upgrade_next_toast_pg_class_oid){
-				if ( strncmp(relname,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
-				{
-					relid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
-					break;
-				}
-			}
+			relid = *binaryOid;
 		}
 		/*
 		 * AO segment, blockdir, and visimap tables are handled in upper level,
@@ -1654,7 +1646,7 @@ heap_create_with_catalog(const char *relname,
 							  relkind == RELKIND_COMPOSITE_TYPE) &&
 		relnamespace != PG_BITMAPINDEX_NAMESPACE &&
 		!OidIsValid(new_array_oid))
-		new_array_oid = AssignTypeArrayOid();
+		new_array_oid = AssignTypeArrayOid(relnamespace, relname);
 
 	/*
 	 * Since defining a relation also defines a complex type, we add a new

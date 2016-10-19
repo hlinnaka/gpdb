@@ -33,11 +33,6 @@
 #include "utils/syscache.h"
 #include "utils/guc.h"
 
-/* Potentially set by contrib/pg_upgrade_support functions */
-extern List	*binary_upgrade_next_toast_pg_class_oid;
-extern List     *binary_upgrade_next_toast_index_pg_class_oid;
-
-List		*binary_upgrade_next_toast_pg_type_oid = NIL;
 
 static bool create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 							   Oid *comptypeOid, bool is_part_child);
@@ -132,6 +127,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	int16		coloptions[2];
 	ObjectAddress baseobject,
 				toastobject;
+	Oid 		*binaryOid;
+	Oid			*binaryTypeOid;
+	Oid			*binaryIndexOid;
 
 	/*
 	 * Is it already toasted?
@@ -140,11 +138,20 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 		return false;
 
 	/*
+	 * Create the toast table and its index
+	 */
+	snprintf(toast_relname, sizeof(toast_relname),
+			 "pg_toast_%u", relOid);
+	snprintf(toast_idxname, sizeof(toast_idxname),
+			 "pg_toast_%u_index", relOid);
+
+	/*
 	 * Check to see whether the table actually needs a TOAST table.
 	 */
 	if (!RelationNeedsToastTable(rel) &&
 		(!IsBinaryUpgrade ||
-		 binary_upgrade_next_toast_pg_class_oid == NIL ))
+				(relation_oid_hash == NULL) ||
+				(binaryOid = hash_search(relation_oid_hash, toast_relname, HASH_REMOVE, NULL) ) == NULL )) /* Set in set_next_toast_pg_class_oid */
 		return false;
 
 	/*
@@ -159,13 +166,6 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("shared tables cannot be toasted after initdb")));
 
-	/*
-	 * Create the toast table and its index
-	 */
-	snprintf(toast_relname, sizeof(toast_relname),
-			 "pg_toast_%u", relOid);
-	snprintf(toast_idxname, sizeof(toast_idxname),
-			 "pg_toast_%u_index", relOid);
 
 	/* this is pretty painful...  need a tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(3, false);
@@ -205,34 +205,27 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	 * table?  Or maybe some toast-specific reloptions?
 	 */
 	Oid unusedTypArrayOid = InvalidOid;
-
+	/*TODO:THIS NEEDS TO BE FIXED */
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && binary_upgrade_next_toast_pg_type_oid !=NIL)
+	if (IsBinaryUpgrade && (relation_oid_hash == NULL) )
 	{
 
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_toast_pg_type_oid){
-			if ( strncmp(toast_relname,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
-			{
-				toast_typid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		char *uniqueTypeName = pnstrdup(toast_relname, strlen(toast_relname)+strlen('_type'));/* set in set_next_toast_pg_type_oid */
+
+		strcat(uniqueTypeName, '_type');
+
+		binaryTypeOid = hash_search(relation_oid_hash, uniqueTypeName, HASH_REMOVE, NULL);
+		toast_typid = *binaryTypeOid;
+
 	}
 	else if (comptypeOid)
 		toast_typid = *comptypeOid;
 	
 	/* Use binary-upgrade override for pg_class.oid, if supplied. */
-	if (IsBinaryUpgrade && binary_upgrade_next_toast_pg_class_oid !=NIL)
+	if (IsBinaryUpgrade)
 	{
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_toast_pg_class_oid){
-		        if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)	
-			{
-				toastOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+		/* this would have been set above in the check to see if we needed one */
+		toastOid = *binaryOid;
 	}
 
 	toast_relid = heap_create_with_catalog(toast_relname,
@@ -294,16 +287,10 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	coloptions[1] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid, if supplied. */
-	if (IsBinaryUpgrade && binary_upgrade_next_toast_index_pg_class_oid !=NIL)
+	if (IsBinaryUpgrade && (relation_oid_hash == NULL) &&
+			(binaryIndexOid = hash_search(relation_oid_hash, toast_idxname, HASH_REMOVE, NULL) ) != NULL ) /* set_next_toast_index_pg_class_oid */
 	{
-		ListCell *cell;
-		foreach(cell, binary_upgrade_next_toast_index_pg_class_oid){
-		        if ( relOid == ((RelationOidOid *)cell->data.ptr_value)->targetOid)	
-			{
-				toastIndexOid = ((RelationOidOid *)cell->data.ptr_value)->reloid;
-				break;
-			}
-		}
+				toastIndexOid = *binaryIndexOid;
 	}
 
 	toast_idxid = index_create(toast_relid, toast_idxname, toastIndexOid,

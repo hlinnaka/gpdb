@@ -17,17 +17,10 @@
 
 #include "parser/parse_node.h"
 #include "catalog/gp_persistent.h"
+#include "utils/hsearch.h"
 
 
-typedef struct {
-	char tablename[NAMEDATALEN];
-	Oid  reloid;
-}RelationNameOid;
-
-typedef struct  {
-	Oid  targetOid;
-	Oid  reloid;
-}RelationOidOid;
+HTAB *relation_oid_hash;
 
 typedef struct CookedConstraint
 {
