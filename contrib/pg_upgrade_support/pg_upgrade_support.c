@@ -66,19 +66,15 @@ PG_FUNCTION_INFO_V1(set_next_pg_authid_oid);
 static HTAB *createOidHtab();
 static void insertRelnameOid(char *relname, Oid reloid);
 
-static List * appendNameOid(List *dest, char *relname, Oid oid);
-static List *appendOidOid(List *dest, Oid targetOid, Oid oid);
-static List *freeList(List *list);
 
 
 Datum
 set_next_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char		*typname = PG_GETARG_CSTRING(0);
-	Oid			typoid = PG_GETARG_OID(1);
+	char		*typName = PG_GETARG_CSTRING(0);
+	Oid			typOid = PG_GETARG_OID(1);
 
-	binary_upgrade_next_pg_type_oid =
-			appendNameOid(binary_upgrade_next_pg_type_oid, typname, typoid);
+	insertRelnameOid(typName, typOid);
 
 	PG_RETURN_VOID();
 }
@@ -292,4 +288,25 @@ createOidHtab()
 	ctl.entrysize = sizeof(Oid *);
 
 	return hash_create("Relation Oid Hash", 32, &ctl, HASH_ELEM);
+}
+static void
+insertRelnameOid(char *relname, Oid reloid)
+{
+	char    *key;
+
+	MemoryContextSwitchTo(TopMemoryContext);
+
+	key=pstrdup(relname);
+
+	if (relation_oid_hash == NULL)
+	{
+		relation_oid_hash = createOidHtab();
+	}
+	Assert(	relation_oid_hash );
+
+	Oid *oid = hash_search(relation_oid_hash, key, HASH_ENTER, NULL);
+
+	Assert( oid );
+
+	*oid = reloid;
 }
