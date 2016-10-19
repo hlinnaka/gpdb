@@ -21,8 +21,6 @@ PG_MODULE_MAGIC;
 
 extern PGDLLIMPORT HTAB	*relation_oid_hash;
 
-extern PGDLLIMPORT Oid binary_upgrade_next_pg_authid_oid;
-
 Datum		set_next_pg_type_oid(PG_FUNCTION_ARGS);
 Datum		set_next_array_pg_type_oid(PG_FUNCTION_ARGS);
 Datum		set_next_toast_pg_type_oid(PG_FUNCTION_ARGS);
@@ -133,11 +131,10 @@ set_next_aoblockdir_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aovisimap_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	Oid			targetOid 	= PG_GETARG_OID(0);
-	Oid			typoid 		= PG_GETARG_OID(1);
+	char		*typName 	= PG_GETARG_CSTRING(0);
+	Oid			typOid 		= PG_GETARG_OID(1);
 
-	binary_upgrade_next_aovisimap_pg_type_oid = 
-		appendOidOid(binary_upgrade_next_aovisimap_pg_type_oid,targetOid, typoid);
+	insertRelnameOid(typName, typOid);
 
 	PG_RETURN_VOID();
 }
