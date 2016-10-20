@@ -2256,8 +2256,8 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aovisimap oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%s_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
-						  pg_type_aovisimap_name, pg_type_aovisimap_oid);
+						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('aovismap_%u_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  pg_type_aovisimap_oid, pg_type_aovisimap_oid);
 	}
 
 	PQclear(upgrade_res);
@@ -2346,12 +2346,12 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 			 */
 
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('pg_toast_%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('pg_toast_%u'::CSTRING, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_class_reltoastrelid);
 
 			/* every toast table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('pg_toast_%u_index'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('pg_toast_%u_index'::CSTRING, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_class_reltoastidxid);
 		}
 		if (OidIsValid(pg_appendonly_segrelid))
@@ -2379,12 +2379,12 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 		if (OidIsValid(pg_appendonly_visimaprelid))
 		{
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aovisimap_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aovisimap_pg_class_oid('pg_aovisimap_%u'::CSTRING, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_appendonly_visimaprelid);
 
 			/* every aoblockdir table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aovisimap_index_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aovisimap_index_pg_class_oid('pg_aovisimap_%u_index'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_appendonly_visimapidxid);
 		}
 	}
