@@ -119,7 +119,7 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		snprintf(aovismapRelname, NAMEDATALEN*3, "pg_aovisimap_%u_index",relOid);
 
 		if ( (binaryOid = hash_search(relation_oid_hash, aovismapRelname, HASH_REMOVE, NULL)) != NULL )
-			newOid = binaryOid->reloid;
+			newIndexOid = binaryOid->reloid;
 	}
 
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_aovisimap_pg_type_oid */
