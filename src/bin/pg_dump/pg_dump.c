@@ -2256,7 +2256,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aovisimap oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%u_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%s_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
 						  pg_type_aovisimap_name, pg_type_aovisimap_oid);
 	}
 
