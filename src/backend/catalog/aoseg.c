@@ -35,9 +35,7 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	IndexInfo  *indexInfo;
 	Oid			classObjectId[1];
 	int16		coloptions[1];
-	Oid			*binaryOid;
-	Oid			*binaryIndexOid;
-	Oid			*binaryTypOid;
+	relname_oid_hash_entry	*binaryOid;
 
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release
@@ -183,7 +181,7 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		binaryOid = hash_search(relation_oid_hash, aosegRelname, HASH_REMOVE, NULL);
 		if (binaryOid != NULL)
-			newOid = *binaryOid;
+			newOid = binaryOid->reloid;
 
 	}
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
@@ -193,10 +191,10 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		char aosegIndexRelname[NAMEDATALEN];
 		snprintf(aosegIndexRelname, NAMEDATALEN, "%s_%u_index",prefix,relOid);
 
-		binaryIndexOid = hash_search(relation_oid_hash, aosegIndexRelname, HASH_REMOVE, NULL);
+		binaryOid = hash_search(relation_oid_hash, aosegIndexRelname, HASH_REMOVE, NULL);
 
-		if (binaryIndexOid != NULL)
-			newOid = *binaryIndexOid;
+		if (binaryOid != NULL)
+			newOid = binaryOid->reloid;
 	}
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
@@ -204,10 +202,10 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		char aosegTypName[NAMEDATALEN];
 		snprintf(aosegTypName, NAMEDATALEN, "%s_%u_type",prefix,relOid);
-		binaryTypOid = hash_search(relation_oid_hash, aosegTypName, HASH_REMOVE, NULL);
+		binaryOid = hash_search(relation_oid_hash, aosegTypName, HASH_REMOVE, NULL);
 
-		if ( binaryTypOid != NULL )
-			*comptypeOid = *binaryTypOid;
+		if ( binaryOid != NULL )
+			*comptypeOid = binaryOid->reloid;
 
 	}
 

@@ -279,16 +279,18 @@ set_next_pg_authid_oid(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+
 static HTAB *
 createOidHtab()
 {
 	HASHCTL		ctl;
 
-	ctl.keysize = NAMEDATALEN;
-	ctl.entrysize = sizeof(Oid *);
+	ctl.keysize = NAMEDATALEN*3;
+	ctl.entrysize = sizeof(relname_oid_hash_entry);
 
 	return hash_create("Relation Oid Hash", 32, &ctl, HASH_ELEM);
 }
+
 static void
 insertRelnameOid(char *relname, Oid reloid)
 {
@@ -304,9 +306,9 @@ insertRelnameOid(char *relname, Oid reloid)
 	}
 	Assert(	relation_oid_hash );
 
-	Oid *oid = hash_search(relation_oid_hash, key, HASH_ENTER, NULL);
+	relname_oid_hash_entry *oid_entry = hash_search(relation_oid_hash, key, HASH_ENTER, NULL);
 
-	Assert( oid );
+	Assert( oid_entry );
 
-	*oid = reloid;
+	oid_entry->reloid = reloid;
 }

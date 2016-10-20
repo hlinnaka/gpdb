@@ -1562,20 +1562,20 @@ heap_create_with_catalog(const char *relname,
 		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
 		 * supplied.
 		 */
-		Oid *binaryOid;
+		relname_oid_hash_entry *binaryOid;
 
 		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
 				(binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL) ) &&
 				(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
 				relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
 		{
-			relid = *binaryOid;
+			relid = binaryOid->reloid;
 		}
 		else if (IsBinaryUpgrade && (relkind == RELKIND_TOASTVALUE) &&
 				(relation_oid_hash != NULL) &&
 				(binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL) ) )
 		{
-			relid = *binaryOid;
+			relid = binaryOid->reloid;
 		}
 		/*
 		 * AO segment, blockdir, and visimap tables are handled in upper level,

@@ -649,20 +649,20 @@ index_create(Oid heapRelationId,
 		 * supplied.
 		 */
 		char		relkind = heapRelation->rd_rel->relkind;
-		Oid *binaryOid;
+		relname_oid_hash_entry *binaryOid;
 		if (IsBinaryUpgrade &&
 			relkind == RELKIND_RELATION &&
 			relation_oid_hash != NULL &&
 			(binaryOid = hash_search(relation_oid_hash, indexRelationName, HASH_REMOVE, NULL) ))
 		{
-			indexRelationId = *binaryOid;
+			indexRelationId = binaryOid->reloid;
 		}
 		else if (IsBinaryUpgrade &&
 				 relkind == RELKIND_TOASTVALUE &&
 				 relation_oid_hash != NULL &&
 				 (binaryOid = hash_search(relation_oid_hash, indexRelationName, HASH_REMOVE, NULL) ))
 		{
-			indexRelationId = *binaryOid;
+			indexRelationId = binaryOid->reloid;
 		}
 		else
 		{

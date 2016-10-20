@@ -32,9 +32,7 @@ AlterTableCreateAoBlkdirTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	IndexInfo  *indexInfo;
 	Oid			classObjectId[3];
 	int16		coloptions[3];
-	Oid			*binaryOid;
-	Oid			*binaryIndexOid;
-	Oid			*binaryTypeOid;
+	relname_oid_hash_entry		*binaryOid;
 	char 		*aosegRelname;
 
 	/*
@@ -117,7 +115,7 @@ AlterTableCreateAoBlkdirTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		snprintf(relname, NAMEDATALEN*3,"pg_aoblkdir_%u",relOid);
 
 		if ((binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL)) != NULL)
-			newOid = *binaryOid;
+			newOid = binaryOid->reloid;
 	}
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_aoblockdir_index_pg_class_oid */
 	{
@@ -127,8 +125,8 @@ AlterTableCreateAoBlkdirTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		snprintf(relname, NAMEDATALEN*3,"pg_aoblkdir_%u_index",relOid);
 
-		if ((binaryIndexOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL)) != NULL)
-			newIndexOid = *binaryIndexOid;
+		if ((binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL)) != NULL)
+			newIndexOid = binaryOid->reloid;
 
 	}
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL))  /* set in set_next_aoblockdir_pg_type_oid */
@@ -139,8 +137,8 @@ AlterTableCreateAoBlkdirTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		char relname[NAMEDATALEN*3];
 
 		snprintf(relname, NAMEDATALEN*3, "%s_type", aosegRelname);
-		if ((binaryTypeOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL)) != NULL)
-			*comptypeOid = *binaryTypeOid;
+		if ((binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL)) != NULL)
+			*comptypeOid = binaryOid->reloid;
 	}
 
 	(void) CreateAOAuxiliaryTable(rel,

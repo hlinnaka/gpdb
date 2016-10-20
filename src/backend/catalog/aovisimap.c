@@ -36,9 +36,7 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	TupleDesc	tupdesc;
 	Oid			classObjectId[2];
 	int16		coloptions[2];
-	Oid			*binaryOid;
-	Oid			*binaryIndexOid;
-	Oid			*binaryTypeOid;
+	relname_oid_hash_entry			*binaryOid;
 
 
 	elogif(Debug_appendonly_print_visimap, LOG,
@@ -114,7 +112,7 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 
 		binaryOid = hash_search(relation_oid_hash, aovismapRelname, HASH_REMOVE, NULL);
 		if (binaryOid != NULL)
-			newOid = *binaryOid;
+			newOid = binaryOid->reloid;
 	}
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
@@ -123,8 +121,8 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		char aovismapRelname[NAMEDATALEN*3];
 		snprintf(aovismapRelname, NAMEDATALEN*3, "pg_aovisimap_%u_index",relOid);
 
-		if ( (binaryIndexOid = hash_search(relation_oid_hash, aovismapRelname, HASH_REMOVE, NULL)) != NULL )
-			newOid = *binaryOid;
+		if ( (binaryOid = hash_search(relation_oid_hash, aovismapRelname, HASH_REMOVE, NULL)) != NULL )
+			newOid = binaryOid->reloid;
 	}
 
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_aovisimap_pg_type_oid */
@@ -134,8 +132,8 @@ AlterTableCreateAoVisimapTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		char aovismapTypname[NAMEDATALEN*3];
 		snprintf(aovismapTypname, NAMEDATALEN*3, "pg_aovisimap_%u_type",relOid);
 
-		if( (binaryTypeOid = hash_search(relation_oid_hash, aovismapTypname, HASH_REMOVE, NULL)) != NULL)
-			*comptypeOid = *binaryTypeOid;
+		if( (binaryOid = hash_search(relation_oid_hash, aovismapTypname, HASH_REMOVE, NULL)) != NULL)
+			*comptypeOid = binaryOid->reloid;
 	}
 
 	(void) CreateAOAuxiliaryTable(rel,

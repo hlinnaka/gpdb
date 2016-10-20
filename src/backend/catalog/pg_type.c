@@ -22,6 +22,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_type_encoding.h"
+#include "catalog/heap.h"
 #include "commands/typecmds.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
@@ -33,12 +34,6 @@
 
 #include "cdb/cdbvars.h"
 
-typedef struct {
-	char tablename[NAMEDATALEN];
-	Oid  reloid;
-}RelationNameOid;
-
-List  *binary_upgrade_next_pg_type_oid = NIL;
 
 /*
  * Record a type's default encoding clause in the catalog.
@@ -159,19 +154,15 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && binary_upgrade_next_pg_type_oid != NIL)
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
-		Oid typeOid = InvalidOid;
-		ListCell *cell;
+		relname_oid_hash_entry *binaryOid;
 
-		foreach(cell, binary_upgrade_next_pg_type_oid )
-		{
-			if ( strncmp(typeName,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
-			{
-				typeOid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
-			}
-		}
-		HeapTupleSetOid(tup, typeOid);
+		char searchName[NAMEDATALEN*3];
+		snprintf(searchName, sizeof(searchName), "%s_type", typeName);
+
+		if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
+			HeapTupleSetOid(tup, binaryOid->reloid);
 	}
 
 	/*
@@ -415,20 +406,17 @@ TypeCreateWithOptions(Oid newTypeOid,
 		else if (Gp_role == GP_ROLE_EXECUTE)
 			elog(ERROR," newtypeOid NULL");
 		/* Use binary-upgrade override for pg_type.oid, if supplied. */
-		else if (IsBinaryUpgrade && binary_upgrade_next_pg_type_oid != NIL)
+		else if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 		{
-			Oid typeOid = InvalidOid;
-			ListCell *cell;
+			relname_oid_hash_entry *binaryOid;
 
-			foreach(cell, binary_upgrade_next_pg_type_oid )
-			{
-				if ( strncmp(typeName,((RelationNameOid *)cell->data.ptr_value)->tablename, NAMEDATALEN) == 0)
-				{
-					typeOid = ((RelationNameOid *)cell->data.ptr_value)->reloid;
-				}
-			}
-			HeapTupleSetOid(tup, typeOid);
+			char searchName[NAMEDATALEN*3];
+			snprintf(searchName, sizeof(searchName), "%s_type", typeName);
+
+			if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
+				HeapTupleSetOid(tup, binaryOid->reloid);
 		}
+
 		/* else allow system to assign oid */
 
 		typeObjectId = simple_heap_insert(pg_type_desc, tup);

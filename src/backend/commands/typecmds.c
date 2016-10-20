@@ -1499,9 +1499,9 @@ AssignTypeArrayOid(const char *typeNameSpace, const char *typeName)
 	/* Use binary-upgrade override for pg_type.typarray, if supplied. */
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_array_pg_type_oid */
 	{
-		Oid *binaryTypeOid;
+		relname_oid_hash_entry *binaryTypeOid;
 		if( (binaryTypeOid = hash_search(relation_oid_hash, typeName, HASH_REMOVE, NULL)) != NULL)
-			type_array_oid = *binaryTypeOid;
+			type_array_oid = binaryTypeOid->reloid;
 
 	}
 	else

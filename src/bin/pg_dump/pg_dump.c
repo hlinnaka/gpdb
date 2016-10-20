@@ -2082,7 +2082,7 @@ binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
 
 	appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type oid\n");
 	appendPQExpBuffer(upgrade_buffer,
-	 "SELECT binary_upgrade.set_next_pg_type_oid('%s'::CSTRING,'%u'::pg_catalog.oid);\n\n",
+	 "SELECT binary_upgrade.set_next_pg_type_oid('%s_type'::CSTRING,'%u'::pg_catalog.oid);\n\n",
 					  pg_type_name, pg_type_oid);
 
 	if (g_fout->remoteVersion >= 80300)

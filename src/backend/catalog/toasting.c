@@ -127,9 +127,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	int16		coloptions[2];
 	ObjectAddress baseobject,
 				toastobject;
-	Oid 		*binaryOid;
-	Oid			*binaryTypeOid;
-	Oid			*binaryIndexOid;
+	relname_oid_hash_entry 	*binaryOid;
+	relname_oid_hash_entry	*binaryTypeOid;
+	relname_oid_hash_entry  *binaryIndexOid;
 
 	/*
 	 * Is it already toasted?
@@ -215,7 +215,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 		strcat(uniqueTypeName, '_type');
 
 		binaryTypeOid = hash_search(relation_oid_hash, uniqueTypeName, HASH_REMOVE, NULL);
-		toast_typid = *binaryTypeOid;
+		toast_typid = binaryTypeOid->reloid;
 
 	}
 	else if (comptypeOid)
@@ -225,7 +225,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	if (IsBinaryUpgrade)
 	{
 		/* this would have been set above in the check to see if we needed one */
-		toastOid = *binaryOid;
+		toastOid = binaryOid->reloid;
 	}
 
 	toast_relid = heap_create_with_catalog(toast_relname,
@@ -290,7 +290,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	if (IsBinaryUpgrade && (relation_oid_hash == NULL) &&
 			(binaryIndexOid = hash_search(relation_oid_hash, toast_idxname, HASH_REMOVE, NULL) ) != NULL ) /* set_next_toast_index_pg_class_oid */
 	{
-				toastIndexOid = *binaryIndexOid;
+				toastIndexOid = binaryIndexOid->reloid;
 	}
 
 	toast_idxid = index_create(toast_relid, toast_idxname, toastIndexOid,

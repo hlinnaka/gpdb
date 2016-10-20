@@ -516,9 +516,9 @@ CreateRole(CreateRoleStmt *stmt)
 	 */
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
-		Oid *binaryAuthOid;
+		relname_oid_hash_entry *binaryAuthOid;
 		if( (binaryAuthOid = hash_search(relation_oid_hash, stmt->role, HASH_REMOVE, NULL)) != NULL)
-			HeapTupleSetOid(tuple, *binaryAuthOid);
+			HeapTupleSetOid(tuple, binaryAuthOid->reloid);
 	}
 	
 	/*
