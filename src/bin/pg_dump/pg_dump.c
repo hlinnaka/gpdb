@@ -2357,13 +2357,13 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 		if (OidIsValid(pg_appendonly_segrelid))
 		{
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aosegments_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
-							  pg_class_oid, pg_appendonly_segrelid);
+							  "SELECT binary_upgrade.set_next_aosegments_pg_class_oid('%s_%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "pg_aoseg",pg_class_oid, pg_appendonly_segrelid);
 
 			/* every aosegments table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aosegments_index_pg_class_oid('%u'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
-							  pg_class_oid, pg_appendonly_segidxid);
+							  "SELECT binary_upgrade.set_next_aosegments_index_pg_class_oid('%s_%u_index'::pg_catalog.oid, '%u'::pg_catalog.oid);\n",
+							  "pg_aoseg", pg_class_oid, pg_appendonly_segidxid);
 		}
 		if (OidIsValid(pg_appendonly_blkdirrelid))
 		{
