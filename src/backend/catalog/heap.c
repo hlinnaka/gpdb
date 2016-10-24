@@ -1563,9 +1563,12 @@ heap_create_with_catalog(const char *relname,
 		 * supplied.
 		 */
 		relname_oid_hash_entry *binaryOid;
+		char fullyQualifiedName[NAMEDATALEN*3];
+
+		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", relnamespace, relname);
 
 		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
-				(binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL) ) &&
+				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
 				(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
 				relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
 		{
@@ -1573,7 +1576,7 @@ heap_create_with_catalog(const char *relname,
 		}
 		else if (IsBinaryUpgrade && (relkind == RELKIND_TOASTVALUE) &&
 				(relation_oid_hash != NULL) &&
-				(binaryOid = hash_search(relation_oid_hash, relname, HASH_REMOVE, NULL) ) )
+				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) )
 		{
 			relid = binaryOid->reloid;
 		}

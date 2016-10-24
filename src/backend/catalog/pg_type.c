@@ -159,7 +159,7 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 		relname_oid_hash_entry *binaryOid;
 
 		char searchName[NAMEDATALEN*3];
-		snprintf(searchName, sizeof(searchName), "%s_type", typeName);
+		snprintf(searchName, sizeof(searchName), "%s.%s_type", RelationGetNamespace(pg_type_desc), typeName);
 
 		if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
 			HeapTupleSetOid(tup, binaryOid->reloid);
@@ -411,7 +411,7 @@ TypeCreateWithOptions(Oid newTypeOid,
 			relname_oid_hash_entry *binaryOid;
 
 			char searchName[NAMEDATALEN*3];
-			snprintf(searchName, sizeof(searchName), "%s_type", typeName);
+			snprintf(searchName, sizeof(searchName), "%s.%s_type", RelationGetNamespace(pg_type_desc), typeName);
 
 			if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
 				HeapTupleSetOid(tup, binaryOid->reloid);

@@ -2072,7 +2072,7 @@ dumpBlobComments(Archive *AH, void *arg __attribute__((unused)))
 
 static void
 binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
-										 char *pg_type_name, Oid pg_type_oid)
+		 char *pg_type_namespace,char *pg_type_name, Oid pg_type_oid)
 {
 	PQExpBuffer upgrade_query = createPQExpBuffer();
 	int			ntups;
@@ -2082,8 +2082,8 @@ binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
 
 	appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type oid\n");
 	appendPQExpBuffer(upgrade_buffer,
-	 "SELECT binary_upgrade.set_next_pg_type_oid('%s_type'::CSTRING,'%u'::pg_catalog.oid);\n\n",
-					  pg_type_name, pg_type_oid);
+	 "SELECT binary_upgrade.set_next_pg_type_oid('%s.%s_type'::pg_catalog.text,'%u'::pg_catalog.oid);\n\n",
+	 pg_type_namespace, pg_type_name, pg_type_oid);
 
 	if (g_fout->remoteVersion >= 80300)
 	{
@@ -2135,8 +2135,8 @@ binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
 		appendPQExpBuffer(upgrade_buffer,
 			   "\n-- For binary upgrade, must preserve pg_type array oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_array_pg_type_oid('%s':CSTRING, '%u'::pg_catalog.oid);\n\n",
-						  pg_type_array_name, pg_type_array_oid);
+						  "SELECT binary_upgrade.set_next_array_pg_type_oid('%s':pg_catalog.text, '%u'::pg_catalog.oid);\n\n",
+						  pg_type_namespace, pg_type_array_name, pg_type_array_oid);
 	}
 
 	PQclear(upgrade_res);
@@ -2152,6 +2152,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 	PGresult   *upgrade_res;
 	Oid			pg_type_oid;
 	char	   *pg_type_name;
+	char 	   *pg_type_namespace;
 	bool		toast_set = false;
 
 	/* we only support old >= 8.3 for binary upgrades */
@@ -2160,6 +2161,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltype AS crel, c.relname AS crelname, "
+					  " c.relnamespace as crelnamespace, "
 					  "       t.reltype AS trel, t.relname as trelname, "
 					  "       aoseg.reltype AS aosegrel, aoseg.relname as aosegrelname, "
 					  "       aoblkdir.reltype AS aoblkdirrel, aoblkdir.relname as aoblkdirrelname, "
@@ -2194,8 +2196,9 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 	pg_type_oid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "crel")));
     pg_type_name= PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "crelname"));
+    pg_type_namespace = PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "crelnamespace"));
 
-	binary_upgrade_set_type_oids_by_type_oid(upgrade_buffer, pg_type_name, pg_type_oid);
+	binary_upgrade_set_type_oids_by_type_oid(upgrade_buffer, pg_type_namespace, pg_type_name, pg_type_oid);
 
 	if (!PQgetisnull(upgrade_res, 0, PQfnumber(upgrade_res, "trel")))
 	{
@@ -2209,7 +2212,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		/* we have to make the type name unique as it is the same as the table name */
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_toast_pg_type_oid('%s_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  "SELECT binary_upgrade.set_next_toast_pg_type_oid('%s_type'::pg_catalog.text, '%u'::pg_catalog.oid);\n\n",
 						  pg_type_toast_name, pg_type_toast_oid);
 
 		toast_set = true;
@@ -2227,7 +2230,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		/* we have to make the type name unique as it is the same as the table name */
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aosegments_pg_type_oid('%s_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
+						  "SELECT binary_upgrade.set_next_aosegments_pg_type_oid('%s_type'::pg_catalog.text, '%u'::pg_catalog.oid);\n\n",
 						  pg_type_aosgements_name, pg_type_aosegments_oid);
 	}
 
@@ -2242,8 +2245,8 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aoblockdir oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aoblockdir_pg_type_oid('%s_type'::CSTRING,'%u'::pg_catalog.oid);\n\n",
-						  pg_type_aoblockdir_name, pg_type_aoblockdir_oid);
+						  "SELECT binary_upgrade.set_next_aoblockdir_pg_type_oid(%s_type'::pg_catalog.text,'%u'::pg_catalog.oid);\n\n",
+						   pg_type_aoblockdir_name, pg_type_aoblockdir_oid);
 	}
 
 	if (!PQgetisnull(upgrade_res, 0, PQfnumber(upgrade_res, "aovisimaprel")))
@@ -2256,8 +2259,8 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 		appendPQExpBuffer(upgrade_buffer, "\n-- For binary upgrade, must preserve pg_type aovisimap oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%s_%u_type'::CSTRING, '%u'::pg_catalog.oid);\n\n",
-						  "pg_aovismap", pg_type_aovisimap_oid,  pg_type_aovisimap_oid);
+						  "SELECT binary_upgrade.set_next_aovisimap_pg_type_oid('%s_%u_type'::pg_catalog.text, '%u'::pg_catalog.oid);\n\n",
+						   "pg_aovismap", pg_type_aovisimap_oid,  pg_type_aovisimap_oid);
 	}
 
 	PQclear(upgrade_res);
@@ -2280,6 +2283,7 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 	int			ntups;
 	PGresult   *upgrade_res;
 	char	   *pg_class_relname;
+	char	   *pg_class_relnamespace;
 	Oid			pg_class_reltoastrelid;
 	Oid			pg_class_reltoastidxid;
 	Oid			pg_appendonly_segrelid;
@@ -2291,7 +2295,7 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltoastrelid, t.reltoastidxid, "
-					  "       c.relname, "
+					  "       c.relname, c.relnamespace"
 					  "       ao.segrelid, ao.segidxid, "
 					  "       ao.blkdirrelid, ao.blkdiridxid, "
 					  "       ao.visimaprelid, ao.visimapidxid "
@@ -2316,6 +2320,8 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 	}
 
 	pg_class_relname = PQgetvalue(upgrade_res,0, PQfnumber(upgrade_res, "relname"));
+	pg_class_relnamespace = PQgetvalue(upgrade_res,0, PQfnumber(upgrade_res, "relnamespace"));
+
 	pg_class_reltoastrelid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "reltoastrelid")));
 	pg_class_reltoastidxid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "reltoastidxid")));
 	pg_appendonly_segrelid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "segrelid")));
@@ -2331,8 +2337,8 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 	if (!is_index)
 	{
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_heap_pg_class_oid('%s'::CSTRING,'%u'::pg_catalog.oid);\n",
-						  pg_class_relname, pg_class_oid);
+						  "SELECT binary_upgrade.set_next_heap_pg_class_oid('%s.%s'::pg_catalog.text,'%u'::pg_catalog.oid);\n",
+						  pg_class_relnamespace, pg_class_relname, pg_class_oid);
 		/* only tables have toast tables, not indexes */
 		if (OidIsValid(pg_class_reltoastrelid))
 		{
@@ -2346,52 +2352,52 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 			 */
 
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('pg_toast_%u'::CSTRING, '%u'::pg_catalog.oid);\n",
-							  pg_class_oid, pg_class_reltoastrelid);
+							  "SELECT binary_upgrade.set_next_toast_pg_class_oid('pg_toast_%u'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
+							   pg_class_oid, pg_class_reltoastrelid);
 
 			/* every toast table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('pg_toast_%u_index'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_toast_index_pg_class_oid('pg_toast_%u_index'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_class_reltoastidxid);
 		}
 		if (OidIsValid(pg_appendonly_segrelid))
 		{
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aosegments_pg_class_oid('%s_%u'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aosegments_pg_class_oid('%s_%u'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  "pg_aoseg",pg_class_oid, pg_appendonly_segrelid);
 
 			/* every aosegments table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aosegments_index_pg_class_oid('%s_%u_index'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aosegments_index_pg_class_oid('%s_%u_index'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  "pg_aoseg", pg_class_oid, pg_appendonly_segidxid);
 		}
 		if (OidIsValid(pg_appendonly_blkdirrelid))
 		{
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aoblockdir_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aoblockdir_pg_class_oid('%s'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  pg_class_relname, pg_appendonly_blkdirrelid);
 
 			/* every aoblockdir table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aoblockdir_index_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aoblockdir_index_pg_class_oid('%s'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  pg_class_relname, pg_appendonly_blkdiridxid);
 		}
 		if (OidIsValid(pg_appendonly_visimaprelid))
 		{
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aovisimap_pg_class_oid('pg_aovisimap_%u'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aovisimap_pg_class_oid('pg_aovisimap_%u'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_appendonly_visimaprelid);
 
 			/* every aoblockdir table has an index */
 			appendPQExpBuffer(upgrade_buffer,
-							  "SELECT binary_upgrade.set_next_aovisimap_index_pg_class_oid('pg_aovisimap_%u_index'::CSTRING, '%u'::pg_catalog.oid);\n",
+							  "SELECT binary_upgrade.set_next_aovisimap_index_pg_class_oid('pg_aovisimap_%u_index'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
 							  pg_class_oid, pg_appendonly_visimapidxid);
 		}
 	}
 	else
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_index_pg_class_oid('%s'::CSTRING, '%u'::pg_catalog.oid);\n",
-						  pg_class_relname, pg_class_oid);
+						  "SELECT binary_upgrade.set_next_index_pg_class_oid('%s.%s'::pg_catalog.text, '%u'::pg_catalog.oid);\n",
+						  pg_class_relnamespace, pg_class_relname, pg_class_oid);
 
 	appendPQExpBuffer(upgrade_buffer, "\n");
 
@@ -5762,7 +5768,7 @@ dumpEnumType(Archive *fout, TypeInfo *tinfo)
 					  fmtId(tinfo->dobj.name));
 
 	if (binary_upgrade)
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.namespace->dobj.name, tinfo->dobj.name, tinfo->dobj.catId.oid);
 
 	appendPQExpBuffer(q, "CREATE TYPE %s AS ENUM (\n",
 					  fmtId(tinfo->dobj.name));
@@ -6027,7 +6033,7 @@ dumpBaseType(Archive *fout, TypeInfo *tinfo)
 
 	/* We might already have a shell type, but setting pg_type_oid is harmless */
 	if (binary_upgrade)
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.namespace->dobj.name, tinfo->dobj.name, tinfo->dobj.catId.oid);
 
 	appendPQExpBuffer(q,
 					  "CREATE TYPE %s (\n"
@@ -6229,7 +6235,7 @@ dumpDomain(Archive *fout, TypeInfo *tinfo)
 		typdefault = NULL;
 
 	if (binary_upgrade)
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.namespace->dobj.name, tinfo->dobj.name, tinfo->dobj.catId.oid);
 
 	appendPQExpBuffer(q,
 					  "CREATE DOMAIN %s AS %s",
@@ -6341,7 +6347,7 @@ dumpCompositeType(Archive *fout, TypeInfo *tinfo)
 
 	if (binary_upgrade)
 	{
-		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.name, tinfo->dobj.catId.oid);
+		binary_upgrade_set_type_oids_by_type_oid(q, tinfo->dobj.namespace->dobj.name ,tinfo->dobj.name, tinfo->dobj.catId.oid);
 		binary_upgrade_set_pg_class_oids(q, tinfo->typrelid, false);
 	}
 
@@ -6428,7 +6434,7 @@ dumpShellType(Archive *fout, ShellTypeInfo *stinfo)
 
 	if (binary_upgrade)
 		binary_upgrade_set_type_oids_by_type_oid(q,
-				stinfo->dobj.name, stinfo->baseType->dobj.catId.oid);
+				stinfo->dobj.namespace->dobj.name, stinfo->dobj.name, stinfo->baseType->dobj.catId.oid);
 
 	appendPQExpBuffer(q, "CREATE TYPE %s;\n",
 					  fmtId(stinfo->dobj.name));

@@ -1496,11 +1496,14 @@ AssignTypeArrayOid(const char *typeNameSpace, const char *typeName)
 {
 	Oid		type_array_oid;
 
+	char 	fullyQualifiedName[NAMEDATALEN*3];
+	snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", typeNameSpace, typeName);
+
 	/* Use binary-upgrade override for pg_type.typarray, if supplied. */
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_array_pg_type_oid */
 	{
 		relname_oid_hash_entry *binaryTypeOid;
-		if( (binaryTypeOid = hash_search(relation_oid_hash, typeName, HASH_REMOVE, NULL)) != NULL)
+		if( (binaryTypeOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL)) != NULL)
 			type_array_oid = binaryTypeOid->reloid;
 
 	}
