@@ -145,6 +145,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	snprintf(toast_idxname, sizeof(toast_idxname),
 			 "pg_toast_%u_index", relOid);
 
+	//TODO have to look in here to see why the oid is not being set properly
 	/*
 	 * Check to see whether the table actually needs a TOAST table.
 	 */
@@ -222,8 +223,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 		toast_typid = *comptypeOid;
 	
 	/* Use binary-upgrade override for pg_class.oid, if supplied. */
-	if (IsBinaryUpgrade)
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
+		binaryOid = hash_search(relation_oid_hash, toast_relname, HASH_REMOVE, NULL);
 		/* this would have been set above in the check to see if we needed one */
 		toastOid = binaryOid->reloid;
 	}
