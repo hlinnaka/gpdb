@@ -1564,9 +1564,9 @@ heap_create_with_catalog(const char *relname,
 		 */
 		relname_oid_hash_entry *binaryOid;
 		char fullyQualifiedName[NAMEDATALEN*3];
-		Relation name_space_desc = heap_open(RelationGetNamespace(pg_class_desc));
+		Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
 
-		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetName(name_space_desc), relname);
+		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), relname);
 
 		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
 				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
@@ -1650,7 +1650,10 @@ heap_create_with_catalog(const char *relname,
 							  relkind == RELKIND_COMPOSITE_TYPE) &&
 		relnamespace != PG_BITMAPINDEX_NAMESPACE &&
 		!OidIsValid(new_array_oid))
-		new_array_oid = AssignTypeArrayOid(RelationGetNamespace(pg_class_desc), relname);
+
+		Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
+
+		new_array_oid = AssignTypeArrayOid(RelationGetRelationName(name_space_desc), relname);
 
 	/*
 	 * Since defining a relation also defines a complex type, we add a new
