@@ -415,7 +415,7 @@ TypeCreateWithOptions(Oid newTypeOid,
 			char *namespaceName = get_namespace_name(typeNamespace);
 
 			char searchName[NAMEDATALEN*3];
-			snprintf(searchName, sizeof(searchName), "%s.%s_type", namespaceName), typeName);
+			snprintf(searchName, sizeof(searchName), "%s.%s_type", namespaceName, typeName);
 
 			if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
 				HeapTupleSetOid(tup, binaryOid->reloid);

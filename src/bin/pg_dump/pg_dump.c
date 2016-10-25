@@ -2161,7 +2161,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltype AS crel, c.relname AS crelname, "
-					  " c.relnamespace as crelnamespace, "
+					  "       n.nspname, "
 					  "       t.reltype AS trel, t.relname as trelname, "
 					  "       aoseg.reltype AS aosegrel, aoseg.relname as aosegrelname, "
 					  "       aoblkdir.reltype AS aoblkdirrel, aoblkdir.relname as aoblkdirrelname, "
@@ -2177,6 +2177,8 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 					  "  (ao.blkdirrelid = aoblkdir.oid) "
 					  "LEFT JOIN pg_catalog.pg_class aovisimap ON "
 					  "  (ao.visimaprelid = aovisimap.oid) "
+					  "LEFT JOIN pg_catalog.pg_namespace n ON "
+					  "  (n.oid=c.relnamespace) "
 					  "WHERE c.oid = '%u'::pg_catalog.oid;",
 					  pg_rel_oid);
 
@@ -2196,7 +2198,7 @@ binary_upgrade_set_type_oids_by_rel_oid(PQExpBuffer upgrade_buffer,
 
 	pg_type_oid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "crel")));
     pg_type_name= PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "crelname"));
-    pg_type_namespace = PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "crelnamespace"));
+    pg_type_namespace = PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "nspname"));
 
 	binary_upgrade_set_type_oids_by_type_oid(upgrade_buffer, pg_type_namespace, pg_type_name, pg_type_oid);
 
@@ -2295,13 +2297,14 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltoastrelid, t.reltoastidxid, "
-					  "       c.relname, c.relnamespace"
+					  "       c.relname, n.nspname, "
 					  "       ao.segrelid, ao.segidxid, "
 					  "       ao.blkdirrelid, ao.blkdiridxid, "
 					  "       ao.visimaprelid, ao.visimapidxid "
 					  "FROM pg_catalog.pg_class c LEFT JOIN "
 					  "pg_catalog.pg_class t ON (c.reltoastrelid = t.oid) "
 					  "LEFT JOIN pg_catalog.pg_appendonly ao ON (ao.relid = c.oid) "
+					  "LEFT JOIN pg_catalog.pg_namespace n on (n.oid=c.relnamespace)"
 					  "WHERE c.oid = '%u'::pg_catalog.oid;",
 					  pg_class_oid);
 
@@ -2320,7 +2323,7 @@ binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer, Oid pg_class_oid,
 	}
 
 	pg_class_relname = PQgetvalue(upgrade_res,0, PQfnumber(upgrade_res, "relname"));
-	pg_class_relnamespace = PQgetvalue(upgrade_res,0, PQfnumber(upgrade_res, "relnamespace"));
+	pg_class_relnamespace = PQgetvalue(upgrade_res,0, PQfnumber(upgrade_res, "nspname"));
 
 	pg_class_reltoastrelid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "reltoastrelid")));
 	pg_class_reltoastidxid = atooid(PQgetvalue(upgrade_res, 0, PQfnumber(upgrade_res, "reltoastidxid")));
