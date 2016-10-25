@@ -1494,9 +1494,9 @@ findTypeAnalyzeFunction(List *procname, Oid typeOid)
  *	Pre-assign the type's array OID for use in pg_type.typarray
  */
 Oid
-AssignTypeArrayOid(Oid *typeNameSpace, const char *typeName)
+AssignTypeArrayOid(Oid typeNameSpace, const char *typeName)
 {
-	Oid		type_array_oid;
+	Oid		type_array_oid=InvalidOid;
 
 
 	/* Use binary-upgrade override for pg_type.typarray, if supplied. */
