@@ -1504,15 +1504,13 @@ AssignTypeArrayOid(Oid typeNameSpace, const char *typeName)
 	{
 		char 	fullyQualifiedName[NAMEDATALEN*3];
 
-		Relation name_space_desc = heap_open(typeNameSpace, RowExclusiveLock);
+		char *namespaceName = get_namespace_name(typeNameSpace);
 
-		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), typeName);
+		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", namespaceName, typeName);
 
 		relname_oid_hash_entry *binaryTypeOid;
 		if( (binaryTypeOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL)) != NULL)
 			type_array_oid = binaryTypeOid->reloid;
-
-		heap_close(name_space_desc, RowExclusiveLock);
 
 	}
 	else

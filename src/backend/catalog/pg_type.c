@@ -159,10 +159,9 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 		relname_oid_hash_entry *binaryOid;
 
 		char searchName[NAMEDATALEN*3];
-		Relation name_space_desc = heap_open(typeNamespace, RowExclusiveLock);
+		char *nameSpacename = get_namespace_name(typeNamespace);
 
-		snprintf(searchName, sizeof(searchName), "%s.%s_type", RelationGetRelationName(name_space_desc), typeName);
-		heap_close(name_space_desc, RowExclusiveLock);
+		snprintf(searchName, sizeof(searchName), "%s.%s_type", nameSpacename, typeName);
 
 		if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
 			HeapTupleSetOid(tup, binaryOid->reloid);

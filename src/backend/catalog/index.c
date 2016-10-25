@@ -651,9 +651,9 @@ index_create(Oid heapRelationId,
 			 * Use binary-upgrade override for pg_class.oid/relfilenode, if
 			 * supplied.
 			 */
-			char *relNameSpace = RelationGetNamespace(heapRelation);
+			char *namespaceName = get_namespace_name(namespaceId);
 			char fullyQualifiedName[NAMEDATALEN*3];
-			snprintf(fullyQualifiedName, NAMEDATALEN*3,"%s.%s", relNameSpace, indexRelationName);
+			snprintf(fullyQualifiedName, NAMEDATALEN*3,"%s.%s", namespaceName, indexRelationName);
 
 			char		relkind = heapRelation->rd_rel->relkind;
 			relname_oid_hash_entry *binaryOid;

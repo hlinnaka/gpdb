@@ -1557,9 +1557,8 @@ heap_create_with_catalog(const char *relname,
 			relname_oid_hash_entry *binaryOid;
 			char fullyQualifiedName[NAMEDATALEN*3];
 
-			Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
-			snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), relname);
-			heap_close(name_space_desc, RowExclusiveLock);
+			char *namespaceName = get_namespace_name(relnamespace);
+			snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", namespaceName, relname);
 
 			if ((relation_oid_hash != NULL) &&
 					(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
