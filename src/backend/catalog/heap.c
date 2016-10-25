@@ -1548,30 +1548,33 @@ heap_create_with_catalog(const char *relname,
 	 */
 	if (!OidIsValid(relid))
 	{
-		/*
-		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
-		 * supplied.
-		 */
-		relname_oid_hash_entry *binaryOid;
-		char fullyQualifiedName[NAMEDATALEN*3];
-		Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
-
-		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), relname);
-		heap_close(name_space_desc, RowExclusiveLock);
-
-		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
-				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
-				(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
-				relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
+		if (IsBinaryUpgrade)
 		{
-			relid = binaryOid->reloid;
+			/*
+			 * Use binary-upgrade override for pg_class.oid/relfilenode, if
+			 * supplied.
+			*/
+			relname_oid_hash_entry *binaryOid;
+			char fullyQualifiedName[NAMEDATALEN*3];
 
-		}
-		else if (IsBinaryUpgrade && (relkind == RELKIND_TOASTVALUE) &&
-				(relation_oid_hash != NULL) &&
-				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) )
-		{
-			relid = binaryOid->reloid;
+			Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
+			snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), relname);
+			heap_close(name_space_desc, RowExclusiveLock);
+
+			if ((relation_oid_hash != NULL) &&
+					(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
+					(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
+					relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
+			{
+				relid = binaryOid->reloid;
+
+			}
+			else if ( (relkind == RELKIND_TOASTVALUE) &&
+					(relation_oid_hash != NULL) &&
+					(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) )
+			{
+				relid = binaryOid->reloid;
+			}
 		}
 		/*
 		 * AO segment, blockdir, and visimap tables are handled in upper level,
