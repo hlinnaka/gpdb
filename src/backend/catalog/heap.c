@@ -1557,7 +1557,7 @@ heap_create_with_catalog(const char *relname,
 		Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
 
 		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), relname);
-		heap_close(relnamespace, RowExclusiveLock);
+		heap_close(name_space_desc, RowExclusiveLock);
 
 		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
 				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
