@@ -24,6 +24,9 @@ Vagrant.configure(2) do |config|
     end
   end
 
+  # Make the GPDB code folder will be visible as /gpdb in the virtual machine
+  config.vm.synced_folder "../../.", "/gpdb"
+
   config.vm.define("gpdb") do |gpdb|
     gpdb.vm.provision "shell", path: "vagrant-setup.sh"
     gpdb.vm.provision "shell", path: "vagrant-configure-os.sh"

@@ -514,10 +514,11 @@ CreateRole(CreateRoleStmt *stmt)
 	 * but just to keep the user OIDs the same between the master and the
 	 * segments.
 	 */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_authid_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
-		HeapTupleSetOid(tuple, binary_upgrade_next_pg_authid_oid);
-		binary_upgrade_next_pg_authid_oid = InvalidOid;
+		relname_oid_hash_entry *binaryAuthOid;
+		if( (binaryAuthOid = hash_search(relation_oid_hash, stmt->role, HASH_REMOVE, NULL)) != NULL)
+			HeapTupleSetOid(tuple, binaryAuthOid->reloid);
 	}
 	
 	/*

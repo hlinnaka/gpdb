@@ -22,6 +22,7 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_type_encoding.h"
+#include "catalog/heap.h"
 #include "commands/typecmds.h"
 #include "miscadmin.h"
 #include "parser/scansup.h"
@@ -33,7 +34,6 @@
 
 #include "cdb/cdbvars.h"
 
-Oid binary_upgrade_next_pg_type_oid = InvalidOid;
 
 /*
  * Record a type's default encoding clause in the catalog.
@@ -154,10 +154,17 @@ TypeShellMake(const char *typeName, Oid typeNamespace, Oid ownerId,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
-		HeapTupleSetOid(tup, binary_upgrade_next_pg_type_oid);
-		binary_upgrade_next_pg_type_oid = InvalidOid;
+		relname_oid_hash_entry *binaryOid;
+
+		char searchName[NAMEDATALEN*3];
+		char *nameSpacename = get_namespace_name(typeNamespace);
+
+		snprintf(searchName, sizeof(searchName), "%s.%s_type", nameSpacename, typeName);
+
+		if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
+			HeapTupleSetOid(tup, binaryOid->reloid);
 	}
 
 	/*
@@ -401,11 +408,19 @@ TypeCreateWithOptions(Oid newTypeOid,
 		else if (Gp_role == GP_ROLE_EXECUTE)
 			elog(ERROR," newtypeOid NULL");
 		/* Use binary-upgrade override for pg_type.oid, if supplied. */
-		else if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_pg_type_oid))
+		else if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 		{
-			HeapTupleSetOid(tup, binary_upgrade_next_pg_type_oid);
-			binary_upgrade_next_pg_type_oid = InvalidOid;
+			relname_oid_hash_entry *binaryOid;
+
+			char *namespaceName = get_namespace_name(typeNamespace);
+
+			char searchName[NAMEDATALEN*3];
+			snprintf(searchName, sizeof(searchName), "%s.%s_type", namespaceName, typeName);
+
+			if ((binaryOid = hash_search(relation_oid_hash, searchName, HASH_REMOVE, NULL)) != NULL )
+				HeapTupleSetOid(tup, binaryOid->reloid);
 		}
+
 		/* else allow system to assign oid */
 
 		typeObjectId = simple_heap_insert(pg_type_desc, tup);

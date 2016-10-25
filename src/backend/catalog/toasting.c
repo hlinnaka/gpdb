@@ -33,10 +33,6 @@
 #include "utils/syscache.h"
 #include "utils/guc.h"
 
-/* Potentially set by contrib/pg_upgrade_support functions */
-extern Oid	binary_upgrade_next_toast_pg_class_oid;
-
-Oid			binary_upgrade_next_toast_pg_type_oid = InvalidOid;
 
 static bool create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 							   Oid *comptypeOid, bool is_part_child);
@@ -131,6 +127,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	int16		coloptions[2];
 	ObjectAddress baseobject,
 				toastobject;
+	relname_oid_hash_entry 	*binaryOid;
+	relname_oid_hash_entry	*binaryTypeOid;
+	relname_oid_hash_entry  *binaryIndexOid;
 
 	/*
 	 * Is it already toasted?
@@ -139,11 +138,21 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 		return false;
 
 	/*
+	 * Create the toast table and its index
+	 */
+	snprintf(toast_relname, sizeof(toast_relname),
+			 "pg_toast_%u", relOid);
+	snprintf(toast_idxname, sizeof(toast_idxname),
+			 "pg_toast_%u_index", relOid);
+
+	//TODO have to look in here to see why the oid is not being set properly
+	/*
 	 * Check to see whether the table actually needs a TOAST table.
 	 */
 	if (!RelationNeedsToastTable(rel) &&
 		(!IsBinaryUpgrade ||
-		 !OidIsValid(binary_upgrade_next_toast_pg_class_oid)))
+				(relation_oid_hash == NULL) ||
+				(binaryOid = hash_search(relation_oid_hash, toast_relname, HASH_REMOVE, NULL) ) == NULL )) /* Set in set_next_toast_pg_class_oid */
 		return false;
 
 	/*
@@ -158,13 +167,6 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("shared tables cannot be toasted after initdb")));
 
-	/*
-	 * Create the toast table and its index
-	 */
-	snprintf(toast_relname, sizeof(toast_relname),
-			 "pg_toast_%u", relOid);
-	snprintf(toast_idxname, sizeof(toast_idxname),
-			 "pg_toast_%u_index", relOid);
 
 	/* this is pretty painful...  need a tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(3, false);
@@ -204,15 +206,29 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	 * table?  Or maybe some toast-specific reloptions?
 	 */
 	Oid unusedTypArrayOid = InvalidOid;
-
+	/*TODO:THIS NEEDS TO BE FIXED */
 	/* Use binary-upgrade override for pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_toast_pg_type_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash == NULL) )
 	{
-		toast_typid = binary_upgrade_next_toast_pg_type_oid;
-		binary_upgrade_next_toast_pg_type_oid = InvalidOid;
+
+		char *uniqueTypeName = pnstrdup(toast_relname, strlen(toast_relname)+strlen('_type'));/* set in set_next_toast_pg_type_oid */
+
+		strcat(uniqueTypeName, '_type');
+
+		binaryTypeOid = hash_search(relation_oid_hash, uniqueTypeName, HASH_REMOVE, NULL);
+		toast_typid = binaryTypeOid->reloid;
+
 	}
 	else if (comptypeOid)
 		toast_typid = *comptypeOid;
+	
+	/* Use binary-upgrade override for pg_class.oid, if supplied. */
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
+	{
+		binaryOid = hash_search(relation_oid_hash, toast_relname, HASH_REMOVE, NULL);
+		/* this would have been set above in the check to see if we needed one */
+		toastOid = binaryOid->reloid;
+	}
 
 	toast_relid = heap_create_with_catalog(toast_relname,
 										   namespaceid,
@@ -272,12 +288,20 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	coloptions[0] = 0;
 	coloptions[1] = 0;
 
+	/* Use binary-upgrade override for pg_class.oid, if supplied. */
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
+			(binaryIndexOid = hash_search(relation_oid_hash, toast_idxname, HASH_REMOVE, NULL) ) != NULL ) /* set_next_toast_index_pg_class_oid */
+	{
+				toastIndexOid = binaryIndexOid->reloid;
+	}
+
 	toast_idxid = index_create(toast_relid, toast_idxname, toastIndexOid,
 							   indexInfo,
 							   BTREE_AM_OID,
 							   rel->rd_rel->reltablespace,
 							   classObjectId, coloptions, (Datum) 0,
 							   true, false, (Oid *) NULL, true, false, false, NULL);
+
 
 	/*
 	 * If this is a partitioned child, we can unlock since the master is
