@@ -289,7 +289,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	coloptions[1] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid, if supplied. */
-	if (IsBinaryUpgrade && (relation_oid_hash == NULL) &&
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
 			(binaryIndexOid = hash_search(relation_oid_hash, toast_idxname, HASH_REMOVE, NULL) ) != NULL ) /* set_next_toast_index_pg_class_oid */
 	{
 				toastIndexOid = binaryIndexOid->reloid;
