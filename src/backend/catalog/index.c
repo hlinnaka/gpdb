@@ -644,29 +644,32 @@ index_create(Oid heapRelationId,
 	 */
 	if (!OidIsValid(indexRelationId))
 	{
-		/*
-		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
-		 * supplied.
-		 */
-		char *relNameSpace = RelationGetNamespace(heapRelation);
-		char fullyQualifiedName[NAMEDATALEN*3];
-		snprintf(fullyQualifiedName, NAMEDATALEN*3,"%s.%s", relNameSpace, indexRelationName);
 
-		char		relkind = heapRelation->rd_rel->relkind;
-		relname_oid_hash_entry *binaryOid;
-		if (IsBinaryUpgrade &&
-			relkind == RELKIND_RELATION &&
-			relation_oid_hash != NULL &&
-			(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ))
+		if (IsBinaryUpgrade)
 		{
-			indexRelationId = binaryOid->reloid;
-		}
-		else if (IsBinaryUpgrade &&
-				 relkind == RELKIND_TOASTVALUE &&
-				 relation_oid_hash != NULL &&
-				 (binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ))
-		{
-			indexRelationId = binaryOid->reloid;
+			/*
+			 * Use binary-upgrade override for pg_class.oid/relfilenode, if
+			 * supplied.
+			 */
+			char *relNameSpace = RelationGetNamespace(heapRelation);
+			char fullyQualifiedName[NAMEDATALEN*3];
+			snprintf(fullyQualifiedName, NAMEDATALEN*3,"%s.%s", relNameSpace, indexRelationName);
+
+			char		relkind = heapRelation->rd_rel->relkind;
+			relname_oid_hash_entry *binaryOid;
+
+			if (relkind == RELKIND_RELATION &&
+				relation_oid_hash != NULL &&
+				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ))
+			{
+				indexRelationId = binaryOid->reloid;
+			}
+			else if (relkind == RELKIND_TOASTVALUE &&
+					 relation_oid_hash != NULL &&
+					 (binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ))
+			{
+				indexRelationId = binaryOid->reloid;
+			}
 		}
 		else
 		{
