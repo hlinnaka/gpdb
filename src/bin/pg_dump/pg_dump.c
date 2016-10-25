@@ -239,7 +239,7 @@ static void dumpDatabase(Archive *AH);
 static void dumpEncoding(Archive *AH);
 static void dumpStdStrings(Archive *AH);
 static void binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
-							char *pg_type_name, Oid pg_type_oid);
+							char *pg_type_namespace, char *pg_type_name, Oid pg_type_oid);
 static bool binary_upgrade_set_type_oids_by_rel_oid(
 								 PQExpBuffer upgrade_buffer, Oid pg_rel_oid);
 static void binary_upgrade_set_pg_class_oids(PQExpBuffer upgrade_buffer,
@@ -2135,7 +2135,7 @@ binary_upgrade_set_type_oids_by_type_oid(PQExpBuffer upgrade_buffer,
 		appendPQExpBuffer(upgrade_buffer,
 			   "\n-- For binary upgrade, must preserve pg_type array oid\n");
 		appendPQExpBuffer(upgrade_buffer,
-						  "SELECT binary_upgrade.set_next_array_pg_type_oid('%s':pg_catalog.text, '%u'::pg_catalog.oid);\n\n",
+						  "SELECT binary_upgrade.set_next_array_pg_type_oid('%s.%s':pg_catalog.text, '%u'::pg_catalog.oid);\n\n",
 						  pg_type_namespace, pg_type_array_name, pg_type_array_oid);
 	}
 

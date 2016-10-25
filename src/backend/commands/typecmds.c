@@ -462,8 +462,10 @@ DefineType(List *names, List *parameters, Oid newOid, Oid newArrayOid)
 	/* Preassign array type OID so we can insert it in pg_type.typarray */
 	array_oid = newArrayOid;
 	if (!OidIsValid(array_oid))
+	{
+		char *typeNamespaceName =
 		array_oid = AssignTypeArrayOid(typeNamespace, typeName);
-
+	}
 	/*
 	 * now have TypeCreate do all the real work.
 	 */
