@@ -194,7 +194,7 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 		binaryOid = hash_search(relation_oid_hash, aosegIndexRelname, HASH_REMOVE, NULL);
 
 		if (binaryOid != NULL)
-			newOid = binaryOid->reloid;
+			newIndexOid = binaryOid->reloid;
 	}
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
