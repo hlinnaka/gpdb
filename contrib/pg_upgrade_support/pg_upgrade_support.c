@@ -14,6 +14,7 @@
 #include "catalog/dependency.h"
 #include "catalog/pg_class.h"
 #include "catalog/heap.h"
+#include "utils/builtins.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -71,7 +72,7 @@ static void insertRelnameOid(char *relname, Oid reloid);
 Datum
 set_next_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char		*typName = GET_STR(PG_GETARG_TEXT_P(0));
+	char		*typName = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid			typOid = PG_GETARG_OID(1);
 
 	insertRelnameOid(typName, typOid);
@@ -82,7 +83,7 @@ set_next_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_array_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char	*typName = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*typName = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		typoid = PG_GETARG_OID(1);
 
 	insertRelnameOid(typName, typoid);
@@ -94,7 +95,7 @@ set_next_array_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_toast_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char	*relName = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relName = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		typoid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relName, typoid);
@@ -105,7 +106,7 @@ set_next_toast_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aosegments_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char	*relName = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relName = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		typoid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relName, typoid);
@@ -116,7 +117,7 @@ set_next_aosegments_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aoblockdir_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char	*relName = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relName = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		typoid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relName, typoid);
@@ -127,7 +128,7 @@ set_next_aoblockdir_pg_type_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aovisimap_pg_type_oid(PG_FUNCTION_ARGS)
 {
-	char		*typName 	= GET_STR(PG_GETARG_TEXT_P(0));
+	char		*typName 	= text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid			typOid 		= PG_GETARG_OID(1);
 
 	insertRelnameOid(typName, typOid);
@@ -147,7 +148,7 @@ clear_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*tablename = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*tablename = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(tablename, reloid);
@@ -160,7 +161,7 @@ set_next_heap_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*tablename = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*tablename = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(tablename, reloid);
@@ -171,7 +172,7 @@ set_next_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_toast_pg_class_oid(PG_FUNCTION_ARGS)
 {
-    char *relname = GET_STR(PG_GETARG_TEXT_P(0));
+    char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid	reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -190,7 +191,7 @@ set_next_toast_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-    char *relname = GET_STR(PG_GETARG_TEXT_P(0));
+    char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid	reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -201,7 +202,7 @@ set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS)
 {
-    char *relname = GET_STR(PG_GETARG_TEXT_P(0));
+    char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -213,7 +214,7 @@ set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aosegments_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-    char *relname = GET_STR(PG_GETARG_TEXT_P(0));
+    char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -225,7 +226,7 @@ set_next_aosegments_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aoblockdir_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*relname = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -237,7 +238,7 @@ set_next_aoblockdir_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aoblockdir_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*relname = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -249,7 +250,7 @@ set_next_aoblockdir_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aovisimap_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*relname = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid		= PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -260,7 +261,7 @@ set_next_aovisimap_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_aovisimap_index_pg_class_oid(PG_FUNCTION_ARGS)
 {
-	char	*relname = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid 		= PG_GETARG_OID(1);
 
 	insertRelnameOid(relname, reloid);
@@ -271,7 +272,7 @@ set_next_aovisimap_index_pg_class_oid(PG_FUNCTION_ARGS)
 Datum
 set_next_pg_authid_oid(PG_FUNCTION_ARGS)
 {
-	char	*userName = GET_STR(PG_GETARG_TEXT_P(0));
+	char	*userName = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		authoid = PG_GETARG_OID(1);
 
 	insertRelnameOid(userName, authoid);
