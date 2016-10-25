@@ -1512,6 +1512,8 @@ AssignTypeArrayOid(Oid typeNameSpace, const char *typeName)
 		if( (binaryTypeOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL)) != NULL)
 			type_array_oid = binaryTypeOid->reloid;
 
+		heap_close(name_space_desc, RowExclusiveLock);
+
 	}
 	else
 	{

@@ -86,16 +86,6 @@
 /* Potentially set by contrib/pg_upgrade_support functions */
 HTAB    *relation_oid_hash = NULL;
 
-/* Potentially set by contrib/pg_upgrade_support functions */
-List	*binary_upgrade_next_heap_pg_class_oid = NIL;
-List	*binary_upgrade_next_toast_pg_class_oid = NIL;
-/*
- * binary_upgrade_next_aosegments_pg_class_oid,
- * binary_upgrade_next_aoblockdir_pg_class_oid, and
- * binary_upgrade_next_aovisimap_pg_class_oid are defined in aoseg.c, aoblockdir.c and
- * aovisimap.c, respectively. They are handled in by upper level functions, in those files,
- * rather than here.
- */
 
 static void MetaTrackAddUpdInternal(Oid			classid,
 									Oid			objoid,
@@ -1567,6 +1557,7 @@ heap_create_with_catalog(const char *relname,
 		Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
 
 		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), relname);
+		heap_close(relnamespace, RowExclusiveLock);
 
 		if (IsBinaryUpgrade && (relation_oid_hash != NULL) &&
 				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
@@ -1574,6 +1565,7 @@ heap_create_with_catalog(const char *relname,
 				relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
 		{
 			relid = binaryOid->reloid;
+
 		}
 		else if (IsBinaryUpgrade && (relkind == RELKIND_TOASTVALUE) &&
 				(relation_oid_hash != NULL) &&
