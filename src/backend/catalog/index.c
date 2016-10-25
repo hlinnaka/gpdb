@@ -74,13 +74,7 @@
 #include "cdb/cdbpersistentfilesysobj.h"
 
 
-/*
- * binary_upgrade_next_aosegments_index_pg_class_oid,
- * binary_upgrade_next_aoblockdir_index_pg_class_oid, and
- * binary_upgrade_next_aovisimap_index_pg_class_oid are defined in aoseg.c, aoblockdir.c and
- * aovisimap.c, respectively. They are handled in by upper level functions, in those files,
- * rather than here.
- */
+
 
 /* state info for validate_index bulkdelete callback */
 typedef struct

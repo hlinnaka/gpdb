@@ -194,7 +194,10 @@ set_next_toast_index_pg_class_oid(PG_FUNCTION_ARGS)
     char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid	reloid = PG_GETARG_OID(1);
 
-	insertRelnameOid(relname, reloid);
+	char fullyQualifiedName[NAMEDATALEN*3]="pg_toast.";
+	strcpy(fullyQualifiedName,relname);
+
+	insertRelnameOid(fullyQualifiedName, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -205,7 +208,10 @@ set_next_aosegments_pg_class_oid(PG_FUNCTION_ARGS)
     char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
-	insertRelnameOid(relname, reloid);
+	char fullyQualifiedName[NAMEDATALEN*3]="pg_aoseg.";
+	strcpy(fullyQualifiedName,relname);
+
+	insertRelnameOid(fullyQualifiedName, reloid);
 
 	PG_RETURN_VOID();
 }
@@ -217,7 +223,10 @@ set_next_aosegments_index_pg_class_oid(PG_FUNCTION_ARGS)
     char *relname = text_to_cstring(PG_GETARG_TEXT_P(0));
 	Oid		reloid = PG_GETARG_OID(1);
 
-	insertRelnameOid(relname, reloid);
+	char fullyQualifiedName[NAMEDATALEN*3]="pg_aoseg.";
+	strcpy(fullyQualifiedName,relname);
+
+	insertRelnameOid(fullyQualifiedName, reloid);
 
 	PG_RETURN_VOID();
 }
