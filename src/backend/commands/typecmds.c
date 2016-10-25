@@ -463,7 +463,7 @@ DefineType(List *names, List *parameters, Oid newOid, Oid newArrayOid)
 	array_oid = newArrayOid;
 	if (!OidIsValid(array_oid))
 	{
-		char *typeNamespaceName =
+
 		array_oid = AssignTypeArrayOid(typeNamespace, typeName);
 	}
 	/*
@@ -1494,16 +1494,20 @@ findTypeAnalyzeFunction(List *procname, Oid typeOid)
  *	Pre-assign the type's array OID for use in pg_type.typarray
  */
 Oid
-AssignTypeArrayOid(const char *typeNameSpace, const char *typeName)
+AssignTypeArrayOid(Oid *typeNameSpace, const char *typeName)
 {
 	Oid		type_array_oid;
 
-	char 	fullyQualifiedName[NAMEDATALEN*3];
-	snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", typeNameSpace, typeName);
 
 	/* Use binary-upgrade override for pg_type.typarray, if supplied. */
 	if (IsBinaryUpgrade && (relation_oid_hash != NULL)) /* set_next_array_pg_type_oid */
 	{
+		char 	fullyQualifiedName[NAMEDATALEN*3];
+
+		Relation name_space_desc = heap_open(typeNameSpace, RowExclusiveLock);
+
+		snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", RelationGetRelationName(name_space_desc), typeName);
+
 		relname_oid_hash_entry *binaryTypeOid;
 		if( (binaryTypeOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL)) != NULL)
 			type_array_oid = binaryTypeOid->reloid;

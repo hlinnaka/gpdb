@@ -1650,11 +1650,9 @@ heap_create_with_catalog(const char *relname,
 							  relkind == RELKIND_COMPOSITE_TYPE) &&
 		relnamespace != PG_BITMAPINDEX_NAMESPACE &&
 		!OidIsValid(new_array_oid))
-
-		Relation name_space_desc = heap_open(relnamespace, RowExclusiveLock);
-
-		new_array_oid = AssignTypeArrayOid(RelationGetRelationName(name_space_desc), relname);
-
+	{
+		new_array_oid = AssignTypeArrayOid(relnamespace, relname);
+	}
 	/*
 	 * Since defining a relation also defines a complex type, we add a new
 	 * system type corresponding to the new relation.
