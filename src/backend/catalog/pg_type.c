@@ -412,7 +412,7 @@ TypeCreateWithOptions(Oid newTypeOid,
 		{
 			relname_oid_hash_entry *binaryOid;
 
-			char *namespaceName = get_namespace_name(relnamespace);
+			char *namespaceName = get_namespace_name(typeNamespace);
 
 			char searchName[NAMEDATALEN*3];
 			snprintf(searchName, sizeof(searchName), "%s.%s_type", namespaceName), typeName);
