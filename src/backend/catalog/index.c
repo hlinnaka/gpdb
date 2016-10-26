@@ -73,17 +73,8 @@
 #include "cdb/cdbmirroredfilesysobj.h"
 #include "cdb/cdbpersistentfilesysobj.h"
 
-/* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
 
-/*
- * binary_upgrade_next_aosegments_index_pg_class_oid,
- * binary_upgrade_next_aoblockdir_index_pg_class_oid, and
- * binary_upgrade_next_aovisimap_index_pg_class_oid are defined in aoseg.c, aoblockdir.c and
- * aovisimap.c, respectively. They are handled in by upper level functions, in those files,
- * rather than here.
- */
+
 
 /* state info for validate_index bulkdelete callback */
 typedef struct
@@ -647,25 +638,32 @@ index_create(Oid heapRelationId,
 	 */
 	if (!OidIsValid(indexRelationId))
 	{
-		/*
-		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
-		 * supplied.
-		 */
-		char		relkind = heapRelation->rd_rel->relkind;
 
-		if (IsBinaryUpgrade &&
-			relkind == RELKIND_RELATION &&
-			OidIsValid(binary_upgrade_next_index_pg_class_oid))
+		if (IsBinaryUpgrade)
 		{
-			indexRelationId = binary_upgrade_next_index_pg_class_oid;
-			binary_upgrade_next_index_pg_class_oid = InvalidOid;
-		}
-		else if (IsBinaryUpgrade &&
-				 relkind == RELKIND_TOASTVALUE &&
-				 OidIsValid(binary_upgrade_next_toast_index_pg_class_oid))
-		{
-			indexRelationId = binary_upgrade_next_toast_index_pg_class_oid;
-			binary_upgrade_next_toast_index_pg_class_oid = InvalidOid;
+			/*
+			 * Use binary-upgrade override for pg_class.oid/relfilenode, if
+			 * supplied.
+			 */
+			char *namespaceName = get_namespace_name(namespaceId);
+			char fullyQualifiedName[NAMEDATALEN*3];
+			snprintf(fullyQualifiedName, NAMEDATALEN*3,"%s.%s", namespaceName, indexRelationName);
+
+			char		relkind = heapRelation->rd_rel->relkind;
+			relname_oid_hash_entry *binaryOid;
+
+			if (relkind == RELKIND_RELATION &&
+				relation_oid_hash != NULL &&
+				(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ))
+			{
+				indexRelationId = binaryOid->reloid;
+			}
+			else if (relkind == RELKIND_TOASTVALUE &&
+					 relation_oid_hash != NULL &&
+					 (binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ))
+			{
+				indexRelationId = binaryOid->reloid;
+			}
 		}
 		else
 		{

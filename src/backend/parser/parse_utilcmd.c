@@ -1455,47 +1455,49 @@ transformDistributedBy(ParseState *pstate, CreateStmtContext *cxt,
 			Oid			relId = RangeVarGetRelid(parent, false);
 			GpPolicy  *oldTablePolicy =
 				GpPolicyFetch(CurrentMemoryContext, relId);
-
-			/* Partitioned child must have partitioned parents. */
-			if (oldTablePolicy == NULL ||
-				 oldTablePolicy->ptype != POLICYTYPE_PARTITIONED)
+			if (!IsBinaryUpgrade)
 			{
-				ereport(ERROR, (errcode(ERRCODE_GP_FEATURE_NOT_SUPPORTED),
-						errmsg("cannot inherit from catalog table \"%s\" "
-							   "to create table \"%s\".",
-							   parent->relname, cxt->relation->relname),
-						errdetail("An inheritance hierarchy cannot contain a "
-								  "mixture of distributed and "
-								  "non-distributed tables.")));
-			}
-			/*
-			 * If we still don't know what distribution to use, and this
-			 * is an inherited table, set the distribution based on the
-			 * parent (or one of the parents)
-			 */
-			if (distributedBy == NIL && oldTablePolicy->nattrs >= 0)
-			{
-				int ia;
-
-				if (oldTablePolicy->nattrs > 0)
+				/* Partitioned child must have partitioned parents. */
+				if (oldTablePolicy == NULL ||
+					 oldTablePolicy->ptype != POLICYTYPE_PARTITIONED)
 				{
-					for (ia=0; ia<oldTablePolicy->nattrs; ia++)
+					ereport(ERROR, (errcode(ERRCODE_GP_FEATURE_NOT_SUPPORTED),
+							errmsg("cannot inherit from catalog table \"%s\" "
+								   "to create table \"%s\".",
+								   parent->relname, cxt->relation->relname),
+							errdetail("An inheritance hierarchy cannot contain a "
+									  "mixture of distributed and "
+									  "non-distributed tables.")));
+				}
+				/*
+				 * If we still don't know what distribution to use, and this
+				 * is an inherited table, set the distribution based on the
+				 * parent (or one of the parents)
+				 */
+				if (distributedBy == NIL && oldTablePolicy->nattrs >= 0)
+				{
+					int ia;
+
+					if (oldTablePolicy->nattrs > 0)
 					{
-						char *attname =
-							get_attname(relId, oldTablePolicy->attrs[ia]);
+						for (ia=0; ia<oldTablePolicy->nattrs; ia++)
+						{
+							char *attname =
+								get_attname(relId, oldTablePolicy->attrs[ia]);
 
-						distributedBy = lappend(distributedBy,
-												(Node *) makeString(attname));
+							distributedBy = lappend(distributedBy,
+													(Node *) makeString(attname));
+						}
 					}
+					else
+					{
+						/* strewn parent */
+						distributedBy = lappend(distributedBy, (Node *)NULL);
+					}
+					if (!bQuiet)
+					 elog(NOTICE, "Table has parent, setting distribution columns "
+						 "to match parent table");
 				}
-				else
-				{
-					/* strewn parent */
-					distributedBy = lappend(distributedBy, (Node *)NULL);
-				}
-				if (!bQuiet)
-				 elog(NOTICE, "Table has parent, setting distribution columns "
-					 "to match parent table");
 			}
 			pfree(oldTablePolicy);
 		}

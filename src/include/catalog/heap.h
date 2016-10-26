@@ -17,6 +17,15 @@
 
 #include "parser/parse_node.h"
 #include "catalog/gp_persistent.h"
+#include "utils/hsearch.h"
+
+typedef struct
+{
+ char relname[NAMEDATALEN * 3]; /* need to add schema plus some room to make the name unique */
+ Oid reloid;
+} relname_oid_hash_entry;
+
+HTAB *relation_oid_hash;
 
 typedef struct CookedConstraint
 {

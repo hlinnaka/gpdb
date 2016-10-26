@@ -84,15 +84,8 @@
 
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
-/*
- * binary_upgrade_next_aosegments_pg_class_oid,
- * binary_upgrade_next_aoblockdir_pg_class_oid, and
- * binary_upgrade_next_aovisimap_pg_class_oid are defined in aoseg.c, aoblockdir.c and
- * aovisimap.c, respectively. They are handled in by upper level functions, in those files,
- * rather than here.
- */
+HTAB    *relation_oid_hash = NULL;
+
 
 static void MetaTrackAddUpdInternal(Oid			classid,
 									Oid			objoid,
@@ -1555,24 +1548,32 @@ heap_create_with_catalog(const char *relname,
 	 */
 	if (!OidIsValid(relid))
 	{
-		/*
-		 * Use binary-upgrade override for pg_class.oid/relfilenode, if
-		 * supplied.
-		 */
-		if (IsBinaryUpgrade &&
-			OidIsValid(binary_upgrade_next_heap_pg_class_oid) &&
-			(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
-			 relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
+		if (IsBinaryUpgrade)
 		{
-			relid = binary_upgrade_next_heap_pg_class_oid;
-			binary_upgrade_next_heap_pg_class_oid = InvalidOid;
-		}
-		else if (IsBinaryUpgrade &&
-				 OidIsValid(binary_upgrade_next_toast_pg_class_oid) &&
-				 relkind == RELKIND_TOASTVALUE)
-		{
-			relid = binary_upgrade_next_toast_pg_class_oid;
-			binary_upgrade_next_toast_pg_class_oid = InvalidOid;
+			/*
+			 * Use binary-upgrade override for pg_class.oid/relfilenode, if
+			 * supplied.
+			*/
+			relname_oid_hash_entry *binaryOid;
+			char fullyQualifiedName[NAMEDATALEN*3];
+
+			char *namespaceName = get_namespace_name(relnamespace);
+			snprintf(fullyQualifiedName, NAMEDATALEN*3, "%s.%s", namespaceName, relname);
+
+			if ((relation_oid_hash != NULL) &&
+					(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) &&
+					(relkind == RELKIND_RELATION || relkind == RELKIND_SEQUENCE ||
+					relkind == RELKIND_VIEW || relkind == RELKIND_COMPOSITE_TYPE))
+			{
+				relid = binaryOid->reloid;
+
+			}
+			else if ( (relkind == RELKIND_TOASTVALUE) &&
+					(relation_oid_hash != NULL) &&
+					(binaryOid = hash_search(relation_oid_hash, fullyQualifiedName, HASH_REMOVE, NULL) ) )
+			{
+				relid = binaryOid->reloid;
+			}
 		}
 		/*
 		 * AO segment, blockdir, and visimap tables are handled in upper level,
@@ -1643,8 +1644,9 @@ heap_create_with_catalog(const char *relname,
 							  relkind == RELKIND_COMPOSITE_TYPE) &&
 		relnamespace != PG_BITMAPINDEX_NAMESPACE &&
 		!OidIsValid(new_array_oid))
-		new_array_oid = AssignTypeArrayOid();
-
+	{
+		new_array_oid = AssignTypeArrayOid(relnamespace, relname);
+	}
 	/*
 	 * Since defining a relation also defines a complex type, we add a new
 	 * system type corresponding to the new relation.
