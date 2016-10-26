@@ -21,9 +21,9 @@
 #include "nodes/makefuncs.h"
 
 /* Potentially set by contrib/pg_upgrade_support functions */
-Oid			binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
-Oid			binary_upgrade_next_aosegments_pg_type_oid = InvalidOid;
+List		*binary_upgrade_next_aosegments_pg_class_oid = NIL;
+List		*binary_upgrade_next_aosegments_index_pg_class_oid = NIL;
+List		*binary_upgrade_next_aosegments_pg_type_oid = NIL;
 
 void
 AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
@@ -35,6 +35,7 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	IndexInfo  *indexInfo;
 	Oid			classObjectId[1];
 	int16		coloptions[1];
+	relname_oid_hash_entry	*binaryOid;
 
 	/*
 	 * Grab an exclusive lock on the target table, which we will NOT release
@@ -171,23 +172,41 @@ AlterTableCreateAoSegTableWithOid(Oid relOid, Oid newOid, Oid newIndexOid,
 	coloptions[0] = 0;
 
 	/* Use binary-upgrade override for pg_class.oid and pg_type.oid, if supplied. */
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_class_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL))
 	{
 		Assert(newOid == InvalidOid);
-		newOid = binary_upgrade_next_aosegments_pg_class_oid;
-		binary_upgrade_next_aosegments_pg_class_oid = InvalidOid;
+
+		char aosegRelname[NAMEDATALEN];
+		snprintf(aosegRelname, NAMEDATALEN, "%s_%u",prefix,relOid);
+
+		binaryOid = hash_search(relation_oid_hash, aosegRelname, HASH_REMOVE, NULL);
+		if (binaryOid != NULL)
+			newOid = binaryOid->reloid;
+
 	}
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_index_pg_class_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
-		Assert(newIndexOid == InvalidOid);
-		newIndexOid = binary_upgrade_next_aosegments_index_pg_class_oid;
-		binary_upgrade_next_aosegments_index_pg_class_oid = InvalidOid;
+		Assert(newOid == InvalidOid)
+
+		char aosegIndexRelname[NAMEDATALEN];
+		snprintf(aosegIndexRelname, NAMEDATALEN, "%s_%u_index",prefix,relOid);
+
+		binaryOid = hash_search(relation_oid_hash, aosegIndexRelname, HASH_REMOVE, NULL);
+
+		if (binaryOid != NULL)
+			newIndexOid = binaryOid->reloid;
 	}
-	if (IsBinaryUpgrade && OidIsValid(binary_upgrade_next_aosegments_pg_type_oid))
+	if (IsBinaryUpgrade && (relation_oid_hash != NULL) )
 	{
 		Assert(*comptypeOid == InvalidOid);
-		*comptypeOid = binary_upgrade_next_aosegments_pg_type_oid;
-		binary_upgrade_next_aosegments_pg_type_oid = InvalidOid;
+
+		char aosegTypName[NAMEDATALEN];
+		snprintf(aosegTypName, NAMEDATALEN, "%s_%u_type",prefix,relOid);
+		binaryOid = hash_search(relation_oid_hash, aosegTypName, HASH_REMOVE, NULL);
+
+		if ( binaryOid != NULL )
+			*comptypeOid = binaryOid->reloid;
+
 	}
 
 	(void) CreateAOAuxiliaryTable(rel, prefix, RELKIND_AOSEGMENTS,
