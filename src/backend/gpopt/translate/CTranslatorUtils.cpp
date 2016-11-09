@@ -1242,40 +1242,6 @@ CTranslatorUtils::Edxlsetop
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CTranslatorUtils::Setoptype
-//
-//	@doc:
-//		Return set operator type
-//
-//---------------------------------------------------------------------------
-SetOperation
-CTranslatorUtils::Setoptype
-	(
-	EdxlSetOpType edxlsetop
-	)
-{
-	if (EdxlsetopUnionAll == edxlsetop || EdxlsetopUnion == edxlsetop)
-	{
-		return SETOP_UNION;
-	}
-
-	if (EdxlsetopIntersect == edxlsetop || EdxlsetopIntersectAll == edxlsetop)
-	{
-		return SETOP_INTERSECT;
-	}
-
-	if (EdxlsetopDifference == edxlsetop || EdxlsetopDifferenceAll == edxlsetop)
-	{
-		return SETOP_EXCEPT;
-	}
-
-	GPOS_ASSERT(!"Unrecognized set operator type");
-
-	return SETOP_NONE;
-}
-
-//---------------------------------------------------------------------------
-//	@function:
 //		CTranslatorUtils::Windowexclusion
 //
 //	@doc:

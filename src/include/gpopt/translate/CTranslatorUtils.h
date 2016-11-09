@@ -258,10 +258,6 @@ namespace gpdxl
 			static
 			EdxlSetOpType Edxlsetop(SetOperation setop, BOOL fAll);
 
-			// return the set operator type
-			static
-			SetOperation Setoptype(EdxlSetOpType edxlsetop);
-
 			// return the GPDB frame exclusion strategy from its corresponding DXL representation
 			static
 			WindowExclusion Windowexclusion(EdxlFrameExclusionStrategy edxlfes);
