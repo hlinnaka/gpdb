@@ -103,28 +103,6 @@ namespace gpdxl
 
 		public:
 
-			typedef struct CContextPreloadMD
-			{
-				public:
-					// memory pool
-					IMemoryPool *m_pmp;
-
-					// MD accessor for function names
-					CMDAccessor *m_pmda;
-
-					CContextPreloadMD
-						(
-						IMemoryPool *pmp,
-						CMDAccessor *pmda
-						)
-						: m_pmp(pmp), m_pmda(pmda)
-					{}
-
-					~CContextPreloadMD()
-					{}
-
-			} CContextPreloadMD;
-
 			struct SCmptypeStrategy
 			{
 				IMDType::ECmpType ecomptype;
@@ -237,22 +215,6 @@ namespace gpdxl
 						CMDAccessor *pmda,
 						const IMDType *pmdType
 						);
-
-			// preload metadata for a given type
-			static
-			void PreloadMDType(CMDAccessor *pmda, const IMDType *pmdtype);
-
-			// preload helpers
-			static
-			BOOL FPreloadMDStatsWalker(Node *pnode, CContextPreloadMD *pstrtxpreloadmd);
-
-			static
-			void PreloadMDStats(IMemoryPool *pmp, CMDAccessor *pmda, OID oidRelation);
-
-			// preload basic information in the MD cache, including base types
-			// and MD objects referenced in the given query
-			static
-			void PreloadMD(IMemoryPool *pmp, CMDAccessor *pmda, CSystemId sysid, Query *pquery);
 
 			// return the dxl representation of the set operation
 			static
