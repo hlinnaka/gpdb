@@ -2100,38 +2100,6 @@ CTranslatorRelcacheToDXL::PmdidAggIntermediateResultType
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CTranslatorRelcacheToDXL::PmdidFunc
-//
-//	@doc:
-//		Return the id of the function with the given name
-//
-//---------------------------------------------------------------------------
-IMDId *
-CTranslatorRelcacheToDXL::PmdidFunc
-	(
-	IMemoryPool *pmp,
-	const WCHAR *wszFuncName
-	)
-{
-
-	CHAR *szFuncName = CDXLUtils::SzFromWsz(pmp, wszFuncName);
-	FuncCandidateList fcl = gpdb::FclFuncCandidates
-								(
-								ListMake1(gpdb::PvalMakeString(szFuncName)),
-								-1 /* nargs */
-								);
-
-	if (NULL == fcl)
-	{
-		GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDCacheEntryNotFound, wszFuncName);
-	}
-
-	GPOS_DELETE_ARRAY(szFuncName);
-	return GPOS_NEW(pmp) CMDIdGPDB(fcl->oid);
-}
-
-//---------------------------------------------------------------------------
-//	@function:
 //		CTranslatorRelcacheToDXL::PimdobjRelStats
 //
 //	@doc:

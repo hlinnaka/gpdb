@@ -635,22 +635,6 @@ gpdb::CFuncDataAccess
 	return '\0';
 }
 
-FuncCandidateList
-gpdb::FclFuncCandidates
-	(
-	List *plistNames,
-	int iArgs
-	)
-{
-	GP_WRAP_START;
-	{
-		/* catalog tables: pg_proc */
-		return FuncnameGetCandidates(plistNames, iArgs, false, false);
-	}
-	GP_WRAP_END;
-	return NULL;
-}
-
 bool
 gpdb::FFunctionExists
 	(
