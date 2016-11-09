@@ -67,7 +67,6 @@ CTranslatorScalarToDXL::CTranslatorScalarToDXL
 	CIdGenerator *pulidgtorCTE,
 	ULONG ulQueryLevel,
 	BOOL fQuery,
-	PlannedStmt *pplstmt,
 	HMUlCTEListEntry *phmulCTEEntries,
 	DrgPdxln *pdrgpdxlnCTE
 	)
@@ -79,7 +78,6 @@ CTranslatorScalarToDXL::CTranslatorScalarToDXL
 	m_ulQueryLevel(ulQueryLevel),
 	m_fHasDistributedTables(false),
 	m_fQuery(fQuery),
-	m_pplstmt(pplstmt),
 	m_eplsphoptype(EpspotNone),
 	m_phmulCTEEntries(phmulCTEEntries),
 	m_pdrgpdxlnCTE(pdrgpdxlnCTE)

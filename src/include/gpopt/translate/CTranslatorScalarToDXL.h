@@ -48,7 +48,6 @@ struct OpExpr;
 struct Param;
 struct RelabelType;
 struct ScalarArrayOpExpr;
-struct PlannedStmt;
 
 namespace gpdxl
 {
@@ -97,10 +96,6 @@ namespace gpdxl
 
 			// is scalar being translated in query mode
 			BOOL m_fQuery;
-
-			// planned statement containing scalar expression being translated
-			// need this to access initplans
-			PlannedStmt *m_pplstmt;
 
 			// physical operator that created this translator
 			EPlStmtPhysicalOpType m_eplsphoptype;
@@ -371,7 +366,6 @@ namespace gpdxl
 				CIdGenerator *pulidgtorCTE,
 				ULONG ulQueryLevel,
 				BOOL fQuery,
-				PlannedStmt *pplstmt,
 				HMUlCTEListEntry *phmulCTEEntries,
 				DrgPdxln *pdrgpdxlnCTE
 				);
