@@ -769,7 +769,6 @@ CTranslatorRelcacheToDXL::PdxlnDefaultColumnValue
 							0, /* ulQueryLevel */
 							true, /* m_fQuery */
 							NULL, /* m_pplstmt */
-							NULL, /* m_pmappv */
 							NULL, /* phmulCTEEntries */
 							NULL /* pdrgpdxlnCTE */
 							);
@@ -1926,7 +1925,6 @@ CTranslatorRelcacheToDXL::Pmdcheckconstraint
 							0, /* ulQueryLevel */
 							true, /* m_fQuery */
 							NULL, /* m_pplstmt */
-							NULL, /* m_pmappv */
 							NULL, /* phmulCTEEntries */
 							NULL /* pdrgpdxlnCTE */
 							);
@@ -3365,7 +3363,6 @@ CTranslatorRelcacheToDXL::PmdpartcnstrFromNode
 							0, // ulQueryLevel
 							true, // m_fQuery
 							NULL, // m_pplstmt
-							NULL, // m_pmappv
 							NULL, // phmulCTEEntries
 							NULL // pdrgpdxlnCTE
 							);

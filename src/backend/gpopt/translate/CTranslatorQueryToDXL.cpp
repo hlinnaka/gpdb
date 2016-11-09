@@ -221,7 +221,6 @@ CTranslatorQueryToDXL::CTranslatorQueryToDXL
 									m_ulQueryLevel,
 									true, /* m_fQuery */
 									NULL, /* m_pplstmt */
-									NULL /* m_pmappv */,
 									m_phmulCTEEntries,
 									m_pdrgpdxlnCTE
 									);
