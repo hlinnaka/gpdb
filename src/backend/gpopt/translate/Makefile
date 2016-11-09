@@ -21,7 +21,6 @@ OBJS =  CMappingColIdVar.o \
 		CMappingParamIdScalarId.o \
 		CMappingColIdVarQuery.o \
 		CMappingElementColIdTE.o \
-		CStateDXLToQuery.o \
 		CDXLTranslateContextBaseTable.o \
 		CCTEListEntry.o \
 		CContextDXLToPlStmt.o \
