@@ -1276,46 +1276,6 @@ CTranslatorUtils::Setoptype
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CTranslatorUtils::PtemapCopy
-//
-//	@doc:
-//		Create a copy of the hash map
-//
-//---------------------------------------------------------------------------
-TEMap *
-CTranslatorUtils::PtemapCopy
-	(
-	IMemoryPool *pmp,
-	TEMap *ptemap
-	)
-{
-	TEMap *ptemapCopy = GPOS_NEW(pmp) TEMap(pmp);
-
-	// iterate over full map
-	TEMapIter temapiter(ptemap);
-	while (temapiter.FAdvance())
-	{
-		CMappingElementColIdTE *pmapelement =  const_cast<CMappingElementColIdTE *>(temapiter.Pt());
-
-		const ULONG ulColId = pmapelement->UlColId();
-		ULONG *pulKey1 = GPOS_NEW(pmp) ULONG(ulColId);
-		pmapelement->AddRef();
-
-#ifdef GPOS_DEBUG
-		BOOL fres =
-#endif
-		ptemapCopy->FInsert(pulKey1, pmapelement);
-
-#ifdef GPOS_DEBUG
-		GPOS_ASSERT(fres);
-#endif
-
-	}
-	return ptemapCopy;
-}
-
-//---------------------------------------------------------------------------
-//	@function:
 //		CTranslatorUtils::Windowexclusion
 //
 //	@doc:

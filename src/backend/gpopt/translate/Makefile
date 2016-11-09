@@ -18,7 +18,6 @@ OBJS =  CMappingColIdVar.o \
 		CMappingVarColId.o \
 		CMappingElementColIdParamId.o \
 		CMappingColIdVarPlStmt.o \
-		CMappingColIdVarQuery.o \
 		CMappingElementColIdTE.o \
 		CDXLTranslateContextBaseTable.o \
 		CCTEListEntry.o \

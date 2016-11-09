@@ -18,7 +18,6 @@
 #define GPDXL_SYSTEM_COLUMNS 8
 
 #include "gpopt/translate/CTranslatorScalarToDXL.h"
-#include "gpopt/translate/CMappingColIdVarQuery.h"
 
 #include "gpos/base.h"
 #include "gpos/common/CBitSet.h"
@@ -258,10 +257,6 @@ namespace gpdxl
 			// return the dxl representation of the set operation
 			static
 			EdxlSetOpType Edxlsetop(SetOperation setop, BOOL fAll);
-
-			// make copy of the TE map
-			static
-			TEMap *PtemapCopy(IMemoryPool *pmp, TEMap *ptemap);
 
 			// return the set operator type
 			static
