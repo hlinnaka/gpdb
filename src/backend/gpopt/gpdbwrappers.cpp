@@ -1635,20 +1635,6 @@ gpdb::FreeListDeep
 	GP_WRAP_END;
 }
 
-void
-gpdb::FreeListAndNull
-	(
-	List **listPtrPtr
-	)
-{
-	GP_WRAP_START;
-	{
-		freeListAndNull(listPtrPtr);
-		return;
-	}
-	GP_WRAP_END;
-}
-
 bool
 gpdb::FMotionGather
 	(
