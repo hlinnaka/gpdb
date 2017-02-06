@@ -4076,12 +4076,12 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 	{
 		gucsource = PGC_S_ARGV; /* switches came from command line */
 
-	/* Ignore the initial --single argument, if present */
-	if (argc > 1 && strcmp(argv[1], "--single") == 0)
-	{
-		argv++;
-		argc--;
-	}
+		/* Ignore the initial --single argument, if present */
+		if (argc > 1 && strcmp(argv[1], "--single") == 0)
+		{
+			argv++;
+			argc--;
+		}
 	}
 	else
 	{
@@ -4312,8 +4312,7 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 		}
 	}
 
-
-	/* 
+	/*
 	 * Optional database name should be there only if *dbname is NULL.
 	 */
 	if (!errs && dbname && *dbname == NULL && argc - optind >= 1)
@@ -4321,20 +4320,17 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 
 	if (errs || argc != optind)
 	{
-		if (errs)
-			optind--;			/* complain about the previous argument */
-
 		/* spell the error message a bit differently depending on context */
 		if (IsUnderPostmaster)
-		ereport(FATAL,
+			ereport(FATAL,
 					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("invalid command-line argument for server process: %s", argv[optind]),
+				 errmsg("invalid command-line arguments for server process"),
 			  errhint("Try \"%s --help\" for more information.", progname)));
 		else
 			ereport(FATAL,
 					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("%s: invalid command-line argument: %s",
-							progname, argv[optind]),
+					 errmsg("%s: invalid command-line arguments",
+							progname),
 			  errhint("Try \"%s --help\" for more information.", progname)));
 	}
 
@@ -4347,6 +4343,8 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 	optreset = 1;				/* some systems need this too */
 #endif
 }
+
+
 /* ----------------------------------------------------------------
  * PostgresMain
  *	   postgres main loop -- all backends, interactive or otherwise start here
