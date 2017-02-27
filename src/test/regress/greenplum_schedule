@@ -33,11 +33,6 @@ test: workfile/hashagg_spill workfile/hashjoin_spill workfile/materialize_spill 
 # 'zlib' utilizes fault injectors so it needs to be in a group by itself
 test: zlib
 
-# This test will change the gp_workfile_limit_per_segment and will need to restart the DB.
-# It will also use faultinjector - so it needs to be in a group by itself.
-test: segspace_setup
-test: segspace
-test: segspace_cleanup
 test: cursor
 
 # 'query_finish_pending' sets QueryFinishPending flag to true during query execution using fault injectors

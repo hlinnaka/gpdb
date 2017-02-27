@@ -193,6 +193,15 @@ installcheck-good: all twophase_pqexecparams hooktest
 	PGUSER="gpadmin/kerberos-test" $(pg_regress_call)  --psqldir=$(PSQLDIR) --schedule=$(srcdir)/parallel_schedule --schedule=$(srcdir)/greenplum_schedule --srcdir=$(abs_srcdir) --ao-dir=uao --host=`hostname`; \
 	fi
 
+check-good: all twophase_pqexecparams
+	$(pg_regress_call) --temp-install=./tmp_check --top-builddir=$(top_builddir) --srcdir=$(abs_srcdir) --temp-port=$(TEMP_PORT) --schedule=$(srcdir)/parallel_schedule --schedule=$(srcdir)/greenplum_schedule --ao-dir=uao $(TEMP_CONF)
+
+# Some tests require special settings in postgresql.conf, and cannot therefore
+# run as part of the main suite. 'check-limits' sets up a suitable cluster for
+# those tests, and runs them.
+check-limits: all
+	$(pg_regress_call) --temp-install=./tmp_check --top-builddir=$(top_builddir) --srcdir=$(abs_srcdir) --temp-port=$(TEMP_PORT) --schedule=$(srcdir)/limits_schedule --ao-dir=uao --temp-config=limits-postgresql.conf
+
 testbouncer: all
 	bash -c "bouncer/setup.sh"
 	$(pg_regress_call)  --port=65432 --psqldir=$(PSQLDIR) --schedule=./minimal_schedule --srcdir=$(abs_srcdir) --host=`hostname`;

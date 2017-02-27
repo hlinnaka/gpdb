@@ -1,0 +1,5 @@
+# Mask out timestamp and whoami message for gpfaultinjector
+-- start_matchsubs
+m/^\d+.*gpfaultinjector.*-\[INFO\]:-/
+s/^\d+.*gpfaultinjector.*-\[INFO\]:-//
+-- end_matchsubs

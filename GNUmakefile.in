@@ -140,8 +140,13 @@ distclean maintainer-clean:
 
 # This is a top-level target that runs "all" regression test suites against
 # a running server. This is what the CI pipeline runs.
+#
+# It also runs a few tests, in src/test/gp_limits, that sets up a separate
+# test installation and server. Those tests need special options to be set
+# in postgresql.conf, so cannot use the existing server.
 installcheck-world:
 	$(MAKE) -C src/test installcheck-good
+	$(MAKE) -C src/test/gp_limits check
 	$(MAKE) -C src/test/fsync install && $(MAKE) -C src/test/fsync installcheck
 	$(MAKE) -C src/test/walrep install && $(MAKE) -C src/test/walrep installcheck
 	$(MAKE) -C src/test/heap_checksum install && $(MAKE) -C src/test/heap_checksum installcheck

@@ -1,0 +1,3 @@
+# This test requires gp_workfile_limit_per_segment to be set.
+# It will also use faultinjector - so it needs to be in a group by itself.
+test: segspace
