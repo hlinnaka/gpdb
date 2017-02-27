@@ -36,6 +36,8 @@
 #include "getopt_long.h"
 #include "pg_config_paths.h"
 
+#define NUM_SEGMENTS 3
+
 /* for resultmap we need a list of pairs of strings */
 typedef struct _resultmap
 {
@@ -114,6 +116,7 @@ static char *difffilename;
 static _resultmap *resultmap = NULL;
 
 static PID_TYPE postmaster_pid = INVALID_PID;
+static PID_TYPE segment_postmaster_pids[NUM_SEGMENTS];
 static bool postmaster_running = false;
 
 static int	success_count = 0;
@@ -155,6 +158,9 @@ typedef BOOL (WINAPI * __CreateRestrictedToken) (HANDLE, DWORD, DWORD, PSID_AND_
 #endif
 
 static bool detectCgroupMountPoint(char *cgdir, int len);
+
+static void create_temp_gpdb_cluster(char *bindir, char *temp_install, char *datadir);
+static void append_to_postgresql_conf(char *datadir, char *temp_config);
 
 /*
  * allow core files if possible.
@@ -296,23 +302,43 @@ stop_postmaster(void)
 		/* We use pg_ctl to issue the kill and wait for stop */
 		char		buf[MAXPGPATH * 2];
 		int			r;
+		bool		success = true;
+		int			segno;
 
 		/* On Windows, system() seems not to force fflush, so... */
 		fflush(stdout);
 		fflush(stderr);
 
+		/* Stop segment servers first */
+		for (segno = 0; segno < NUM_SEGMENTS; segno++)
+		{
+			snprintf(buf, sizeof(buf),
+					 SYSTEMQUOTE "\"%s/pg_ctl\" stop -D \"%s/data-seg%d\" -s -m fast" SYSTEMQUOTE,
+					 bindir, temp_install, segno);
+			r = system(buf);
+			if (r != 0)
+			{
+				fprintf(stderr, _("\n%s: could not stop segment %d postmaster: exit code was %d\n"),
+						progname, segno, r);
+				success = false;
+			}
+		}
+
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s/pg_ctl\" stop -D \"%s/data\" -s -m fast" SYSTEMQUOTE,
+				 SYSTEMQUOTE "\"%s/pg_ctl\" stop -D \"%s/data-master\" -s -m fast" SYSTEMQUOTE,
 				 bindir, temp_install);
 		r = system(buf);
 		if (r != 0)
 		{
-			fprintf(stderr, _("\n%s: could not stop postmaster: exit code was %d\n"),
+			fprintf(stderr, _("\n%s: could not stop master postmaster: exit code was %d\n"),
 					progname, r);
-			exit(2);			/* not exit_nicely(), that would be recursive */
+			success = false;
 		}
-
+		
 		postmaster_running = false;
+
+		if (!success)
+			exit(2);			/* not exit_nicely(), that would be recursive */
 	}
 }
 
@@ -1103,6 +1129,14 @@ initialize_environment(void)
 
 			sprintf(s, "%d", port);
 			doputenv("PGPORT", s);
+		}
+
+		/* Some GPDB utilities, like gpfaultinjector, need this. */
+		{
+			char buf[MAXPGPATH];
+
+			snprintf(buf, sizeof(buf), "%s/data-master", temp_install);
+			doputenv("MASTER_DATA_DIRECTORY", buf);
 		}
 
 		/*
@@ -2436,6 +2470,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 	int			i;
 	int			option_index;
 	char		buf[MAXPGPATH * 4];
+	int			segno;
 
 	static struct option long_options[] = {
 		{"help", no_argument, NULL, 'h'},
@@ -2635,7 +2670,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		/* "make install" */
 #ifndef WIN32_ONLY_COMPILER
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s\" -C \"%s\" DESTDIR=\"%s/install\" install with_perl=no with_python=no > \"%s/log/install.log\" 2>&1" SYSTEMQUOTE,
+				 SYSTEMQUOTE "\"%s\" -C \"%s\" DESTDIR=\"%s/install\" install > \"%s/log/install.log\" 2>&1" SYSTEMQUOTE,
 				 makeprog, top_builddir, temp_install, outputdir);
 #else
 		snprintf(buf, sizeof(buf),
@@ -2688,15 +2723,19 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 			fclose(pg_conf);
 		}
 
+		/* In GPDB, starting the test cluster is a bit more complicated. */
+		header(_("creating Greenplum segment servers"));
+		create_temp_gpdb_cluster(bindir, temp_install, datadir);
+		
 		/*
 		 * Start the temp postmaster
 		 */
-		header(_("starting postmaster"));
+		header(_("starting postmasters"));
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s/postgres\" -D \"%s/data\" -F%s -c \"listen_addresses=%s\" > \"%s/log/postmaster.log\" 2>&1" SYSTEMQUOTE,
+				 SYSTEMQUOTE "\"%s/postgres\" -E -D \"%s/data-master\" -F%s -c \"listen_addresses=%s\" > \"%s/log/postmaster-master.log\" 2>&1" SYSTEMQUOTE,
 				 bindir, temp_install,
 				 debug ? " -d 5" : "",
-				 hostname ? hostname : "",
+				 hostname ? hostname : "localhost",
 				 outputdir);
 		postmaster_pid = spawn_process(buf);
 		if (postmaster_pid == INVALID_PID)
@@ -2704,6 +2743,25 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 			fprintf(stderr, _("\n%s: could not spawn postmaster: %s\n"),
 					progname, strerror(errno));
 			exit_nicely(2);
+		}
+
+		/* Also start the segment postmasters */
+		for (segno = 0; segno < NUM_SEGMENTS; segno++)
+		{
+			snprintf(buf, sizeof(buf),
+					 SYSTEMQUOTE "\"%s/postgres\" -D \"%s/data-seg%d\" -F%s -c \"listen_addresses=%s\" > \"%s/log/postmaster-seg%d.log\" 2>&1" SYSTEMQUOTE,
+					 bindir, temp_install, segno,
+					 debug ? " -d 5" : "",
+					 hostname ? hostname : "localhost",
+					 outputdir,
+					 segno);
+			segment_postmaster_pids[segno] = spawn_process(buf);
+			if (segment_postmaster_pids[segno] == INVALID_PID)
+			{
+				fprintf(stderr, _("\n%s: could not spawn postmaster: %s\n"),
+						progname, strerror(errno));
+				exit_nicely(2);
+			}
 		}
 
 		/*
@@ -2756,13 +2814,32 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 						progname, GetLastError());
 #endif
 
+			for (segno = 0; segno < NUM_SEGMENTS; segno++)
+			{
+				if (segment_postmaster_pids[segno] == INVALID_PID)
+					continue;
+#ifndef WIN32
+				if (kill(segment_postmaster_pids[segno], SIGKILL) != 0 &&
+					errno != ESRCH)
+					fprintf(stderr, _("\n%s: could not kill failed postmaster: %s\n"),
+							progname, strerror(errno));
+#else
+				if (TerminateProcess(segment_postmaster_pids[segno], 255) == 0)
+					fprintf(stderr, _("\n%s: could not kill failed postmaster: %lu\n"),
+							progname, GetLastError());
+#endif
+			}
+
 			exit_nicely(2);
 		}
 
 		postmaster_running = true;
 
-		printf(_("running on port %d with pid %lu\n"),
+		printf(_("master running on port %d with pid %lu\n"),
 			   temp_port, (unsigned long) postmaster_pid);
+		for (segno = 0; segno < NUM_SEGMENTS; segno++)
+			printf(_("segment %d running on port %d with pid %lu\n"),
+				   segno, temp_port + 1 + segno, (unsigned long) segment_postmaster_pids[segno]);
 	}
 	else
 	{
@@ -2881,4 +2958,134 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		exit_nicely(1);
 
 	return 0;
+}
+
+/*
+ * initdb has already been run, to create a single data directory. Clone
+ * it to make the segments.
+ */
+static void
+create_temp_gpdb_cluster(char *bindir, char *temp_install, char *datadir)
+{
+	char		cmd[MAXPGPATH * 2];
+	char		buf[MAXPGPATH * 4];
+	char		segdatadir[MAXPGPATH];
+	char		masterdatadir[MAXPGPATH];
+	int			segno;
+	FILE	   *cmdfile;
+
+	/* Clone the already initdb'd data directory, to make the segments */
+	for (segno = 0; segno < NUM_SEGMENTS; segno++)
+	{
+		snprintf(segdatadir, sizeof(segdatadir), "%s/data-seg%d", temp_install, segno);
+
+		snprintf(buf, sizeof(buf),
+				 SYSTEMQUOTE "cp -r \"%s/data\" \"%s\" >> \"%s/log/createsegs.log\" 2>&1" SYSTEMQUOTE,
+				 temp_install,
+				 segdatadir,
+				 outputdir);
+		if (system(buf))
+		{
+			fprintf(stderr, _("\n%s: cloning data directories failed\nExamine %s/log/createsegs.log for the reason.\nCommand was: %s\n"), progname, outputdir, buf);
+			exit_nicely(2);
+		}
+
+		snprintf(buf, sizeof(buf),
+				 "gp_dbid=%d\n"
+				 "gp_contentid=%d\n"
+				 "gp_num_contents_in_cluster=%d\n"
+				 "port=%d\n",
+				 segno + 2, 	/* dbid for master is 1, segments start at 2 */
+				 segno,
+				 NUM_SEGMENTS,
+				 temp_port + 1 + segno);	/* temp_port is master's port */
+		append_to_postgresql_conf(segdatadir, buf);
+	}
+
+	/* To avoid confusion, rename the master's data directory */
+	snprintf(buf, sizeof(buf), "%s/data", temp_install);
+	snprintf(masterdatadir, sizeof(masterdatadir), "%s/data-master", temp_install);
+
+	if (rename(buf, masterdatadir) != 0)
+	{
+		fprintf(stderr, _("\n%s: renaming master data directory failed: %s\n"),
+				progname, strerror(errno));
+		exit_nicely(2);
+	}
+
+	/* Add GPDB specific mandatory options to the master's config file, too */
+	snprintf(buf, sizeof(buf),
+			 "gp_dbid=1\n"
+			 "gp_contentid=-1\n"
+			 "gp_num_contents_in_cluster=%d\n"
+			 "port=%d\n",
+			 NUM_SEGMENTS,
+			 temp_port);
+	append_to_postgresql_conf(masterdatadir, buf);
+
+	/*
+	 * Initialize catalog tables with the cluster configuration. The master and each segment
+	 * gets the same content.
+	 */
+	snprintf(buf, sizeof(buf), "%s/initcluster-cmds.sql", temp_install);
+	cmdfile = fopen(buf, "w");
+
+	fprintf(cmdfile, "insert into gp_segment_configuration values (1, -1, 'p', 'p', 's', 'u', %d, 'localhost', 'localhost', null, null);\n", temp_port);
+	for (segno = 0; segno < NUM_SEGMENTS; segno++)
+	{
+		fprintf(cmdfile, "insert into gp_segment_configuration values (%d, %d, 'p', 'p', 's', 'u', %d, 'localhost', 'localhost', null, null);\n",
+				segno + 2, segno, temp_port + 1 + segno);
+	}
+	fprintf(cmdfile, "insert into pg_filespace_entry values (3052, 1, '%s/data-master');\n", temp_install);
+	for (segno = 0; segno < NUM_SEGMENTS; segno++)
+	{
+		fprintf(cmdfile, "insert into pg_filespace_entry values (3052, %d, '%s/data-seg%d');\n",
+				segno + 2, temp_install, segno);
+	}
+	fprintf(cmdfile, "insert into gp_fault_strategy values ('n');\n");
+	if (fclose(cmdfile) != 0)
+	{
+		fprintf(stderr, _("\n%s: could not write to file \"%s\"\n"), progname, buf);
+		exit_nicely(2);
+	}
+
+	/* master */
+	snprintf(cmd, sizeof(cmd),
+			 SYSTEMQUOTE "%s/postgres --single -D \"%s\" postgres < \"%s/initcluster-cmds.sql\" >> \"%s/log/createsegs.log\" 2>&1" SYSTEMQUOTE,
+			 bindir, masterdatadir, temp_install, outputdir);
+	if (system(cmd))
+	{
+		fprintf(stderr, _("\n%s: starting master server in single-user mode failed\nExamine %s/log/createsegs.log for the reason.\nCommand was: %s\n"), progname, outputdir, cmd);
+		exit_nicely(2);
+	}
+
+	/* and segments */
+	for (segno = 0; segno < NUM_SEGMENTS; segno++)
+	{
+		snprintf(cmd, sizeof(cmd),
+				 SYSTEMQUOTE "%s/postgres --single -D \"%s/data-seg%d\" postgres < \"%s/initcluster-cmds.sql\" >> \"%s/log/createsegs.log\" 2>&1" SYSTEMQUOTE,
+				 bindir, temp_install, segno, temp_install, outputdir);
+		if (system(cmd))
+		{
+			fprintf(stderr, _("\n%s: starting segment server in single-user mode\nExamine %s/log/createsegs.log for the reason.\nCommand was: %s\n"), progname, outputdir, cmd);
+			exit_nicely(2);
+		}
+	}
+}
+
+static void
+append_to_postgresql_conf(char *datadir, char *temp_config_lines)
+{
+	FILE	   *pg_conf;
+	char		buf[MAXPGPATH * 4];
+
+	snprintf(buf, sizeof(buf), "%s/postgresql.conf", datadir);
+	pg_conf = fopen(buf, "a");
+	if (pg_conf == NULL)
+	{
+		fprintf(stderr, _("\n%s: could not open %s for adding extra config:\nError was %s\n"), progname, buf, strerror(errno));
+		exit_nicely(2);
+	}
+	fputs(temp_config_lines, pg_conf);
+	fclose(pg_conf);
 }
