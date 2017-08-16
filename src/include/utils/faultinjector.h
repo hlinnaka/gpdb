@@ -164,6 +164,8 @@ typedef enum FaultInjectorIdentifier_e {
 	WorkfileWriteFail,
 	WorkfileHashJoinFailure,
 
+	ExecutorRunHighProcessed,
+
 	UpdateCommittedEofInPersistentTable,
 
 	MultiExecHashLargeVmem,

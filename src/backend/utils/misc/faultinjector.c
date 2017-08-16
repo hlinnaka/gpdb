@@ -250,6 +250,8 @@ FaultInjectorIdentifierEnumToString[] = {
 	_("workfile_write_failure"),
 	  /* inject fault to simulate workfile write failure  */
 	_("workfile_hashjoin_failure"),
+	  /* pretend that a query processed billions of rows  */
+	_("executor_run_high_processed"),
 	 /* inject fault before we close workfile in ExecHashJoinNewBatch */
 	_("update_committed_eof_in_persistent_table"),
 		/* inject fault before committed EOF is updated in gp_persistent_relation_node for Append Only segment files */
@@ -527,7 +529,7 @@ FaultInjector_InjectFaultIfSet(
 	 * ok given this framework is purely for dev/testing.
 	 */
 	if (faultInjectorShmem->faultInjectorSlots == 0)
-		return FALSE;
+		return FaultInjectorTypeNotSpecified;
 
 	snprintf(databaseNameLocal, sizeof(databaseNameLocal), "%s", databaseName);
 	snprintf(tableNameLocal, sizeof(tableNameLocal), "%s", tableName);
@@ -1037,6 +1039,7 @@ FaultInjector_NewHashEntry(
 
 			case InterconnectStopAckIsLost:
 			case SendQEDetailsInitBackend:
+			case ExecutorRunHighProcessed:
 
 				break;
 			default:

@@ -949,6 +949,29 @@ ExecutorRun(QueryDesc *queryDesc,
 	PG_END_TRY();
 
 	/*
+	 * Allow testing of very high number of processed rows, without spending
+	 * hours actually processing that many rows.
+	 *
+	 * Somewhat arbitrarily, only trigger this if more than 5 rows were truly
+	 * processed. This screens out some internal queries that the system might
+	 * issue during planning.
+	 */
+	if (estate->es_processed >= 5)
+	{
+		if (FaultInjector_InjectFaultIfSet(ExecutorRunHighProcessed,
+										   DDLNotSpecified,
+										   "" /* databaseName */,
+										   "" /* tableName */))
+		{
+			/*
+			 * For testing purposes, pretend that we have already processed
+			 * almost 2^32 rows.
+			 */
+			estate->es_processed = UINT_MAX - 10;
+		}
+	}
+
+	/*
 	 * shutdown tuple receiver, if we started it
 	 */
 	if (sendTuples)
