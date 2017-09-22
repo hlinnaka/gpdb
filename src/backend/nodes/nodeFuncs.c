@@ -572,9 +572,6 @@ exprType(Node *expr)
 		case T_GroupId:
 			type = INT4OID;
 			break;
-		case T_PercentileExpr:
-			type = ((PercentileExpr *) expr)->perctype;
-			break;
 		case T_DMLActionExpr:
 			type = INT4OID;
 			break;
@@ -1157,21 +1154,6 @@ expression_tree_mutator(Node *node,
 
 				return (Node *) newnode;
 
-			}
-		case T_PercentileExpr:
-			{
-				PercentileExpr *perc = (PercentileExpr *) node;
-				PercentileExpr *newnode;
-
-				FLATCOPY(newnode, perc, PercentileExpr);
-
-				MUTATE(newnode->args, perc->args, List *);
-				MUTATE(newnode->sortClause, perc->sortClause, List *);
-				MUTATE(newnode->sortTargets, perc->sortTargets, List *);
-				MUTATE(newnode->pcExpr, perc->pcExpr, Expr *);
-				MUTATE(newnode->tcExpr, perc->tcExpr, Expr *);
-
-				return (Node *) newnode;
 			}
 		case T_SortGroupClause:
 			{

@@ -498,22 +498,6 @@ expression_tree_walker(Node *node,
 				return false;
 			}
 			break;
-		case T_PercentileExpr:
-			{
-				PercentileExpr *perc = (PercentileExpr *) node;
-
-				if (walker((Node *) perc->args, context))
-					return true;
-				if (walker((Node *) perc->sortClause, context))
-					return true;
-				if (walker((Node *) perc->sortTargets, context))
-					return true;
-				if (walker((Node *) perc->pcExpr, context))
-					return true;
-				if (walker((Node *) perc->tcExpr, context))
-					return true;
-			}
-			break;
 
 		default:
             ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),

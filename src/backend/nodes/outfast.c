@@ -1813,9 +1813,6 @@ _outNode(StringInfo str, void *obj)
 			case T_GroupId:
 				_outGroupId(str, obj);
 				break;
-			case T_PercentileExpr:
-				_outPercentileExpr(str, obj);
-				break;
 			case T_WindowClause:
 				_outWindowClause(str, obj);
 				break;

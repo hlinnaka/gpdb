@@ -4008,7 +4008,6 @@ isSimpleNode(Node *node, Node *parentNode, int prettyFlags)
 		case T_NullIfExpr:
 		case T_Aggref:
 		case T_FuncExpr:
-		case T_PercentileExpr:
 			/* function-like: name(..) or name[..] */
 			return true;
 
@@ -5118,41 +5117,6 @@ get_rule_expr(Node *node, deparse_context *context,
 									  ctest->resulttype,
 									  ctest->resulttypmod,
 									  node);
-				}
-			}
-			break;
-
-		case T_PercentileExpr:
-			{
-				PercentileExpr *p = (PercentileExpr *) node;
-
-				if (p->perckind == PERC_MEDIAN)
-				{
-					Node	   *expr;
-
-					expr = get_sortgroupclause_expr(linitial(p->sortClause), p->sortTargets);
-					appendStringInfoString(buf, "median(");
-					get_rule_expr(expr, context, false);
-					appendStringInfoString(buf, ")");
-				}
-				else
-				{
-					if (p->perckind == PERC_CONT)
-					{
-						appendStringInfoString(buf, "percentile_cont(");
-					}
-					else if (p->perckind == PERC_DISC)
-					{
-						appendStringInfoString(buf, "percentile_disc(");
-					}
-					else
-						Assert(false);
-					get_rule_expr((Node *) p->args, context, true);
-					appendStringInfoString(buf, ") WITHIN GROUP (");
-					get_sortlist_expr(p->sortClause,
-									  p->sortTargets,
-									  false, context, "ORDER BY ");
-					appendStringInfoString(buf, ") ");
 				}
 			}
 			break;

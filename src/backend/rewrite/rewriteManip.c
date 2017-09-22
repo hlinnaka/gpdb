@@ -101,13 +101,6 @@ contain_aggs_of_level_walker(Node *node, contain_aggs_of_level_context *context)
 		/* else fall through to examine argument */
 	}
 
-	if (IsA(node, PercentileExpr))
-	{
-		/* PercentileExpr is always levelsup == 0 */
-		if (context->sublevels_up == 0)
-			return true;
-	}
-
 	if (IsA(node, Query))
 	{
 		/* Recurse into subselects */
@@ -172,16 +165,6 @@ locate_agg_of_level_walker(Node *node,
 			return true;		/* abort the tree traversal and return true */
 		}
 		/* else fall through to examine argument */
-	}
-	if (IsA(node, PercentileExpr))
-	{
-		/* PercentileExpr is always levelsup == 0 */
-		if (context->sublevels_up == 0 &&
-			((PercentileExpr *) node)->location >= 0)
-		{
-			context->agg_location = ((PercentileExpr *) node)->location;
-			return true;
-		}
 	}
 	if (IsA(node, Query))
 	{
