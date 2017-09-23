@@ -89,21 +89,6 @@ static Oid *extract_grouping_ops(List *groupClause, int *numGroupOps);
 #endif
 static List *make_subplanTargetList(PlannerInfo *root, List *tlist,
 					   AttrNumber **groupColIdx, Oid **groupOperators, bool *need_tlist_eval);
-static List *register_ordered_aggs(List *tlist, Node *havingqual, List *sub_tlist);
-
-typedef struct
-{
-	List	   *tlist;
-	Node	   *havingqual;
-	List	   *sub_tlist;
-	Index		last_sgr;
-}	register_ordered_aggs_context;
-
-
-static Node *register_ordered_aggs_mutator(Node *node,
-							  register_ordered_aggs_context * context);
-static void register_AggOrder(AggOrder * aggorder,
-				  register_ordered_aggs_context * context);
 static void locate_grouping_columns(PlannerInfo *root,
 						List *stlist,
 						List *sub_tlist,
@@ -1502,14 +1487,21 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			root->window_pathkeys = NIL;
 
 		/*
-		 * Augment the subplan target list to include targets for ordered
-		 * aggregates.  As a side effect, this may scribble updated sort group
-		 * ref values into AggOrder nodes within Aggref nodes of the query.  A
-		 * pity, but it would harder to do this earlier.
+		 * Will need actual number of aggregates for estimating costs.
+		 *
+		 * Note: we do not attempt to detect duplicate aggregates here; a
+		 * somewhat-overestimated count is okay for our present purposes.
+		 *
+		 * Note: think not that we can turn off hasAggs if we find no aggs. It
+		 * is possible for constant-expression simplification to remove all
+		 * explicit references to aggs, but we still have to follow the
+		 * aggregate semantics (eg, producing only one output row).
 		 */
-		sub_tlist = register_ordered_aggs(tlist,
-										  root->parse->havingQual,
-										  sub_tlist);
+		if (parse->hasAggs)
+		{
+			count_agg_clauses((Node *) tlist, &agg_counts);
+			count_agg_clauses(parse->havingQual, &agg_counts);
+		}
 
 		/*
 		 * Figure out whether we need a sorted result from query_planner.
@@ -1587,10 +1579,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		if (Gp_role == GP_ROLE_DISPATCH)
 		{
 			bool		querynode_changed = false;
-			bool		pass_subtlist = false;
+			bool		pass_subtlist = agg_counts.hasOrderedAggs;
 			GroupContext group_context;
 
-			pass_subtlist = (agg_counts.aggOrder != NIL);
 			group_context.best_path = best_path;
 			group_context.cheapest_path = cheapest_path;
 			group_context.subplan = NULL;
@@ -2964,9 +2955,10 @@ choose_hashed_grouping(PlannerInfo *root,
 	 * oprcanhash.  If there isn't actually a supporting hash function, the
 	 * executor will complain at runtime.)
 	 *
-	 * Executor doesn't support hashed aggregation with DISTINCT aggregates.
-	 * (Doing so would imply storing *all* the input values in the hash table,
-	 * which seems like a certain loser.)
+	 * Executor doesn't support hashed aggregation with DISTINCT or ORDER BY
+	 * aggregates.  (Doing so would imply storing *all* the input values in
+	 * the hash table, and/or running many sorts in parallel, either of which
+	 * seems like a certain loser.)
 	 *
 	 * CDB: The parallel grouping planner can use hashed aggregation with
 	 * DISTINCT-qualified aggregates in some cases, so in case we don't choose
@@ -2975,7 +2967,7 @@ choose_hashed_grouping(PlannerInfo *root,
 	 */
 	if (!root->config->enable_hashagg)
 		goto hash_not_ok;
-	has_dqa = agg_counts->numDistinctAggs != 0;
+	has_dqa = agg_counts->numOrderedAggs != 0;
 	for (i = 0; i < numGroupOps; i++)
 	{
 		if (!op_hashjoinable(groupOperators[i]))
@@ -2994,7 +2986,7 @@ choose_hashed_grouping(PlannerInfo *root,
 	 * CDB: The parallel grouping planner cannot use hashed aggregation for
 	 * ordered aggregates.
 	 */
-	if (agg_counts->aggOrder != NIL)
+	if (agg_counts->hasOrderedAggs)
 		goto hash_not_ok;
 
 	/*
@@ -3275,187 +3267,6 @@ make_subplanTargetList(PlannerInfo *root,
 
 	return sub_tlist;
 }
-
-
-/*
- * Function: register_ordered_aggs
- *
- * Update the AggOrder nodes found in Aggref nodes of the given Query
- * node for a grouping/aggregating query to refer to targets in the
- * indirectly given subplan target list.  As a side-effect, new targets
- * may be added to he subplan target list.
- *
- * The idea is that Aggref nodes from the input Query node specify
- * ordering expressions corresponding to sort specifications that must
- * refer (via sortgroupref values as usual) to the target list of the
- * node below them in the plan.  Initially they may not, so we must find
- * or add them to the indirectly given subplan targetlist and adjust the
- * AggOrder node to match.
- *
- * This may scribble on the Query!	(This isn't too bad since only the
- * tleSortGroupRef fields of SortClause nodes and the corresponding
- * ressortgroupref fields of TargetEntry nodes in the AggOrder node in
- * an Aggref change, and the interpretation of the list is the same
- * afterward.)
- */
-List *
-register_ordered_aggs(List *tlist, Node *havingqual, List *sub_tlist)
-{
-	ListCell   *lc;
-	register_ordered_aggs_context ctx;
-
-	ctx.tlist = tlist;			/* aggregating target list */
-	ctx.havingqual = havingqual;	/* aggregating HAVING qual */
-	ctx.sub_tlist = sub_tlist;	/* input target list */
-	ctx.last_sgr = 0;			/* 0 = unassigned */
-
-	/* There may be Aggrefs in the query's target list. */
-	foreach(lc, ctx.tlist)
-	{
-		TargetEntry *tle = (TargetEntry *) lfirst(lc);
-
-		tle->expr = (Expr *) register_ordered_aggs_mutator((Node *) tle->expr, &ctx);
-	}
-
-	/* There may be Aggrefs in the query's having clause */
-	ctx.havingqual = register_ordered_aggs_mutator(ctx.havingqual, &ctx);
-
-	return ctx.sub_tlist;
-}
-
-/*
- * Function: register_ordered_aggs_mutator
- *
- * Update the AggOrder nodes found in Aggref nodes of the given expression
- * to refer to targets in the context's subplan target list.  New targets
- * may be added to he subplan target list as a side effect.
- */
-Node *
-register_ordered_aggs_mutator(Node *node,
-							  register_ordered_aggs_context * context)
-{
-	if (node == NULL)
-		return NULL;
-	if (IsA(node, Aggref))
-	{
-		Aggref	   *aggref = (Aggref *) node;
-
-		if (aggref->aggorder)
-		{
-			register_AggOrder(aggref->aggorder, context);
-		}
-	}
-	return expression_tree_mutator(node,
-								   register_ordered_aggs_mutator,
-								   (void *) context);
-}
-
-
-/*
- * Function register_AggOrder
- *
- * Find or add the sort targets in the given AggOrder node to the
- * indirectly given subplan target list.  If we add a target, give
- * it a distinct sortgroupref value.  
- * 
- * Then update the AggOrder node to refer to the subplan target list.  
- * We need to update the target node too, so the sort specification 
- * continues to refer to its target in the AggOrder.  Note, however,
- * that we need to defer these updates to the end so that we don't
- * mess up the correspondence in the AggOrder before we're done
- * using it.
- */
-typedef struct agg_order_update_spec
-{
-	SortGroupClause *sort;
-	TargetEntry *entry;
-	Index sortgroupref;
-}
-agg_order_update_spec;
-
-void register_AggOrder(AggOrder *aggorder, 
-					   register_ordered_aggs_context *context)
-{	
-	ListCell *lc;
-	List *updates = NIL;
-	agg_order_update_spec *update;
-	
-	/* In the first release, targets and orders are 1:1.  This may
-	 * change, but for now ... */
-	Assert( list_length(aggorder->sortTargets) == 
-		    list_length(aggorder->sortClause) );
-	
-	foreach (lc, aggorder->sortClause)
-	{
-		SortGroupClause *sort;
-		TargetEntry *sort_tle;
-		TargetEntry *sub_tle;
-		
-		sort = (SortGroupClause *) lfirst(lc);
-		Assert(IsA(sort, SortGroupClause));
-		Assert( sort->tleSortGroupRef != 0 );
-		sort_tle = get_sortgroupclause_tle(sort, aggorder->sortTargets);
-		
-		/* Find sort expression in the given target list, ... */
-		sub_tle = tlist_member((Node*)sort_tle->expr, context->sub_tlist);
-		
-		/* ... or add it. */
-		if ( !sub_tle )
-		{
-			sub_tle = makeTargetEntry(copyObject(sort_tle->expr),
-									  list_length(context->sub_tlist) + 1,
-									  NULL,
-									  false);
-			/* We fill in the sortgroupref below. */
-			context->sub_tlist = lappend( context->sub_tlist, sub_tle );
-		}
-		
-		if ( sub_tle->ressortgroupref == 0 )
-		{
-			/* Lazy initialize next sortgroupref value. */
-			if ( context->last_sgr == 0 )
-			{
-				ListCell *c;
-				/* Targets in sub_tlist and main tlist must not conflict. */
-				foreach( c, context->tlist )
-				{
-					TargetEntry *tle = (TargetEntry*)lfirst(c);
-					if ( context->last_sgr < tle->ressortgroupref )
-						context->last_sgr = tle->ressortgroupref;
-				}
-				
-				/* Might there be non-zero SGRs in sub_tlist? Don't see
-				 * how, but be safe.
-				 */
-				foreach( c, context->sub_tlist )
-				{
-					TargetEntry *tle = (TargetEntry*)lfirst(c);
-					if ( context->last_sgr < tle->ressortgroupref )
-						context->last_sgr = tle->ressortgroupref;
-				}
-			}
-
-			sub_tle->ressortgroupref = ++context->last_sgr;
-		}
-		
-		/* Update AggOrder to agree with the tle in the target list. */
-		update = (agg_order_update_spec*)palloc(sizeof(agg_order_update_spec));
-		update->sort = sort;
-		update->entry = sort_tle;
-		update->sortgroupref = sub_tle->ressortgroupref;
-		updates = lappend(updates, update);
-	}
-	
-	foreach (lc, updates)
-	{
-		update = (agg_order_update_spec*)lfirst(lc);
-		
-		update->sort->tleSortGroupRef = update->sortgroupref;
-		update->entry->ressortgroupref = update->sortgroupref;
-	}
-	list_free(updates);
-}
-
 
 /*
  * locate_grouping_columns

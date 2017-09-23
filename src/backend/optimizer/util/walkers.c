@@ -162,19 +162,6 @@ expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
-		case T_AggOrder:
-			{
-				AggOrder	   *expr = (AggOrder *) node;
-
-				/* recurse directly on List */
-				if (expression_tree_walker((Node *) expr->sortTargets,
-										   walker, context))
-					return true;
-				if (expression_tree_walker((Node *) expr->sortClause,
-										   walker, context))
-					return true;
-			}
-			break;
 		case T_WindowFunc:
 			{
 				WindowFunc   *expr = (WindowFunc *) node;
@@ -1135,7 +1122,6 @@ plan_tree_walker(Node *node,
 		case T_CurrentOfExpr:
 		case T_RangeTblRef:
 		case T_Aggref:
-		case T_AggOrder:
 		case T_ArrayRef:
 		case T_FuncExpr:
 		case T_OpExpr:

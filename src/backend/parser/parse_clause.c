@@ -99,6 +99,9 @@ static List *transformRowExprToList(ParseState *pstate, RowExpr *rowexpr,
 static List *transformRowExprToGroupClauses(ParseState *pstate, RowExpr *rowexpr,
 											List *groupsets, List *targetList);
 static void freeGroupList(List *grouplist);
+static List *addTargetToGroupList(ParseState *pstate, TargetEntry *tle,
+					 List *grouplist, List *targetlist, int location,
+					 bool resolveUnknown);
 static WindowClause *findWindowClause(List *wclist, const char *name);
 static Node *transformFrameOffset(ParseState *pstate, int frameOptions,
 								  Node *clause,
@@ -2625,10 +2628,14 @@ transformDistinctToGroupBy(ParseState *pstate, List **targetlist,
  * and allows the user to choose the equality semantics used by DISTINCT,
  * should she be working with a datatype that has more than one equality
  * operator.
+ *
+ * is_agg is true if we are transforming an aggregate(DISTINCT ...)
+ * function call.  This does not affect any behavior, only the phrasing
+ * of error messages.
  */
 List *
 transformDistinctClause(ParseState *pstate,
-						List **targetlist, List *sortClause)
+						List **targetlist, List *sortClause, bool is_agg)
 {
 	List	   *result = NIL;
 	ListCell   *slitem;
@@ -2657,6 +2664,8 @@ transformDistinctClause(ParseState *pstate,
 		if (tle->resjunk)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					 is_agg ?
+					 errmsg("in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list") :
 					 errmsg("for SELECT DISTINCT, ORDER BY expressions must appear in select list"),
 					 parser_errposition(pstate,
 										exprLocation((Node *) tle->expr))));
@@ -2966,9 +2975,10 @@ addTargetToSortList(ParseState *pstate, TargetEntry *tle,
  * the TLE is considered "already in the list" if it appears there with any
  * sorting semantics.
  *
- * If requireSortOp is TRUE, we require a sorting operator to be found too.
- * XXX this argument should eventually be obsolete, but for now there are
- * parts of the system that can't support non-sortable grouping lists.
+ * location is the parse location to be fingered in event of trouble.  Note
+ * that we can't rely on exprLocation(tle->expr), because that might point
+ * to a SELECT item that matches the GROUP BY item; it'd be pretty confusing
+ * to report such a location.
  *
  * If resolveUnknown is TRUE, convert TLEs of type UNKNOWN to TEXT.  If not,
  * do nothing (which implies the search for an equality operator will fail).
@@ -2977,10 +2987,10 @@ addTargetToSortList(ParseState *pstate, TargetEntry *tle,
  *
  * Returns the updated SortGroupClause list.
  */
-List *
+static List *
 addTargetToGroupList(ParseState *pstate, TargetEntry *tle,
-					 List *grouplist, List *targetlist,
-					 bool requireSortOp, bool resolveUnknown)
+					 List *grouplist, List *targetlist, int location,
+					 bool resolveUnknown)
 {
 	Oid			restype = exprType((Node *) tle->expr);
 	Oid			sortop;
@@ -3001,11 +3011,16 @@ addTargetToGroupList(ParseState *pstate, TargetEntry *tle,
 	if (!targetIsInSortList(tle, InvalidOid, grouplist))
 	{
 		SortGroupClause *grpcl = makeNode(SortGroupClause);
+		ParseCallbackState pcbstate;
+
+		setup_parser_errposition_callback(&pcbstate, pstate, location);
 
 		/* determine the eqop and optional sortop */
 		get_sort_group_operators(restype,
-								 requireSortOp, true, false,
+								 false, true, false,
 								 &sortop, &eqop, NULL);
+
+		cancel_parser_errposition_callback(&pcbstate);
 
 		grpcl->tleSortGroupRef = assignSortGroupRef(tle, targetlist);
 		grpcl->eqop = eqop;

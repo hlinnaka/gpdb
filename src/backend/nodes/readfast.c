@@ -789,27 +789,6 @@ _readAExpr(void)
 }
 
 /*
- * _readAggref
- */
-static Aggref *
-_readAggref(void)
-{
-	READ_LOCALS(Aggref);
-
-	READ_OID_FIELD(aggfnoid);
-	READ_OID_FIELD(aggtype);
-	READ_NODE_FIELD(args);
-	READ_UINT_FIELD(agglevelsup);
-	READ_BOOL_FIELD(aggstar);
-	READ_BOOL_FIELD(aggdistinct);
-	READ_NODE_FIELD(aggfilter);
-	READ_ENUM_FIELD(aggstage, AggStage);
-    READ_NODE_FIELD(aggorder);
-
-	READ_DONE();
-}
-
-/*
  * _readFuncExpr
  */
 static FuncExpr *
@@ -2938,9 +2917,6 @@ readNodeBinary(void)
 				break;
 			case T_Aggref:
 				return_value = _readAggref();
-				break;
-			case T_AggOrder:
-				return_value = _readAggOrder();
 				break;
 			case T_WindowFunc:
 				return_value = _readWindowFunc();

@@ -450,7 +450,7 @@ cdb_grouping_planner(PlannerInfo* root,
 	List * sub_tlist = NIL;
 	bool has_groups = root->parse->groupClause != NIL;
 	bool has_aggs = agg_counts->numAggs > 0;
-	bool has_ordered_aggs = list_length(agg_counts->aggOrder) > 0;
+	bool has_ordered_aggs = agg_counts->hasOrderedAggs;
 	ListCell *lc;
 
 	bool is_grpext = false;
@@ -477,7 +477,7 @@ cdb_grouping_planner(PlannerInfo* root,
 	 * so don't waste time working on alternatives.
 	 */ 
 	is_grpext = is_grouping_extension(group_context->canonical_grpsets);
-	if ( is_grpext && agg_counts->numDistinctAggs > 0)
+	if ( is_grpext && agg_counts->numOrderedAggs > 0)
 		return NULL;
 
 	/*
@@ -564,7 +564,7 @@ cdb_grouping_planner(PlannerInfo* root,
 	 */
 	if ( plan_1p.group_prep == MPP_GRP_PREP_NONE )
 	{
-		if (enable_groupagg || agg_counts->numDistinctAggs == 0)
+		if (enable_groupagg || agg_counts->numOrderedAggs == 0)
 		{
 			*(group_context->pcurrent_pathkeys) = NIL;
 			return NULL;
@@ -661,6 +661,12 @@ cdb_grouping_planner(PlannerInfo* root,
 		 * phase aggregation.
 		 */
 		if ( has_ordered_aggs )
+			allowed_agg &= ~ AGG_MULTIPHASE;
+
+		/*
+		 * Same with DISTINCT aggregates (they are not counted as ordered aggs)
+		 */
+		if ( agg_counts->numOrderedAggs > 0 )
 			allowed_agg &= ~ AGG_MULTIPHASE;
 
 		/* We are currently unwilling to redistribute a gathered
@@ -956,6 +962,7 @@ make_one_stage_agg_plan(PlannerInfo *root,
 
 	Plan       *result_plan;
 	bool	   is_sorted;
+	ListCell	   *lc;
 	
 	/*
 	 * The argument to the "lower" Agg node will use a "flattened" tlist
@@ -978,6 +985,23 @@ make_one_stage_agg_plan(PlannerInfo *root,
 		result_plan = create_plan(root, path);
 		current_pathkeys = path->pathkeys;
 
+		/*
+		 * It's possible that the sub_tlist doesn't contain all the sort pathkeys.
+		 * Forget about such pathkeys, because we won't be able to sort back to that
+		 * order, for example as part of a gather motion. (Alternatively, we could
+		 * modify sub_tlist to include the any missing columns.)
+		 */
+		current_pathkeys = NIL;
+		foreach(lc, current_pathkeys)
+		{
+			PathKey *pk = (PathKey *) lfirst(lc);
+
+			if (!cdbpullup_findPathKeyExprInTargetList(pk, sub_tlist))
+				break;
+
+			current_pathkeys = lappend(current_pathkeys, path->pathkeys);
+		}
+
 		/* Instead of the flat target list produced above, use the sub_tlist
 		 * constructed in cdb_grouping_planner.  Add a Result node if the
 		 * base plan can't project. (This may be unnecessary, but, if so,
@@ -985,8 +1009,8 @@ make_one_stage_agg_plan(PlannerInfo *root,
 		 */
 		result_plan = plan_pushdown_tlist(root, result_plan, sub_tlist);
 
-		Assert(result_plan->flow); 
-    
+		Assert(result_plan->flow);
+
 		/* Account for the cost of evaluation of the sub_tlist. */
 		cost_qual_eval(&tlist_cost, sub_tlist, root);
 		result_plan->startup_cost += tlist_cost.startup;
@@ -2030,7 +2054,7 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 								0, /* input_grouping */
 								0, /* grouping */
 								0, /* rollup_gs_times */
-								ctx->agg_counts->numAggs - ctx->agg_counts->numDistinctAggs + 1,
+								ctx->agg_counts->numAggs - ctx->agg_counts->numOrderedAggs + 1,
 								ctx->agg_counts->transitionSpace, /* worst case */
 								result_plan);
 	
@@ -2975,11 +2999,12 @@ void generate_three_tlists(List *tlist,
 			new_aggref->aggfnoid = aggref->aggfnoid;
 			new_aggref->aggtype = aggref->aggtype;
 			new_aggref->args =
-				list_make1((Expr*)makeVar(middle_varno, tle->resno, aggref->aggtype, -1, 0));
+				list_make1((Expr *)
+						   makeTargetEntry((Expr *) makeVar(middle_varno, tle->resno, aggref->aggtype, -1, 0), 1, NULL, false));
 			/* FILTER is evaluated at the PARTIAL stage. */
 			new_aggref->agglevelsup = 0;
 			new_aggref->aggstar = false;
-			new_aggref->aggdistinct = false; /* handled in preliminary aggregation */
+			new_aggref->aggdistinct = NIL; /* handled in preliminary aggregation */
 			new_aggref->aggstage = AGGSTAGE_INTERMEDIATE;
 			new_aggref->location = -1;
 
@@ -3579,7 +3604,7 @@ Node *split_aggref(Aggref *aggref, MppGroupContext *ctx)
 			dqa_aggref = makeNode(Aggref);
 			memcpy(dqa_aggref, aggref, sizeof(Aggref)); /* flat copy */
 			dqa_aggref->args = list_make1(arg_var);
-			dqa_aggref->aggdistinct = false;
+			dqa_aggref->aggdistinct = NIL;
 			
 			dqa_tle = makeTargetEntry((Expr*)dqa_aggref, dqa_attno, NULL, false);
 			dref_tlist = lappend(dref_tlist, dqa_tle);
@@ -3615,9 +3640,9 @@ Node *split_aggref(Aggref *aggref, MppGroupContext *ctx)
 			 * (which we control) and don't bother with agglevelsup 
 			 * (which is always 0 here).
 			 */
-			if ( aggref->aggfnoid == ref->aggfnoid
+			if (aggref->aggfnoid == ref->aggfnoid
 				&& aggref->aggstar == ref->aggstar
-				&& aggref->aggdistinct == ref->aggdistinct
+				&& equal(aggref->aggdistinct, ref->aggdistinct)
 				&& equal(aggref->args, ref->args)
 				&& equal(aggref->aggfilter, ref->aggfilter) )
 			{
@@ -3664,11 +3689,11 @@ Node *split_aggref(Aggref *aggref, MppGroupContext *ctx)
 				iref = makeNode(Aggref);
 				iref->aggfnoid = pref->aggfnoid;
 				iref->aggtype = transtype;
-				iref->args = list_make1((Expr*)copyObject(args));
+				iref->args = list_make1((Expr *) makeTargetEntry(copyObject(args), 1, NULL, false));
 				/* FILTER is evaluated at the PARTIAL stage. */
 				iref->agglevelsup = 0;
 				iref->aggstar = false;
-				iref->aggdistinct = false;
+				iref->aggdistinct = NIL;
 				iref->aggstage = AGGSTAGE_INTERMEDIATE;
 				iref->location = -1;
 
@@ -3682,11 +3707,11 @@ Node *split_aggref(Aggref *aggref, MppGroupContext *ctx)
 			
 			fref->aggfnoid = aggref->aggfnoid;
 			fref->aggtype = aggref->aggtype;
-			fref->args = list_make1((Expr*)args);
+			fref->args = list_make1((Expr *) makeTargetEntry((Expr *) args, 1, NULL, false));
 			/* FILTER is evaluated at the PARTIAL stage. */
 			fref->agglevelsup = 0;
 			fref->aggstar = false;
-			fref->aggdistinct = false; /* handled in preliminary aggregation */
+			fref->aggdistinct = aggref->aggdistinct;
 			fref->aggstage = AGGSTAGE_FINAL;
 			fref->location = -1;
 			final_tle = makeTargetEntry((Expr*)fref, attrno, NULL, false);

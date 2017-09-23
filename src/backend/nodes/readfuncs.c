@@ -1247,7 +1247,6 @@ _readParam(void)
 	READ_DONE();
 }
 
-#ifndef COMPILING_BINARY_FUNCS
 /*
  * _readAggref
  */
@@ -1259,30 +1258,15 @@ _readAggref(void)
 	READ_OID_FIELD(aggfnoid);
 	READ_OID_FIELD(aggtype);
 	READ_NODE_FIELD(args);
-	READ_UINT_FIELD(agglevelsup);
-	READ_BOOL_FIELD(aggstar);
-	READ_BOOL_FIELD(aggdistinct);
-	READ_NODE_FIELD(aggfilter);
-	READ_ENUM_FIELD(aggstage, AggStage);
 	READ_NODE_FIELD(aggorder);
+	READ_NODE_FIELD(aggdistinct);
+	READ_NODE_FIELD(aggfilter);
+	READ_BOOL_FIELD(aggstar);
+	READ_ENUM_FIELD(aggstage, AggStage);
+	READ_UINT_FIELD(agglevelsup);
+	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
-}
-#endif /* COMPILING_BINARY_FUNCS */
-
-/*
- * _outAggOrder
- */
-static AggOrder *
-_readAggOrder(void)
-{
-	READ_LOCALS(AggOrder);
-
-    READ_BOOL_FIELD(sortImplicit);
-    READ_NODE_FIELD(sortTargets);
-    READ_NODE_FIELD(sortClause);
-
-    READ_DONE();
 }
 
 /*
@@ -2912,8 +2896,6 @@ parseNodeString(void)
 		return_value = _readAConst();
 	else if (MATCHX("AEXPR"))
 		return_value = _readAExpr();
-	else if (MATCHX("AGGORDER"))
-		return_value = _readAggOrder();
 	else if (MATCHX("ALTERDOMAINSTMT"))
 		return_value = _readAlterDomainStmt();
 	else if (MATCHX("ALTERFUNCTIONSTMT"))
