@@ -41,6 +41,7 @@
 
 bool		Transform_null_equals = false;
 
+static Node *transformExprRecurse(ParseState *pstate, Node *expr);
 static Node *transformParamRef(ParseState *pstate, ParamRef *pref);
 static Node *transformAExprOp(ParseState *pstate, A_Expr *a);
 static Node *transformAExprAnd(ParseState *pstate, A_Expr *a);
@@ -109,9 +110,27 @@ static bool isWhenIsNotDistinctFromExpr(Node *warg);
  * input and output of transformExpr; see SubLink for example.
  */
 Node *
-transformExpr(ParseState *pstate, Node *expr)
+transformExpr(ParseState *pstate, Node *expr, ParseExprKind exprKind)
 {
-	Node	   *result = NULL;
+	Node	   *result;
+	ParseExprKind sv_expr_kind;
+
+	/* Save and restore identity of expression type we're parsing */
+	Assert(exprKind != EXPR_KIND_NONE);
+	sv_expr_kind = pstate->p_expr_kind;
+	pstate->p_expr_kind = exprKind;
+
+	result = transformExprRecurse(pstate, expr);
+
+	pstate->p_expr_kind = sv_expr_kind;
+
+	return result;
+}
+
+static Node *
+transformExprRecurse(ParseState *pstate, Node *expr)
+{
+	Node	   *result;
 
 	if (expr == NULL)
 		return NULL;
@@ -147,7 +166,7 @@ transformExpr(ParseState *pstate, Node *expr)
 			{
 				A_Indirection *ind = (A_Indirection *) expr;
 
-				result = transformExpr(pstate, ind->arg);
+				result = transformExprRecurse(pstate, ind->arg);
 				result = transformIndirection(pstate, result,
 											  ind->indirection);
 				break;
@@ -200,7 +219,7 @@ transformExpr(ParseState *pstate, Node *expr)
 					}
 				}
 
-				arg = transformExpr(pstate, tc->arg);
+				arg = transformExprRecurse(pstate, tc->arg);
 				result = typecast_expression(pstate, arg, tc->typeName);
 				break;
 			}
@@ -243,6 +262,8 @@ transformExpr(ParseState *pstate, Node *expr)
 						break;
 					default:
 						elog(ERROR, "unrecognized A_Expr kind: %d", a->kind);
+						result = NULL;		/* keep compiler quiet */
+						break;
 				}
 				break;
 			}
@@ -287,7 +308,7 @@ transformExpr(ParseState *pstate, Node *expr)
 			{
 				NullTest   *n = (NullTest *) expr;
 
-				n->arg = (Expr *) transformExpr(pstate, (Node *) n->arg);
+				n->arg = (Expr *) transformExprRecurse(pstate, (Node *) n->arg);
 				/* the argument can be any type, so don't coerce it */
 				result = expr;
 				break;
@@ -329,7 +350,8 @@ transformExpr(ParseState *pstate, Node *expr)
 						foreach(lc, ri->partRangeVal)
 						{
 							Node *n = lfirst(lc);
-							out = lappend(out, transformExpr(pstate, n));
+							out = lappend(out, transformExpr(pstate, n,
+															 EXPR_KIND_PARTITION_EXPRESSION));
 						}
 						ri->partRangeVal = out;
 						out = NIL;
@@ -348,7 +370,8 @@ transformExpr(ParseState *pstate, Node *expr)
 						foreach(lc, ri->partRangeVal)
 						{
 							Node *n = lfirst(lc);
-							out = lappend(out, transformExpr(pstate, n));
+							out = lappend(out, transformExpr(pstate, n,
+															 EXPR_KIND_PARTITION_EXPRESSION));
 						}
 						ri->partRangeVal = out;
 						out = NIL;
@@ -361,7 +384,8 @@ transformExpr(ParseState *pstate, Node *expr)
 					foreach(lc, ri->partRangeVal)
 					{
 						Node *n = lfirst(lc);
-						out = lappend(out, transformExpr(pstate, n));
+						out = lappend(out, transformExpr(pstate, n,
+														 EXPR_KIND_PARTITION_EXPRESSION));
 					}
 					ri->partRangeVal = out;
 				}
@@ -410,6 +434,7 @@ transformExpr(ParseState *pstate, Node *expr)
 		default:
 			/* should not reach here */
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(expr));
+			result = NULL;		/* keep compiler quiet */
 			break;
 	}
 
@@ -778,7 +803,7 @@ transformAExprOp(ParseState *pstate, A_Expr *a)
 		else
 			n->arg = (Expr *) lexpr;
 
-		result = transformExpr(pstate, (Node *) n);
+		result = transformExprRecurse(pstate, (Node *) n);
 	}
 	else if (lexpr && IsA(lexpr, RowExpr) &&
 			 rexpr && IsA(rexpr, SubLink) &&
@@ -794,14 +819,15 @@ transformAExprOp(ParseState *pstate, A_Expr *a)
 		s->subLinkType = ROWCOMPARE_SUBLINK;
 		s->testexpr = lexpr;
 		s->operName = a->name;
-		result = transformExpr(pstate, (Node *) s);
+		s->location = a->location;
+		result = transformExprRecurse(pstate, (Node *) s);
 	}
 	else if (lexpr && IsA(lexpr, RowExpr) &&
 			 rexpr && IsA(rexpr, RowExpr))
 	{
 		/* "row op row" */
-		lexpr = transformExpr(pstate, lexpr);
-		rexpr = transformExpr(pstate, rexpr);
+		lexpr = transformExprRecurse(pstate, lexpr);
+		rexpr = transformExprRecurse(pstate, rexpr);
 		Assert(IsA(lexpr, RowExpr));
 		Assert(IsA(rexpr, RowExpr));
 
@@ -814,8 +840,8 @@ transformAExprOp(ParseState *pstate, A_Expr *a)
 	else
 	{
 		/* Ordinary scalar operator */
-		lexpr = transformExpr(pstate, lexpr);
-		rexpr = transformExpr(pstate, rexpr);
+		lexpr = transformExprRecurse(pstate, lexpr);
+		rexpr = transformExprRecurse(pstate, rexpr);
 
 		result = (Node *) make_op(pstate,
 								  a->name,
@@ -830,8 +856,8 @@ transformAExprOp(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprAnd(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	lexpr = coerce_to_boolean(pstate, lexpr, "AND");
 	rexpr = coerce_to_boolean(pstate, rexpr, "AND");
@@ -844,8 +870,8 @@ transformAExprAnd(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprOr(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	lexpr = coerce_to_boolean(pstate, lexpr, "OR");
 	rexpr = coerce_to_boolean(pstate, rexpr, "OR");
@@ -858,7 +884,7 @@ transformAExprOr(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprNot(ParseState *pstate, A_Expr *a)
 {
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	rexpr = coerce_to_boolean(pstate, rexpr, "NOT");
 
@@ -870,8 +896,8 @@ transformAExprNot(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprOpAny(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	return (Node *) make_scalar_array_op(pstate,
 										 a->name,
@@ -884,8 +910,8 @@ transformAExprOpAny(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprOpAll(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	return (Node *) make_scalar_array_op(pstate,
 										 a->name,
@@ -898,8 +924,8 @@ transformAExprOpAll(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprDistinct(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 
 	if (lexpr && IsA(lexpr, RowExpr) &&
 		rexpr && IsA(rexpr, RowExpr))
@@ -924,8 +950,8 @@ transformAExprDistinct(ParseState *pstate, A_Expr *a)
 static Node *
 transformAExprNullIf(ParseState *pstate, A_Expr *a)
 {
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
-	Node	   *rexpr = transformExpr(pstate, a->rexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
+	Node	   *rexpr = transformExprRecurse(pstate, a->rexpr);
 	Node	   *result;
 
 	result = (Node *) make_op(pstate,
@@ -954,7 +980,7 @@ transformAExprOf(ParseState *pstate, A_Expr *a)
 	 * Checking an expression for match to a list of type names. Will result
 	 * in a boolean constant node.
 	 */
-	Node	   *lexpr = transformExpr(pstate, a->lexpr);
+	Node	   *lexpr = transformExprRecurse(pstate, a->lexpr);
 	ListCell   *telem;
 	Oid			ltype,
 				rtype;
@@ -1012,13 +1038,13 @@ transformAExprIn(ParseState *pstate, A_Expr *a)
 	 * First step: transform all the inputs, and detect whether any are
 	 * RowExprs or contain Vars.
 	 */
-	lexpr = transformExpr(pstate, a->lexpr);
+	lexpr = transformExprRecurse(pstate, a->lexpr);
 	haveRowExpr = (lexpr && IsA(lexpr, RowExpr));
 	typeids = list_make1_oid(exprType(lexpr));
 	rexprs = rvars = rnonvars = NIL;
 	foreach(l, (List *) a->rexpr)
 	{
-		Node	   *rexpr = transformExpr(pstate, lfirst(l));
+		Node	   *rexpr = transformExprRecurse(pstate, lfirst(l));
 
 		haveRowExpr |= (rexpr && IsA(rexpr, RowExpr));
 		rexprs = lappend(rexprs, rexpr);
@@ -1142,8 +1168,8 @@ transformFuncCall(ParseState *pstate, FuncCall *fn)
 	targs = NIL;
 	foreach(args, fn->args)
 	{
-		targs = lappend(targs, transformExpr(pstate,
-											 (Node *) lfirst(args)));
+		targs = lappend(targs, transformExprRecurse(pstate,
+													(Node *) lfirst(args)));
 	}
 
 	return ParseFuncOrColumn(pstate,
@@ -1199,7 +1225,7 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 	newc = makeNode(CaseExpr);
 
 	/* transform the test expression, if any */
-	arg = transformExpr(pstate, (Node *) c->arg);
+	arg = transformExprRecurse(pstate, (Node *) c->arg);
 
 	/* generate placeholder for test expression */
 	if (arg)
@@ -1268,14 +1294,15 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 						 errhint("Missing <operand> for \"CASE <operand> WHEN IS NOT DISTINCT FROM ...\""),
 						 parser_errposition(pstate, exprLocation((Node *) warg))));
 		}
-		neww->expr = (Expr *) transformExpr(pstate, warg);
+		neww->expr = (Expr *) transformExprRecurse(pstate, warg);
 
 		neww->expr = (Expr *) coerce_to_boolean(pstate,
 												(Node *) neww->expr,
 												"CASE/WHEN");
 
 		warg = (Node *) w->result;
-		neww->result = (Expr *) transformExpr(pstate, warg);
+		neww->result = (Expr *) transformExprRecurse(pstate, warg);
+		neww->location = w->location;
 
 		newargs = lappend(newargs, neww);
 		typeids = lappend_oid(typeids, exprType((Node *) neww->result));
@@ -1292,7 +1319,7 @@ transformCaseExpr(ParseState *pstate, CaseExpr *c)
 		n->val.type = T_Null;
 		defresult = (Node *) n;
 	}
-	newc->defresult = (Expr *) transformExpr(pstate, defresult);
+	newc->defresult = (Expr *) transformExprRecurse(pstate, defresult);
 
 	/*
 	 * Note: default result is considered the most significant type in
@@ -1332,12 +1359,100 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 {
 	Node	   *result = (Node *) sublink;
 	Query	   *qtree;
+	const char *err;
 
 	/* If we already transformed this node, do nothing */
 	if (IsA(sublink->subselect, Query))
 		return result;
 
+	/*
+	 * Check to see if the sublink is in an invalid place within the query.
+	 * We allow sublinks everywhere in SELECT/INSERT/UPDATE/DELETE, but
+	 * generally not in utility statements.
+	 */
+	err = NULL;
+	switch (pstate->p_expr_kind)
+	{
+		case EXPR_KIND_NONE:
+			Assert(false);		/* can't happen */
+			break;
+		case EXPR_KIND_OTHER:
+			/* Accept sublink here; caller must throw error if wanted */
+			break;
+		case EXPR_KIND_JOIN_ON:
+		case EXPR_KIND_JOIN_USING:
+		case EXPR_KIND_FROM_SUBSELECT:
+		case EXPR_KIND_FROM_FUNCTION:
+		case EXPR_KIND_WHERE:
+		case EXPR_KIND_HAVING:
+		case EXPR_KIND_FILTER:
+		case EXPR_KIND_WINDOW_PARTITION:
+		case EXPR_KIND_WINDOW_ORDER:
+		case EXPR_KIND_WINDOW_FRAME_RANGE:
+		case EXPR_KIND_WINDOW_FRAME_ROWS:
+		case EXPR_KIND_SELECT_TARGET:
+		case EXPR_KIND_INSERT_TARGET:
+		case EXPR_KIND_UPDATE_SOURCE:
+		case EXPR_KIND_UPDATE_TARGET:
+		case EXPR_KIND_GROUP_BY:
+		case EXPR_KIND_ORDER_BY:
+		case EXPR_KIND_DISTINCT_ON:
+		case EXPR_KIND_LIMIT:
+		case EXPR_KIND_OFFSET:
+		case EXPR_KIND_RETURNING:
+		case EXPR_KIND_VALUES:
+			/* okay */
+			break;
+		case EXPR_KIND_CHECK_CONSTRAINT:
+		case EXPR_KIND_DOMAIN_CHECK:
+			err = _("cannot use subquery in CHECK constraint");
+			break;
+		case EXPR_KIND_COLUMN_DEFAULT:
+		case EXPR_KIND_FUNCTION_DEFAULT:
+			err = _("cannot use subquery in DEFAULT expression");
+			break;
+		case EXPR_KIND_INDEX_EXPRESSION:
+			err = _("cannot use subquery in index expression");
+			break;
+		case EXPR_KIND_INDEX_PREDICATE:
+			err = _("cannot use subquery in index predicate");
+			break;
+		case EXPR_KIND_ALTER_COL_TRANSFORM:
+			err = _("cannot use subquery in transform expression");
+			break;
+		case EXPR_KIND_EXECUTE_PARAMETER:
+			err = _("cannot use subquery in EXECUTE parameter");
+			break;
+		case EXPR_KIND_TRIGGER_WHEN:
+			err = _("cannot use subquery in trigger WHEN condition");
+			break;
+		case EXPR_KIND_PARTITION_EXPRESSION:
+			err = _("cannot use subquery in partition key expression");
+			break;
+
+		case EXPR_KIND_SCATTER_BY:
+			/* okay */
+			break;
+
+			/*
+			 * There is intentionally no default: case here, so that the
+			 * compiler will warn if we add a new ParseExprKind without
+			 * extending this switch.  If we do see an unrecognized value at
+			 * runtime, the behavior will be the same as for EXPR_KIND_OTHER,
+			 * which is sane anyway.
+			 */
+	}
+	if (err)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg_internal("%s", err),
+				 parser_errposition(pstate, sublink->location)));
+
 	pstate->p_hasSubLinks = true;
+
+	/*
+	 * OK, let's transform the sub-SELECT.
+	 */
 	qtree = parse_sub_analyze(sublink->subselect, pstate);
 
 	/*
@@ -1405,7 +1520,7 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		/*
 		 * Transform lefthand expression, and convert to a list
 		 */
-		lefthand = transformExpr(pstate, sublink->testexpr);
+		lefthand = transformExprRecurse(pstate, sublink->testexpr);
 		if (lefthand && IsA(lefthand, RowExpr))
 			left_list = ((RowExpr *) lefthand)->args;
 		else
@@ -1511,8 +1626,9 @@ transformArrayExpr(ParseState *pstate, A_ArrayExpr *a,
 		}
 		else
 		{
-			newe = transformExpr(pstate, e);
+			newe = transformExprRecurse(pstate, e);
 			newe_type = exprType(newe);
+
 			/*
 			 * Check for sub-array expressions, if we haven't already
 			 * found one.
@@ -1634,7 +1750,7 @@ transformRowExpr(ParseState *pstate, RowExpr *r)
 	newr = makeNode(RowExpr);
 
 	/* Transform the field expressions */
-	newr->args = transformExpressionList(pstate, r->args);
+	newr->args = transformExpressionList(pstate, r->args, pstate->p_expr_kind);
 
 	/* Barring later casting, we consider the type RECORD */
 	newr->row_typeid = RECORDOID;
@@ -1708,7 +1824,7 @@ transformCoalesceExpr(ParseState *pstate, CoalesceExpr *c)
 		Node	   *e = (Node *) lfirst(args);
 		Node	   *newe;
 
-		newe = transformExpr(pstate, e);
+		newe = transformExprRecurse(pstate, e);
 		newargs = lappend(newargs, newe);
 		typeids = lappend_oid(typeids, exprType(newe));
 	}
@@ -1747,7 +1863,7 @@ transformMinMaxExpr(ParseState *pstate, MinMaxExpr *m)
 		Node	   *e = (Node *) lfirst(args);
 		Node	   *newe;
 
-		newe = transformExpr(pstate, e);
+		newe = transformExprRecurse(pstate, e);
 		newargs = lappend(newargs, newe);
 		typeids = lappend_oid(typeids, exprType(newe));
 	}
@@ -1808,7 +1924,7 @@ transformXmlExpr(ParseState *pstate, XmlExpr *x)
 
 		Assert(IsA(r, ResTarget));
 
-		expr = transformExpr(pstate, r->val);
+		expr = transformExprRecurse(pstate, r->val);
 
 		if (r->name)
 			argname = map_sql_identifier_to_xml_name(r->name, false, false);
@@ -1854,7 +1970,7 @@ transformXmlExpr(ParseState *pstate, XmlExpr *x)
 		Node	   *e = (Node *) lfirst(lc);
 		Node	   *newe;
 
-		newe = transformExpr(pstate, e);
+		newe = transformExprRecurse(pstate, e);
 		switch (x->op)
 		{
 			case IS_XMLCONCAT:
@@ -1917,7 +2033,7 @@ transformXmlSerialize(ParseState *pstate, XmlSerialize *xs)
 	xexpr = makeNode(XmlExpr);
 	xexpr->op = IS_XMLSERIALIZE;
 	xexpr->args = list_make1(coerce_to_specific_type(pstate,
-											 transformExpr(pstate, xs->expr),
+										transformExprRecurse(pstate, xs->expr),
 													 XMLOID,
 													 "XMLSERIALIZE"));
 
@@ -1980,7 +2096,7 @@ transformBooleanTest(ParseState *pstate, BooleanTest *b)
 			clausename = NULL;	/* keep compiler quiet */
 	}
 
-	b->arg = (Expr *) transformExpr(pstate, (Node *) b->arg);
+	b->arg = (Expr *) transformExprRecurse(pstate, (Node *) b->arg);
 
 	b->arg = (Expr *) coerce_to_boolean(pstate,
 										(Node *) b->arg,
@@ -2150,7 +2266,8 @@ transformGroupingFunc(ParseState *pstate, GroupingFunc *gf)
 	 * Transform the list of arguments.
 	 */
 	foreach (lc, gf->args)
-		targs = lappend(targs, transformExpr(pstate, (Node *)lfirst(lc)));
+		targs = lappend(targs, transformExpr(pstate, (Node *)lfirst(lc),
+											 EXPR_KIND_GROUP_BY));
 
 	new_gf->args = targs;
 
@@ -2473,4 +2590,95 @@ make_distinct_op(ParseState *pstate, List *opname, Node *ltree, Node *rtree,
 	NodeSetTag(result, T_DistinctExpr);
 
 	return result;
+}
+
+/*
+ * Produce a string identifying an expression by kind.
+ *
+ * Note: when practical, use a simple SQL keyword for the result.  If that
+ * doesn't work well, check call sites to see whether custom error message
+ * strings are required.
+ */
+const char *
+ParseExprKindName(ParseExprKind exprKind)
+{
+	switch (exprKind)
+	{
+		case EXPR_KIND_NONE:
+			return "invalid expression context";
+		case EXPR_KIND_OTHER:
+			return "extension expression";
+		case EXPR_KIND_JOIN_ON:
+			return "JOIN/ON";
+		case EXPR_KIND_JOIN_USING:
+			return "JOIN/USING";
+		case EXPR_KIND_FROM_SUBSELECT:
+			return "sub-SELECT in FROM";
+		case EXPR_KIND_FROM_FUNCTION:
+			return "function in FROM";
+		case EXPR_KIND_WHERE:
+			return "WHERE";
+		case EXPR_KIND_HAVING:
+			return "HAVING";
+		case EXPR_KIND_FILTER:
+			return "FILTER";
+		case EXPR_KIND_WINDOW_PARTITION:
+			return "window PARTITION BY";
+		case EXPR_KIND_WINDOW_ORDER:
+			return "window ORDER BY";
+		case EXPR_KIND_WINDOW_FRAME_RANGE:
+			return "window RANGE";
+		case EXPR_KIND_WINDOW_FRAME_ROWS:
+			return "window ROWS";
+		case EXPR_KIND_SELECT_TARGET:
+			return "SELECT";
+		case EXPR_KIND_INSERT_TARGET:
+			return "INSERT";
+		case EXPR_KIND_UPDATE_SOURCE:
+		case EXPR_KIND_UPDATE_TARGET:
+			return "UPDATE";
+		case EXPR_KIND_GROUP_BY:
+			return "GROUP BY";
+		case EXPR_KIND_ORDER_BY:
+			return "ORDER BY";
+		case EXPR_KIND_DISTINCT_ON:
+			return "DISTINCT ON";
+		case EXPR_KIND_LIMIT:
+			return "LIMIT";
+		case EXPR_KIND_OFFSET:
+			return "OFFSET";
+		case EXPR_KIND_RETURNING:
+			return "RETURNING";
+		case EXPR_KIND_VALUES:
+			return "VALUES";
+		case EXPR_KIND_CHECK_CONSTRAINT:
+		case EXPR_KIND_DOMAIN_CHECK:
+			return "CHECK";
+		case EXPR_KIND_COLUMN_DEFAULT:
+		case EXPR_KIND_FUNCTION_DEFAULT:
+			return "DEFAULT";
+		case EXPR_KIND_INDEX_EXPRESSION:
+			return "index expression";
+		case EXPR_KIND_INDEX_PREDICATE:
+			return "index predicate";
+		case EXPR_KIND_ALTER_COL_TRANSFORM:
+			return "USING";
+		case EXPR_KIND_EXECUTE_PARAMETER:
+			return "EXECUTE";
+		case EXPR_KIND_TRIGGER_WHEN:
+			return "WHEN";
+		case EXPR_KIND_PARTITION_EXPRESSION:
+			return "PARTITION BY";
+
+		case EXPR_KIND_SCATTER_BY:
+			return "SCATTER BY";
+
+			/*
+			 * There is intentionally no default: case here, so that the
+			 * compiler will warn if we add a new ParseExprKind without
+			 * extending this switch.  If we do see an unrecognized value at
+			 * runtime, we'll fall through to the "unrecognized" return.
+			 */
+	}
+	return "unrecognized expression kind";
 }

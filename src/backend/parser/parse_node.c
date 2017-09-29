@@ -338,7 +338,7 @@ transformArraySubscripts(ParseState *pstate,
 		{
 			if (ai->lidx)
 			{
-				subexpr = transformExpr(pstate, ai->lidx);
+				subexpr = transformExpr(pstate, ai->lidx, pstate->p_expr_kind);
 				/* If it's not int4 already, try to coerce */
 				subexpr = coerce_to_target_type(pstate,
 												subexpr, exprType(subexpr),
@@ -363,7 +363,7 @@ transformArraySubscripts(ParseState *pstate,
 			}
 			lowerIndexpr = lappend(lowerIndexpr, subexpr);
 		}
-		subexpr = transformExpr(pstate, ai->uidx);
+		subexpr = transformExpr(pstate, ai->uidx, pstate->p_expr_kind);
 		/* If it's not int4 already, try to coerce */
 		subexpr = coerce_to_target_type(pstate,
 										subexpr, exprType(subexpr),
