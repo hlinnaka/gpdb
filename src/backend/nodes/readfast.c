@@ -789,24 +789,6 @@ _readAExpr(void)
 }
 
 /*
- * _readFuncExpr
- */
-static FuncExpr *
-_readFuncExpr(void)
-{
-	READ_LOCALS(FuncExpr);
-
-	READ_OID_FIELD(funcid);
-	READ_OID_FIELD(funcresulttype);
-	READ_BOOL_FIELD(funcretset);
-	READ_ENUM_FIELD(funcformat, CoercionForm);
-	READ_NODE_FIELD(args);
-	READ_BOOL_FIELD(is_tablefunc);
-
-	READ_DONE();
-}
-
-/*
  * _readOpExpr
  */
 static OpExpr *

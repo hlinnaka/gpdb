@@ -560,19 +560,6 @@ _outConst(StringInfo str, Const *node)
 }
 
 static void
-_outFuncExpr(StringInfo str, FuncExpr *node)
-{
-	WRITE_NODE_TYPE("FUNCEXPR");
-
-	WRITE_OID_FIELD(funcid);
-	WRITE_OID_FIELD(funcresulttype);
-	WRITE_BOOL_FIELD(funcretset);
-	WRITE_ENUM_FIELD(funcformat, CoercionForm);
-	WRITE_NODE_FIELD(args);
-	WRITE_BOOL_FIELD(is_tablefunc);
-}
-
-static void
 _outBoolExpr(StringInfo str, BoolExpr *node)
 {
 	WRITE_NODE_TYPE("BOOLEXPR");
