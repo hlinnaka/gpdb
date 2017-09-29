@@ -5214,6 +5214,7 @@ make_windowagg(PlannerInfo *root, List *tlist,
 			   List *windowFuncs, Index winref,
 			   int partNumCols, AttrNumber *partColIdx, Oid *partOperators,
 			   int ordNumCols, AttrNumber *ordColIdx, Oid *ordOperators,
+			   AttrNumber firstOrderCol, Oid firstOrderCmpOperator, bool firstOrderNullsFirst,
 			   int frameOptions, Node *startOffset, Node *endOffset,
 			   Plan *lefttree)
 {
@@ -5229,6 +5230,9 @@ make_windowagg(PlannerInfo *root, List *tlist,
 	node->ordNumCols = ordNumCols;
 	node->ordColIdx = ordColIdx;
 	node->ordOperators = ordOperators;
+	node->firstOrderCol = firstOrderCol;
+	node->firstOrderCmpOperator= firstOrderCmpOperator;
+	node->firstOrderNullsFirst= firstOrderNullsFirst;
 	node->frameOptions = frameOptions;
 	node->startOffset = startOffset;
 	node->endOffset = endOffset;

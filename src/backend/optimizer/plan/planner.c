@@ -1989,6 +1989,16 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 											pull_agg_clause((Node *) tlist));
 			window_tlist = add_volatile_sort_exprs(window_tlist, tlist,
 												   activeWindows);
+			foreach(l, activeWindows)
+			{
+				WindowClause *wc = (WindowClause *) lfirst(l);
+
+				window_tlist = add_to_flat_tlist(window_tlist,
+												 pull_var_clause(wc->startOffset, true));
+				window_tlist = add_to_flat_tlist(window_tlist,
+												 pull_var_clause(wc->endOffset, true));
+			}
+
 			window_tlist = add_to_flat_tlist_junk(window_tlist,
 												  result_plan->flow->hashExpr,
 												  true /* resjunk */);
@@ -2004,6 +2014,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				int			ordNumCols;
 				AttrNumber *ordColIdx;
 				Oid		   *ordOperators;
+				int			firstOrderCol = -1;
+				Oid			firstOrderCmpOperator = InvalidOid;
+				bool		firstOrderNullsFirst = false;
 
 				/*
 				 * Unless the PARTITION BY in the window happens to match the
@@ -2106,6 +2119,27 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					ordOperators = NULL;
 				}
 
+				if (wc->orderClause)
+				{
+					SortGroupClause *sortcl = (SortGroupClause *) linitial(wc->orderClause);
+					ListCell	*l_tle;
+
+					firstOrderCol = 0;
+					foreach(l_tle, window_tlist)
+					{
+						TargetEntry *tle = (TargetEntry *) lfirst(l_tle);
+
+						if (sortcl->tleSortGroupRef == tle->ressortgroupref)
+							break;
+						firstOrderCol++;
+					}
+					if (!l_tle)
+						elog(ERROR, "failed to locate ORDER BY column");
+
+					firstOrderCmpOperator = sortcl->sortop;
+					firstOrderNullsFirst = sortcl->nulls_first;
+				}
+
 				/*
 				 * If there was no PARTITION BY, gather the result.
 				 */
@@ -2141,6 +2175,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								   ordNumCols,
 								   ordColIdx,
 								   ordOperators,
+								   firstOrderCol,
+								   firstOrderCmpOperator,
+								   firstOrderNullsFirst,
 								   wc->frameOptions,
 								   wc->startOffset,
 								   wc->endOffset,
@@ -3186,6 +3223,23 @@ make_subplanTargetList(PlannerInfo *root,
 	sub_tlist = add_to_flat_tlist(sub_tlist, extravars);
 	list_free(extravars);
 
+	{
+		ListCell *lc;
+
+		foreach(lc, root->parse->windowClause)
+		{
+			WindowClause *window = (WindowClause *) lfirst(lc);
+
+			extravars = pull_var_clause(window->startOffset, true);
+			sub_tlist = add_to_flat_tlist(sub_tlist, extravars);
+			list_free(extravars);
+
+			extravars = pull_var_clause(window->endOffset, true);
+			sub_tlist = add_to_flat_tlist(sub_tlist, extravars);
+			list_free(extravars);
+		}
+	}
+
 	/*
 	 * XXX Set need_tlist_eval to true for group queries.
 	 *
@@ -3448,12 +3502,14 @@ add_volatile_sort_exprs(List *window_tlist, List *tlist, List *activeWindows)
 {
 	Bitmapset  *sgrefs = NULL;
 	ListCell   *lc;
+	Bitmapset  *firstOrderColRefs = NULL;
 
 	/* First, collect the sortgrouprefs of the windows into a bitmapset */
 	foreach(lc, activeWindows)
 	{
 		WindowClause *wc = (WindowClause *) lfirst(lc);
 		ListCell   *lc2;
+		bool		firstOrderCol = true;
 
 		foreach(lc2, wc->partitionClause)
 		{
@@ -3466,6 +3522,10 @@ add_volatile_sort_exprs(List *window_tlist, List *tlist, List *activeWindows)
 			SortGroupClause *sortcl = (SortGroupClause *) lfirst(lc2);
 
 			sgrefs = bms_add_member(sgrefs, sortcl->tleSortGroupRef);
+
+			if (firstOrderCol)
+				firstOrderColRefs = bms_add_member(firstOrderColRefs, sortcl->tleSortGroupRef);
+			firstOrderCol = false;
 		}
 	}
 
@@ -3483,7 +3543,8 @@ add_volatile_sort_exprs(List *window_tlist, List *tlist, List *activeWindows)
 
 		if (tle->ressortgroupref != 0 &&
 			bms_is_member(tle->ressortgroupref, sgrefs) &&
-			contain_volatile_functions((Node *) tle->expr))
+			(bms_is_member(tle->ressortgroupref, firstOrderColRefs) ||
+			 contain_volatile_functions((Node *) tle->expr)))
 		{
 			TargetEntry *newtle;
 
