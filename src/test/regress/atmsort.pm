@@ -1427,14 +1427,25 @@ sub atmsort_bigloop
                     # multiline match
                     && ($sql_statement =~ m/select.*order.*by/is))
                 {
-                    $has_order = 1; # so do *not* sort output
-                    $directive->{sql_statement} = $sql_statement;
+                    my $t = $sql_statement;
+                    $t =~ s/over\s*\(order\s+by.*\)/xx/isg;
+                    $t =~ s/over\s*\((partition\s+by.*)?order\s+by.*\)/xx/isg;
+                    $t =~ s/window\s+\w+\s+as\s+\((partition\s+by.*)?order\s+by.*\)/xx/isg;
+
+                    if ($t =~ m/order\s+by/is)
+                    {
+                        $has_order = 1; # so do *not* sort output
+                    }
+                    else
+                    {
+                        $has_order = 0; # need to sort query output
+                    }
                 }
                 else
                 {
                     $has_order = 0; # need to sort query output
-                    $directive->{sql_statement} = $sql_statement;
                 }
+                $directive->{sql_statement} = $sql_statement;
                 $sql_statement = '';
 
                 $getrows = 1;
