@@ -969,6 +969,7 @@ validate_describe_callback(List *describeQualName,
 		}
 	}
 	int nvargs;
+	Oid vatype;
 	/* Lookup the function in the catalog */
 	fdResult = func_get_detail(describeQualName,
 							   NIL,   /* argument expressions */
@@ -979,7 +980,8 @@ validate_describe_callback(List *describeQualName,
 							   &describeFuncOid,
 							   &describeReturnTypeOid, 
 							   &describeReturnsSet,
-							   &nvargs,	
+							   &nvargs,
+							   &vatype,
 							   &actualInputTypeOids,
 							   NULL);
 
@@ -1005,6 +1007,11 @@ validate_describe_callback(List *describeQualName,
 				 errmsg("function %s returns a set",
 						func_signature_string(describeQualName, nargs, inputTypeOids))));
 	}
+
+	if (OidIsValid(vatype))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("describe function cannot be variadic")));
 
 	/* Check that the creator has permission to call the function */
 	aclresult = pg_proc_aclcheck(describeFuncOid, GetUserId(), ACL_EXECUTE);
