@@ -152,6 +152,9 @@ expression_tree_walker(Node *node,
 				Aggref	   *expr = (Aggref *) node;
 
 				/* recurse directly on List */
+				if (expression_tree_walker((Node *) expr->aggdirectargs,
+										   walker, context))
+					return true;
 				if (expression_tree_walker((Node *) expr->args,
 										   walker, context))
 					return true;

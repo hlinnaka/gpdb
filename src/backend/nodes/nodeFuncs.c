@@ -324,6 +324,10 @@ exprLocation(Node *expr)
 		case T_TypeName:
 			loc = ((TypeName *) expr)->location;
 			break;
+		case T_FunctionParameter:
+			/* just use typename's location */
+			loc = exprLocation((Node *) ((const FunctionParameter *) expr)->argType);
+			break;
 		case T_XmlSerialize:
 			/* XMLSERIALIZE keyword should always be the first thing */
 			loc = ((XmlSerialize *) expr)->location;
@@ -1062,6 +1066,7 @@ expression_tree_mutator(Node *node,
 				Aggref	   *newnode;
 
 				FLATCOPY(newnode, aggref, Aggref);
+				MUTATE(newnode->aggdirectargs, aggref->aggdirectargs, List *);
 				MUTATE(newnode->args, aggref->args, List *);
 				MUTATE(newnode->aggorder, aggref->aggorder, List *);
 				MUTATE(newnode->aggdistinct, aggref->aggdistinct, List *);

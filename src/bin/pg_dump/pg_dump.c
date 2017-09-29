@@ -8873,6 +8873,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	int			i_aggtransfn;
 	int			i_aggfinalfn;
 	int			i_aggsortop;
+	int			i_hypothetical;
 	int			i_aggtranstype;
 	int			i_agginitval;
 	int			i_aggprelimfn;
@@ -8881,6 +8882,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	const char *aggtransfn;
 	const char *aggfinalfn;
 	const char *aggsortop;
+	bool		hypothetical;
 	const char *aggtranstype;
 	const char *agginitval;
 	const char *aggprelimfn;
@@ -8901,11 +8903,28 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	selectSourceSchema(agginfo->aggfn.dobj.namespace->dobj.name);
 
 	/* Get aggregate-specific details */
-	if (g_fout->remoteVersion >= 80100)
+	if (g_fout->remoteVersion >= 80400)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
 						  "aggsortop::pg_catalog.regoperator, "
+						  "(aggkind = 'h') as hypothetical, " /* aggkind was backported to GPDB6 */
+						  "agginitval, "
+						  "%s, "
+						  "'t'::boolean as convertok, "
+						  "aggordered "
+					  "from pg_catalog.pg_aggregate a, pg_catalog.pg_proc p "
+						  "where a.aggfnoid = p.oid "
+						  "and p.oid = '%u'::pg_catalog.oid",
+						  (isGPbackend ? "aggprelimfn" : "NULL as aggprelimfn"),
+						  agginfo->aggfn.dobj.catId.oid);
+	}
+	else if (g_fout->remoteVersion >= 80100)
+	{
+		appendPQExpBuffer(query, "SELECT aggtransfn, "
+						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
+						  "aggsortop::pg_catalog.regoperator, "
+						  "false as hypothetical, "
 						  "agginitval, "
 						  "%s, "
 						  "'t'::boolean as convertok, "
@@ -8953,6 +8972,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	i_aggtransfn = PQfnumber(res, "aggtransfn");
 	i_aggfinalfn = PQfnumber(res, "aggfinalfn");
 	i_aggsortop = PQfnumber(res, "aggsortop");
+	i_hypothetical = PQfnumber(res, "hypothetical");
 	i_aggtranstype = PQfnumber(res, "aggtranstype");
 	i_agginitval = PQfnumber(res, "agginitval");
 	i_aggprelimfn = PQfnumber(res, "aggprelimfn");
@@ -8962,6 +8982,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	aggtransfn = PQgetvalue(res, 0, i_aggtransfn);
 	aggfinalfn = PQgetvalue(res, 0, i_aggfinalfn);
 	aggsortop = PQgetvalue(res, 0, i_aggsortop);
+	hypothetical = (PQgetvalue(res, 0, i_hypothetical)[0] == 't');
 	aggtranstype = PQgetvalue(res, 0, i_aggtranstype);
 	agginitval = PQgetvalue(res, 0, i_agginitval);
 	aggprelimfn = PQgetvalue(res, 0, i_aggprelimfn);
@@ -9030,6 +9051,9 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  aggsortop);
 	}
 
+	if (hypothetical)
+		appendPQExpBufferStr(details, ",\n    HYPOTHETICAL");
+
 	/*
 	 * DROP must be fully qualified in case same name appears in pg_catalog
 	 */
@@ -9063,7 +9087,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	/*
 	 * Since there is no GRANT ON AGGREGATE syntax, we have to make the ACL
 	 * command look like a function's GRANT; in particular this affects the
-	 * syntax for zero-argument aggregates.
+	 * syntax for zero-argument aggregates and ordered-set aggregates.
 	 */
 	free(aggsig);
 	free(aggsig_tag);

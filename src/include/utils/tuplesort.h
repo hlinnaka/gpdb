@@ -83,6 +83,8 @@ extern IndexTuple tuplesort_getindextuple(Tuplesortstate *state, bool forward,
 extern bool tuplesort_getdatum(Tuplesortstate *state, bool forward,
 				   Datum *val, bool *isNull);
 
+extern bool tuplesort_skiptuples(Tuplesortstate *state, int64 ntuples,
+					 bool forward);
 
 extern void tuplesort_end(Tuplesortstate *state);
 
