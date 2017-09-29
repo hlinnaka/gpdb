@@ -1111,9 +1111,9 @@ select median(a) from perct group by grouping sets((), (b));
 
 -- wrong type in ORDER BY
 select median('text') from perct;
-ERROR:  function pg_catalog.median(double precision, unknown) is not unique
+ERROR:  invalid input syntax for type double precision: "text"
 LINE 1: select median('text') from perct;
-               ^
+                      ^
 select percentile_cont(now()) within group (order by a) from percts;
 ERROR:  function percentile_cont(timestamp with time zone, timestamp without time zone) does not exist
 LINE 1: select percentile_cont(now()) within group (order by a) from...
