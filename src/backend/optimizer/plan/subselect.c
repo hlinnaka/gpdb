@@ -1401,19 +1401,16 @@ simplify_EXISTS_query(PlannerInfo *root, Query *query)
 		query->targetList = NULL;
 		query->hasAggs = false;
 	}
-
-	/* If HAVING has no aggregates, demote it to WHERE. */
-	else if (!contain_agg_clause(query->havingQual))
+	/* Delete GROUP BY if no aggregates. */
+	if (!query->hasAggs)
 	{
+		/* If HAVING, demote it to WHERE. */
 		query->jointree->quals = make_and_qual(query->jointree->quals,
 												   query->havingQual);
 		query->havingQual = NULL;
-		query->hasAggs = false;
-	}
 
-	/* Delete GROUP BY if no aggregates. */
-	if (!query->hasAggs)
 		query->groupClause = NIL;
+	}
 
 	return true;
 }
