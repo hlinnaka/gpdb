@@ -423,18 +423,6 @@ expression_tree_walker(Node *node,
 			break;
 		case T_PlaceHolderInfo:
 			return walker(((PlaceHolderInfo *) node)->ph_var, context);
-		case T_GroupingClause:
-			{
-				GroupingClause *g = (GroupingClause *) node;
-				if (expression_tree_walker((Node *)g->groupsets, walker,
-					context))
-					return true;
-			}
-			break;
-		case T_GroupingFunc:
-			break;
-		case T_Grouping:
-		case T_GroupId:
 		case T_SortGroupClause: /* occurs in WindowClause lists */
 			{
 				/* do nothing */

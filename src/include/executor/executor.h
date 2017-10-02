@@ -498,14 +498,6 @@ extern GpExecIdentity getGpExecIdentity(QueryDesc *queryDesc,
 extern void mppExecutorFinishup(QueryDesc *queryDesc);
 extern void mppExecutorCleanup(QueryDesc *queryDesc);
 
-
-/* prototypes defined in nodeAgg.c for rollup-aware Agg/Group nodes. */
-extern int64 tuple_grouping(TupleTableSlot *outerslot, int numGroupCols,
-							int input_grouping, bool input_has_grouping,
-							int grpingIdx);
-extern uint64 get_grouping_groupid(TupleTableSlot *slot,
-								   int grping_idx);
-
 extern ResultRelInfo *slot_get_partition(TupleTableSlot *slot, EState *estate);
 extern ResultRelInfo *values_get_partition(Datum *values, bool *nulls,
 										   TupleDesc desc, EState *estate);

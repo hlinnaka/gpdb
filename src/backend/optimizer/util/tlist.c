@@ -270,15 +270,6 @@ get_sortgroupclauses_tles_recurse(List *clauses, List *targetList,
 			get_sortgroupclauses_tles_recurse((List *) node, targetList,
 											  tles, sortops, eqops);
 		}
-		else if (IsA(node, GroupingClause))
-		{
-			/* GroupingClauses are collected into separate list */
-			get_sortgroupclauses_tles_recurse(((GroupingClause *) node)->groupsets,
-											  targetList,
-											  &sub_grouping_tles,
-											  &sub_grouping_sortops,
-											  &sub_grouping_eqops);
-		}
 		else
 			elog(ERROR, "unrecognized node type in list of sort/group clauses: %d",
 				 (int) nodeTag(node));
@@ -399,109 +390,6 @@ grouping_is_sortable(List *groupClause)
 	}
 	return true;
 }
-
-
-
-/*
- * get_grouplist_colidx
- *		Given a list of GroupClauses, build an array of the referenced
- *		targetlist resnos and their sort operators.  If numCols is not NULL,
- *		it is filled by the length of returned array.  Results are allocated
- *		by palloc.
- */
-void
-get_grouplist_colidx(List *groupClauses, List *targetList, int *numCols,
-					 AttrNumber **colIdx, Oid **grpOperators)
-{
-	List	   *tles;
-	List	   *sortops;
-	List	   *eqops;
-	ListCell   *lc_tle;
-	ListCell   *lc_eqop;
-	int			i, len;
-
-	len = num_distcols_in_grouplist(groupClauses);
-	if (numCols)
-		*numCols = len;
-
-	if (len == 0)
-	{
-		*colIdx = NULL;
-		*grpOperators = NULL;
-		return;
-	}
-
-	get_sortgroupclauses_tles(groupClauses, targetList, &tles, &sortops, &eqops);
-
-	*colIdx = (AttrNumber *) palloc(sizeof(AttrNumber) * len);
-	*grpOperators = (Oid *) palloc(sizeof(Oid) * len);
-
-	i = 0;
-	forboth(lc_tle, tles, lc_eqop, eqops)
-	{
-		TargetEntry	*tle = lfirst(lc_tle);
-		Oid			eqop = lfirst_oid(lc_eqop);
-
-		Assert (i < len);
-
-		(*colIdx)[i] = tle->resno;
-		(*grpOperators)[i] = eqop;
-		if (!OidIsValid((*grpOperators)[i]))		/* shouldn't happen */
-			elog(ERROR, "could not find equality operator for ordering operator %u",
-				 (*grpOperators)[i]);
-		i++;
-	}
-}
-
-/*
- * get_grouplist_exprs
- *     Find a list of unique referenced targetlist expressions used in a given
- *     list of GroupClauses or a GroupingClauses.
- *
- * All expressions will appear in the same order as they appear in the
- * given list of GroupClauses or a GroupingClauses.
- *
- * Note that the top-level empty sets will be removed here.
- */
-List *
-get_grouplist_exprs(List *groupClauses, List *targetList)
-{
-	List *result = NIL;
-	ListCell *l;
-
-	foreach (l, groupClauses)
-	{
-		Node *groupClause = lfirst(l);
-
-		if (groupClause == NULL)
-			continue;
-
-		Assert(IsA(groupClause, SortGroupClause) ||
-			   IsA(groupClause, GroupingClause) ||
-			   IsA(groupClause, List));
-
-		if (IsA(groupClause, SortGroupClause))
-		{
-			Node *expr = get_sortgroupclause_expr((SortGroupClause *) groupClause,
-												  targetList);
-			
-			if (!list_member(result, expr))
-				result = lappend(result, expr);
-		}
-
-		else if (IsA(groupClause, List))
-			result = list_concat_unique(result,
-								 get_grouplist_exprs((List *)groupClause, targetList));
-
-		else
-			result = list_concat_unique(result,
-								 get_grouplist_exprs(((GroupingClause*)groupClause)->groupsets,
-													 targetList));
-	}
-
-	return result;
-}
-
 
 /*
  * Does tlist have same output datatypes as listed in colTypes?

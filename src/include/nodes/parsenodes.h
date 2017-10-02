@@ -133,21 +133,7 @@ typedef struct Query
 
 	List	   *returningList;	/* return-values list (of TargetEntry) */
 
-	/*
-	 * A list of SortGroupClauses or GroupingClauses.  The order of SortGroupClauses
-	 * or GroupingClauses are based on input queries. However, in each
-	 * grouping set, all GroupClauses will appear in front of GroupingClauses.
-	 * See the following GROUP BY clause:
-	 *
-	 * GROUP BY ROLLUP(b,c),a, CUBE(e,d)
-	 *
-	 * the result list can be roughly represented as follows.
-	 *
-	 * SortGroupClause(a) --> GroupingClause( ROLLUP, groupsets (SortGroupClause(b)
-	 * --> SortGroupClause(c) ) ) --> GroupingClause( CUBE, groupsets
-	 * (SortGroupClause(e) --> SortGroupClause(d) ) )
-	 */
-	List	   *groupClause;
+	List	   *groupClause;	/* a list of SortGroupClause's */
 
 	Node	   *havingQual;		/* qualifications applied to groups */
 
@@ -842,50 +828,6 @@ typedef struct SortGroupClause
 	Oid			sortop;				/* the ordering operator ('<' op), or 0 */
 	bool		nulls_first;		/* do NULLs come before normal values? */
 } SortGroupClause;
-
-/*
- * GroupingClause -
- *     representation of grouping extension clauses,
- *     such as ROLLUP, CUBE, and GROUPING SETS.
- */
-typedef struct GroupingClause
-{
-	NodeTag      type;
-	GroupingType groupType;
-	List         *groupsets;
-} GroupingClause;
-
-/*
- * GroupingFunc -
- *     representation of a grouping function for grouping extension
- *     clauses.
- *
- * This is used to determine whether a null value for a column in
- * the output tuple is the result of grouping. For example, a table
- *
- *    test (a integer, b integer)
- *
- * has two rows:
- *
- *    (1,1), (null,1)
- *
- * The query "select a,sum(b),grouping(a) from test group by rollup(a)"
- * returns
- *
- *    1   ,    1,    0
- *    null,    1,    0
- *    null,    2,    1
- *
- * The output row "null,1,0" indicates that the 'null' value for 'a' is not
- * from grouping, while the row "null,2,1" indicates that the 'null' value for
- * 'a' is from grouping.
- */
-typedef struct GroupingFunc
-{
-	NodeTag   type;
-	List     *args;  /* arguments provided in the query. */
-	int       ngrpcols; /* the number of grouping attributes */
-} GroupingFunc;
 
 
 /*

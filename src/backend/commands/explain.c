@@ -2037,8 +2037,6 @@ show_grouping_keys(Plan        *plan,
     bool		useprefix = list_length(es->rtable) > 1;
     int			keyno;
     int			i;
-	int         num_null_cols = 0;
-	int         rollup_gs_times = 0;
 
     if (numCols <= 0)
         return;
@@ -2064,49 +2062,24 @@ show_grouping_keys(Plan        *plan,
 									   es->rtable,
 									   es->pstmt->subplans);
 
-	if (IsA(plan, Agg))
-	{
-		num_null_cols = ((Agg*)plan)->numNullCols;
-		rollup_gs_times = ((Agg*)plan)->rollupGSTimes;
-	}
-
-    for (keyno = 0; keyno < numCols - num_null_cols; keyno++)
+    for (keyno = 0; keyno < numCols; keyno++)
     {
 	    /* find key expression in tlist */
 	    AttrNumber      keyresno = subplanColIdx[keyno];
 	    TargetEntry    *target = get_tle_by_resno(subplan->targetlist, keyresno);
-		char grping_str[50];
 
 	    if (!target)
 		    elog(ERROR, "no tlist entry for key %d", keyresno);
 
-		if (IsA(target->expr, Grouping))
-		{
-			sprintf(grping_str, "grouping");
-			/* Append "grouping" explicitly. */
-			exprstr = grping_str;
-		}
-
-		else if (IsA(target->expr, GroupId))
-		{
-			sprintf(grping_str, "groupid");
-			/* Append "groupid" explicitly. */
-			exprstr = grping_str;
-		}
-
-		else
-			/* Deparse the expression, showing any top-level cast */
-			exprstr = deparse_expr_sweet((Node *) target->expr, context,
-										 useprefix, true);
+		/* Deparse the expression, showing any top-level cast */
+		exprstr = deparse_expr_sweet((Node *) target->expr, context,
+									 useprefix, true);
 
 		/* And add to str */
 		if (keyno > 0)
 			appendStringInfoString(str, ", ");
 		appendStringInfoString(str, exprstr);
     }
-
-	if (rollup_gs_times > 1)
-		appendStringInfo(str, " (%d times)", rollup_gs_times);
 
     appendStringInfoChar(str, '\n');
 }                               /* show_grouping_keys */

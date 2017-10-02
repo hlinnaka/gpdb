@@ -69,10 +69,6 @@ namespace gpdxl
 			static
 			CBitSet *PbsGroupingSet(IMemoryPool *pmp, List *plGroupElems, ULONG ulCols, HMUlUl *phmululGrpColPos, CBitSet *pbsGrpCols);
 
-			// create a set of grouping sets for a rollup
-			static
-			DrgPbs *PdrgpbsRollup(IMemoryPool *pmp, GroupingClause *pgrcl, ULONG ulCols, HMUlUl *phmululGrpColPos, CBitSet *pbsGrpCols);
-
 			// check if the given mdid array contains any of the polymorphic
 			// types (ANYELEMENT, ANYARRAY)
 			static

@@ -438,9 +438,6 @@ namespace gpdxl
 			// of a DML statement
 			ULONG UlTupleOidColId();
 
-			// translate a grouping func expression
-			CDXLNode *PdxlnGroupingFunc(const Expr *pexpr, CBitSet *pbs, HMUlUl *phmululGrpColPos) const;
-
 			// construct a list of CTE producers from the query's CTE list
 			void ConstructCTEProducerList(List *plCTE, ULONG ulQueryLevel);
 			

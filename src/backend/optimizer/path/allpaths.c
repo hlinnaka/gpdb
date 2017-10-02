@@ -1414,9 +1414,6 @@ push_down_restrict(PlannerInfo *root, RelOptInfo *rel,
  * component queries to see if any of them have different output types;
  * differentTypes[k] is set true if column k has different type in any
  * component.
- *
- * 5. Do not push down quals if the subquery is a grouping extension
- * query, since this may change the meaning of the query.
  */
 static bool
 subquery_is_pushdown_safe(Query *subquery, Query *topquery,
@@ -1434,11 +1431,6 @@ subquery_is_pushdown_safe(Query *subquery, Query *topquery,
 
 	/* Targetlist must not contain SRF */
 	if (expression_returns_set((Node *) subquery->targetList))
-		return false;
-
-	/* See point 5. */
-	if (subquery->groupClause != NULL &&
-		contain_extended_grouping(subquery->groupClause))
 		return false;
 
 	/* Are we at top level, or looking at a setop component? */

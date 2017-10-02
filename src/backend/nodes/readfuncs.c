@@ -430,47 +430,6 @@ _readSortGroupClause(void)
 	READ_DONE();
 }
 
-/*
- * _readGroupingClause
- */
-static GroupingClause *
-_readGroupingClause(void)
-{
-	READ_LOCALS(GroupingClause);
-
-	READ_ENUM_FIELD(groupType, GroupingType);
-	READ_NODE_FIELD(groupsets);
-
-	READ_DONE();
-}
-
-static GroupingFunc *
-_readGroupingFunc(void)
-{
-	READ_LOCALS(GroupingFunc);
-
-	READ_NODE_FIELD(args);
-	READ_INT_FIELD(ngrpcols);
-
-	READ_DONE();
-}
-
-static Grouping *
-_readGrouping(void)
-{
-	READ_LOCALS_NO_FIELDS(Grouping);
-
-	READ_DONE();
-}
-
-static GroupId *
-_readGroupId(void)
-{
-	READ_LOCALS_NO_FIELDS(GroupId);
-
-	READ_DONE();
-}
-
 static WindowClause *
 _readWindowClause(void)
 {
@@ -3008,14 +2967,6 @@ parseNodeString(void)
 		return_value = _readGrantRoleStmt();
 	else if (MATCHX("GRANTSTMT"))
 		return_value = _readGrantStmt();
-	else if (MATCHX("GROUPID"))
-		return_value = _readGroupId();
-	else if (MATCHX("GROUPING"))
-		return_value = _readGrouping();
-	else if (MATCHX("GROUPINGCLAUSE"))
-		return_value = _readGroupingClause();
-	else if (MATCHX("GROUPINGFUNC"))
-		return_value = _readGroupingFunc();
 	else if (MATCHX("INDEXELEM"))
 		return_value = _readIndexElem();
 	else if (MATCHX("INDEXSTMT"))

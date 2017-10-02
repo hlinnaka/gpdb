@@ -45,20 +45,6 @@ typedef struct
 	List	  **windowFuncs;	/* lists of WindowFuncs for each winref */
 } WindowFuncLists;
 
-
-/*
- * Representing a canonicalized grouping sets.
- */
-typedef struct CanonicalGroupingSets
-{
-	int num_distcols;   /* number of distinct grouping columns */
-	int ngrpsets;   /* number of grouping sets */
-	Bitmapset **grpsets;  /* one Bitmapset for each grouping set */
-	int *grpset_counts;  /* one for each grouping set, representing the number of times that
-						  * each grouping set appears
-						  */
-} CanonicalGroupingSets;
-
 extern Expr *make_opclause(Oid opno, Oid opresulttype, bool opretset,
 			  Expr *leftop, Expr *rightop);
 extern Node *get_leftop(Expr *clause);
@@ -121,9 +107,6 @@ extern Node *estimate_expression_value(PlannerInfo *root, Node *node);
 extern Query *inline_set_returning_function(PlannerInfo *root, Node *node);
 
 extern Expr *evaluate_expr(Expr *expr, Oid result_type, int32 result_typmod);
-
-extern bool is_grouping_extension(CanonicalGroupingSets *grpsets);
-extern bool contain_extended_grouping(List *grp);
 
 extern bool is_builtin_true_equality_between_same_type(int opno);
 extern bool is_builtin_greenplum_hashable_equality_between_same_type(int opno);

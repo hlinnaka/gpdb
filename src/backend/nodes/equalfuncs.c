@@ -2321,37 +2321,6 @@ _equalSortGroupClause(SortGroupClause *a, SortGroupClause *b)
 }
 
 static bool
-_equalGroupingClause(GroupingClause *a, GroupingClause *b)
-{
-	COMPARE_SCALAR_FIELD(groupType);
-	COMPARE_NODE_FIELD(groupsets);
-
-	return true;
-}
-
-static bool
-_equalGroupingFunc(GroupingFunc *a, GroupingFunc *b)
-{
-	COMPARE_NODE_FIELD(args);
-	COMPARE_SCALAR_FIELD(ngrpcols);
-
-	return true;
-}
-
-static bool
-_equalGrouping(Grouping *a __attribute__((unused)), Grouping *b __attribute__((unused)))
-
-{
-	return true;
-}
-
-static bool
-_equalGroupId(GroupId *a __attribute__((unused)), GroupId *b __attribute__((unused)))
-{
-	return true;
-}
-
-static bool
 _equalWindowClause(WindowClause *a, WindowClause *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -3116,18 +3085,6 @@ equal(void *a, void *b)
 			break;
 		case T_SortGroupClause:
 			retval = _equalSortGroupClause(a, b);
-			break;
-		case T_GroupingClause:
-			retval = _equalGroupingClause(a, b);
-			break;
-		case T_GroupingFunc:
-			retval = _equalGroupingFunc(a, b);
-			break;
-		case T_Grouping:
-			retval = _equalGrouping(a, b);
-			break;
-		case T_GroupId:
-			retval = _equalGroupId(a, b);
 			break;
 		case T_WindowClause:
 			retval = _equalWindowClause(a, b);

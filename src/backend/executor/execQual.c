@@ -67,15 +67,6 @@ static bool isAssignmentIndirectionExpr(ExprState *exprstate);
 static Datum ExecEvalAggref(AggrefExprState *aggref,
 			   ExprContext *econtext,
 			   bool *isNull, ExprDoneCond *isDone);
-static Datum ExecEvalGroupingFunc(GroupingFuncExprState *gstate,
-								  ExprContext *econtext,
-								  bool *isNull, ExprDoneCond *isDone);
-static Datum ExecEvalGrouping(ExprState *gstate,
-							  ExprContext *econtext,
-							  bool *isNull, ExprDoneCond *isDone);
-static Datum ExecEvalGroupId(ExprState *gstate,
-							 ExprContext *econtext,
-							 bool *isNull, ExprDoneCond *isDone);
 static Datum ExecEvalWindowFunc(WindowFuncExprState *wfunc,
 				   ExprContext *econtext,
 				   bool *isNull, ExprDoneCond *isDone);
@@ -568,77 +559,6 @@ ExecEvalAggref(AggrefExprState *aggref, ExprContext *econtext,
 
 	*isNull = econtext->ecxt_aggnulls[aggref->aggno];
 	return econtext->ecxt_aggvalues[aggref->aggno];
-}
-
-/*----------------------------------------------------------------
- *		ExecEvalGroupingFunc
- *
- *		Returns a Datum whose value is the value of a GROUPING_ID
- *		with respect to the given context.
- */
-static Datum 
-ExecEvalGroupingFunc(GroupingFuncExprState *gstate,
-					 ExprContext *econtext,
-					 bool *isNull, ExprDoneCond *isDone)
-{
-	uint64 grpid = 0;
-	ListCell *tmp;
-	int num_args = list_length(gstate->args);
-	int argno = 0;
-
-	if (isDone)
-		*isDone = ExprSingleResult;
-
-	foreach(tmp, gstate->args)
-	{
-		int arg = (int)intVal(lfirst(tmp));
-		int pos_in_grpcols = gstate->ngrpcols - arg - 1;
-		int pos_in_grpingfunc = num_args - argno - 1;
-
-		Assert(pos_in_grpcols >= 0 && pos_in_grpingfunc >= 0);
-
-		if (econtext->grouping & ( ((uint64)1) << pos_in_grpcols))
-			grpid |= ( ((uint64)1) << pos_in_grpingfunc);
-
-		argno++;
-	}
-
-	*isNull = false;
-	return Int64GetDatum(grpid);
-}
-
-/*----------------------------------------------------------------
- *		ExecEvalGrouping
- *
- *		Returns a Datum whose value is the value of a GROUPING
- *		with respect to the given context.
- */
-static Datum
-ExecEvalGrouping(ExprState *gstate, ExprContext *econtext,
-				 bool *isNull, ExprDoneCond *isDone)
-{
-	if (isDone)
-		*isDone = ExprSingleResult;
-
-	*isNull = false;
-	return Int64GetDatum(econtext->grouping);
-}
-
-/*----------------------------------------------------------------
- *		ExecEvalGroupId
- *
- *		Returns a Datum whose value is the value of a GROUP_ID
- *		with respect to the given context.
- */
-static Datum
-ExecEvalGroupId(ExprState *gstate, ExprContext *econtext,
-				bool *isNull, ExprDoneCond *isDone)
-{
-	if (isDone)
-		*isDone = ExprSingleResult;
-
-	*isNull = false;
-	return UInt32GetDatum(econtext->group_id);
 }
 
 /* ----------------------------------------------------------------
@@ -5228,31 +5148,6 @@ ExecInitExpr(Expr *node, PlanState *parent)
 					elog(ERROR, "Aggref found in non-Agg plan node");
 				}
 				state = (ExprState *) astate;
-			}
-			break;
-		case T_GroupingFunc:
-			{
-				GroupingFunc *gf = (GroupingFunc *)node;
-				GroupingFuncExprState *gstate = makeNode(GroupingFuncExprState);
-
-				gstate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalGroupingFunc;
-				gstate->args = gf->args;
-				gstate->ngrpcols = gf->ngrpcols;
-				state = (ExprState *) gstate;
-			}
-			break;
-		case T_Grouping:
-			{
-				ExprState *gstate = makeNode(ExprState);
-				gstate->evalfunc = (ExprStateEvalFunc) ExecEvalGrouping;
-				state = (ExprState *) gstate;
-			}
-			break;
-		case T_GroupId:
-			{
-				ExprState *gstate = makeNode(ExprState);
-				gstate->evalfunc = (ExprStateEvalFunc) ExecEvalGroupId;
-				state = (ExprState *) gstate;
 			}
 			break;
 		case T_WindowFunc:

@@ -46,12 +46,6 @@ extern AttrNumber *extract_grouping_cols(List *groupClause, List *tlist);
 extern bool grouping_is_sortable(List *groupClause);
 extern bool grouping_is_hashable(List *groupClause);
 
-
-extern void get_grouplist_colidx(List *sortClauses,
-								 List *targetList, int *numCols,
-								 AttrNumber **colIdx, Oid **sortops);
-
-extern List *get_grouplist_exprs(List *groupClause, List *targetList);
 extern void get_sortgroupclauses_tles(List *clauses, List *targetList,
 									  List **tles, List **sortops, List **eqops);
 

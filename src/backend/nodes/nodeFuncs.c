@@ -567,15 +567,6 @@ exprType(Node *expr)
 		case T_CurrentOfExpr:
 			type = BOOLOID;
 			break;
-		case T_GroupingFunc:
-			type = INT8OID;
-			break;
-		case T_Grouping:
-			type = INT8OID;
-			break;
-		case T_GroupId:
-			type = INT4OID;
-			break;
 		case T_DMLActionExpr:
 			type = INT4OID;
 			break;
@@ -1085,32 +1076,6 @@ expression_tree_mutator(Node *node,
 				return (Node *) newnode;
 			}
 			break;
-		case T_GroupingFunc:
-			{
-				GroupingFunc *newnode;
-
-				newnode = copyObject(node);
-				return (Node *)newnode;
-			}
-			break;
-		case T_Grouping:
-			{
-				Grouping *grping = (Grouping *) node;
-				Grouping *newnode;
-
-				FLATCOPY(newnode, grping, Grouping);
-				return (Node *) newnode;
-			}
-			break;
-		case T_GroupId:
-			{
-				GroupId *grpid = (GroupId *) node;
-				GroupId *newnode;
-
-				FLATCOPY(newnode, grpid, GroupId);
-				return (Node *) newnode;
-			}
-			break;
 		case T_TableFunctionScan:
 			{
 				TableFunctionScan *tablefunc = (TableFunctionScan *) node;
@@ -1158,15 +1123,6 @@ expression_tree_mutator(Node *node,
 				FLATCOPY(newnode, sortcl, SortGroupClause);
 
 				return (Node *) newnode;
-			}
-		case T_GroupingClause:
-			{
-				GroupingClause *grpingcl = (GroupingClause *) node;
-				GroupingClause *newnode;
-
-				FLATCOPY(newnode, grpingcl, GroupingClause);
-				MUTATE(newnode->groupsets, grpingcl->groupsets, List *);
-				return (Node *)newnode;
 			}
 		case T_ArrayRef:
 			{

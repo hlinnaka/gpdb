@@ -913,60 +913,6 @@ typedef struct Agg
 	AttrNumber *grpColIdx;		/* their indexes in the target list */
 	Oid		   *grpOperators;	/* equality operators to compare with */
 	long		numGroups;		/* estimated number of groups in input */
-	int			transSpace;		/* est storage per group for byRef transition values */
-
-	/*
-	 * The following is used by ROLLUP.
-	 */
-
-	/*
-	 * The number of grouping columns for this node whose values should be null for
-	 * this Agg node.
-	 */
-	int         numNullCols;
-
-    /*
-	 * Indicate the GROUPING value of input tuples for this Agg node.
-	 * For example of ROLLUP(a,b,c), there are four Agg nodes:
-	 *
-	 *   Agg(a,b,c) ==> Agg(a,b) ==> Agg(a) ==> Agg()
-	 *
-	 * The GROUPING value of input tuples for Agg(a,b,c) is 0, and the values
-	 * for Agg(a,b), Agg(a), Agg() are 0, 1, 3, respectively.
-	 *
-	 * We also use the value "-1" to indicate an Agg node is the final
-	 * one that brings back all rollup results from different segments. This final
-	 * Agg node is very similar to the non-rollup Agg node, except that we need
-	 * a way to know this to properly set GROUPING value during execution.
-	 *
-	 * For a non-rollup Agg node, this value is 0.
-	 */
-	uint64 inputGrouping;
-
-	/* The value of GROUPING for this rollup-aware node. */
-	uint64 grouping;
-
-	/*
-	 * Indicate if input tuples contain values for GROUPING column.
-	 *
-	 * This is used to determine if the node that generates inputs
-	 * for this Agg node is also an Agg node. That is, this Agg node
-	 * is one of the list of Agg nodes for a ROLLUP. One exception is
-	 * the first Agg node in the list, whose inputs do not have a
-	 * GROUPING column.
-	 */
-	bool inputHasGrouping;
-
-	/*
-	 * How many times the aggregates in this rollup level will be output
-	 * for a given query. Used only for ROLLUP queries.
-	 */
-	int         rollupGSTimes;
-
-	/*
-	 * Indicate if this Agg node is the last one in a rollup.
-	 */
-	bool        lastAgg;
 
 	/* Stream entries when out of memory instead of spilling to disk */
 	bool 		streaming;

@@ -1627,14 +1627,10 @@ set_upper_references(PlannerGlobal *glob, Plan *plan, int rtoffset)
 		TargetEntry *tle = (TargetEntry *) lfirst(l);
 		Node	   *newexpr;
 
-		if (IsA(tle->expr, Grouping) ||
-				IsA(tle->expr, GroupId))
-			newexpr = copyObject(tle->expr);
-		else
-			newexpr = fix_upper_expr(glob,
-					(Node *) tle->expr,
-					subplan_itlist,
-					rtoffset);
+		newexpr = fix_upper_expr(glob,
+								 (Node *) tle->expr,
+								 subplan_itlist,
+								 rtoffset);
 		tle = flatCopyTargetEntry(tle);
 		tle->expr = (Expr *) newexpr;
 		output_targetlist = lappend(output_targetlist, tle);
@@ -2220,7 +2216,7 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 		return fix_upper_expr_mutator((Node *) phv->phexpr, context);
 	}
 	/* Try matching more complex expressions too, if tlist has any */
-	if (context->subplan_itlist->has_non_vars && !IsA(node, GroupId))
+	if (context->subplan_itlist->has_non_vars)
 	{
 		newvar = search_indexed_tlist_for_non_var(node,
 												  context->subplan_itlist,
@@ -2317,10 +2313,6 @@ static bool
 fix_opfuncids_walker(Node *node, void *context)
 {
 	if (node == NULL)
-		return false;
-	if (IsA(node, Grouping))
-		return false;
-	if (IsA(node, GroupId))
 		return false;
 	if (IsA(node, OpExpr))
 		set_opfuncid((OpExpr *) node);

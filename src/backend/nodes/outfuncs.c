@@ -804,13 +804,6 @@ _outAgg(StringInfo str, Agg *node)
 		appendStringInfo(str, " %u", node->grpOperators[i]);
 
 	WRITE_LONG_FIELD(numGroups);
-	WRITE_INT_FIELD(transSpace);
-	WRITE_INT_FIELD(numNullCols);
-	WRITE_UINT64_FIELD(inputGrouping);
-	WRITE_UINT64_FIELD(grouping);
-	WRITE_BOOL_FIELD(inputHasGrouping);
-	WRITE_INT_FIELD(rollupGSTimes);
-	WRITE_BOOL_FIELD(lastAgg);
 	WRITE_BOOL_FIELD(streaming);
 }
 #endif /* COMPILING_BINARY_FUNCS */
@@ -3515,36 +3508,6 @@ _outSortGroupClause(StringInfo str, SortGroupClause *node)
 }
 
 static void
-_outGroupingClause(StringInfo str, GroupingClause *node)
-{
-	WRITE_NODE_TYPE("GROUPINGCLAUSE");
-
-	WRITE_ENUM_FIELD(groupType, GroupingType);
-	WRITE_NODE_FIELD(groupsets);
-}
-
-static void
-_outGroupingFunc(StringInfo str, GroupingFunc *node)
-{
-	WRITE_NODE_TYPE("GROUPINGFUNC");
-
-	WRITE_NODE_FIELD(args);
-	WRITE_INT_FIELD(ngrpcols);
-}
-
-static void
-_outGrouping(StringInfo str, Grouping *node __attribute__((unused)))
-{
-	WRITE_NODE_TYPE("GROUPING");
-}
-
-static void
-_outGroupId(StringInfo str, GroupId *node __attribute__((unused)))
-{
-	WRITE_NODE_TYPE("GROUPID");
-}
-
-static void
 _outWindowClause(StringInfo str, WindowClause *node)
 {
 	WRITE_NODE_TYPE("WINDOWCLAUSE");
@@ -4968,18 +4931,6 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_SortGroupClause:
 				_outSortGroupClause(str, obj);
-				break;
-			case T_GroupingClause:
-				_outGroupingClause(str, obj);
-				break;
-			case T_GroupingFunc:
-				_outGroupingFunc(str, obj);
-				break;
-			case T_Grouping:
-				_outGrouping(str, obj);
-				break;
-			case T_GroupId:
-				_outGroupId(str, obj);
 				break;
 			case T_WindowClause:
 				_outWindowClause(str, obj);

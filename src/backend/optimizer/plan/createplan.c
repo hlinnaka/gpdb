@@ -166,7 +166,9 @@ static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 										 Index scanrelid, int wtParam);
 static BitmapAnd *make_bitmap_and(List *bitmapplans);
 static BitmapOr *make_bitmap_or(List *bitmapplans);
-static List *flatten_grouping_list(List *groupcls);
+static Sort *make_sort(PlannerInfo *root, Plan *lefttree, int numCols,
+		  AttrNumber *sortColIdx, Oid *sortOperators, bool *nullsFirst,
+		  double limit_tuples);
 
 
 /*
@@ -979,11 +981,6 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path)
 								 groupColIdx,
 								 groupOperators,
 								 numGroups,
-								 0, /* num_nullcols */
-								 0, /* input_grouping */
-								 0, /* grouping */
-								 0, /* rollup_gs_times */
-								 0,
 								 0,
 								 subplan);
 	}
@@ -4432,7 +4429,7 @@ make_mergejoin(List *tlist,
  * arrays already.	limit_tuples is as for cost_sort (in particular, pass
  * -1 if no limit)
  */
-Sort *
+static Sort *
 make_sort(PlannerInfo *root, Plan *lefttree, int numCols,
 		  AttrNumber *sortColIdx, Oid *sortOperators, bool *nullsFirst,
 		  double limit_tuples)
@@ -4817,112 +4814,39 @@ Sort *
 make_sort_from_groupcols(PlannerInfo *root,
 						 List *groupcls,
 						 AttrNumber *grpColIdx,
-						 bool appendGrouping,
 						 Plan *lefttree)
 {
 	List	   *sub_tlist = lefttree->targetlist;
-	int			grpno = 0;
 	ListCell   *l;
 	int			numsortkeys;
 	AttrNumber *sortColIdx;
 	Oid		   *sortOperators;
 	bool	   *nullsFirst;
-	List	   *flat_groupcls;
 
-	/*
-	 * We will need at most list_length(groupcls) sort columns; possibly less
-	 */
-	numsortkeys = num_distcols_in_grouplist(groupcls);
-
-	if (appendGrouping)
-		numsortkeys++;
-
+	/* Convert list-ish representation to arrays wanted by executor */
+	numsortkeys = list_length(groupcls);
 	sortColIdx = (AttrNumber *) palloc(numsortkeys * sizeof(AttrNumber));
 	sortOperators = (Oid *) palloc(numsortkeys * sizeof(Oid));
 	nullsFirst = (bool *) palloc(numsortkeys * sizeof(bool));
 
 	numsortkeys = 0;
-
-	flat_groupcls = flatten_grouping_list(groupcls);
-
-	foreach(l, flat_groupcls)
+	foreach(l, groupcls)
 	{
 		SortGroupClause *grpcl = (SortGroupClause *) lfirst(l);
-		TargetEntry *tle = get_tle_by_resno(sub_tlist, grpColIdx[grpno]);
+		TargetEntry *tle = get_tle_by_resno(sub_tlist, grpColIdx[numsortkeys]);
 
-		grpno++;
+		if (!tle)
+			elog(ERROR, "could not retrieve tle for sort-from-groupcols");
 
-		/*
-		 * Check for the possibility of duplicate group-by clauses --- the
-		 * parser should have removed 'em, but no point in sorting
-		 * redundantly.
-		 */
-		numsortkeys = add_sort_column(tle->resno, grpcl->sortop,
-									  grpcl->nulls_first,
-									  numsortkeys,
-									  sortColIdx, sortOperators, nullsFirst);
+		sortColIdx[numsortkeys] = tle->resno;
+		sortOperators[numsortkeys] = grpcl->sortop;
+		nullsFirst[numsortkeys] = grpcl->nulls_first;
+		numsortkeys++;
 	}
-
-	if (appendGrouping)
-	{
-		Oid			lt_opr;
-
-		/* Grouping will be the last entry in grpColIdx */
-		TargetEntry *tle = get_tle_by_resno(sub_tlist, grpColIdx[grpno]);
-
-		if (tle->resname == NULL)
-			tle->resname = "grouping";
-
-		get_sort_group_operators(exprType((Node *) tle->expr),
-								 true, false, false,
-								 &lt_opr, NULL, NULL);
-
-		numsortkeys = add_sort_column(tle->resno, lt_opr, false,
-						 numsortkeys, sortColIdx, sortOperators, nullsFirst);
-	}
-
-
-	Assert(numsortkeys > 0);
 
 	return make_sort(root, lefttree, numsortkeys,
-					 sortColIdx, sortOperators, nullsFirst, -1.0);
-}
-
-/*
- * Reconstruct a new list of GroupClause based on the given grpCols.
- *
- * The original grouping clauses may contain grouping extensions. This function
- * extract the raw grouping attributes and construct a list of GroupClauses
- * that contains only ordinary grouping.
- */
-List *
-reconstruct_group_clause(List *orig_groupClause, List *tlist, AttrNumber *grpColIdx, int numcols)
-{
-	List	   *flat_groupcls;
-	List	   *new_groupClause = NIL;
-	int			grpno;
-
-	flat_groupcls = flatten_grouping_list(orig_groupClause);
-	for (grpno = 0; grpno < numcols; grpno++)
-	{
-		ListCell   *lc = NULL;
-		TargetEntry *te;
-		SortGroupClause *gc = NULL;
-
-		te = get_tle_by_resno(tlist, grpColIdx[grpno]);
-
-		foreach(lc, flat_groupcls)
-		{
-			gc = (SortGroupClause *) lfirst(lc);
-
-			if (gc->tleSortGroupRef == te->ressortgroupref)
-				break;
-		}
-		if (lc != NULL)
-			new_groupClause = lappend(new_groupClause, gc);
-	}
-
-	return new_groupClause;
+					 sortColIdx, sortOperators,
+					 nullsFirst, -1.0);
 }
 
 /* --------------------------------------------------------------------
@@ -5061,10 +4985,8 @@ make_agg(PlannerInfo *root, List *tlist, List *qual,
 		 AggStrategy aggstrategy,
 		 bool streaming,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
-		 long numGroups, int num_nullcols,
-		 uint64 input_grouping, uint64 grouping,
-		 int rollupGSTimes,
-		 int numAggs, int transSpace,
+		 long numGroups,
+		 int numAggs,
 		 Plan *lefttree)
 {
 	Agg		   *node = makeNode(Agg);
@@ -5075,21 +4997,14 @@ make_agg(PlannerInfo *root, List *tlist, List *qual,
 	node->grpColIdx = grpColIdx;
 	node->grpOperators = grpOperators;
 	node->numGroups = numGroups;
-	node->transSpace = transSpace;
-	node->numNullCols = num_nullcols;
-	node->inputGrouping = input_grouping;
-	node->grouping = grouping;
-	node->inputHasGrouping = false;
-	node->rollupGSTimes = rollupGSTimes;
-	node->lastAgg = false;
 	node->streaming = streaming;
 
 	copy_plan_costsize(plan, lefttree); /* only care about copying size */
 
 	add_agg_cost(root, plan, tlist, qual, aggstrategy, streaming,
 				 numGroupCols, grpColIdx,
-				 numGroups, num_nullcols,
-				 numAggs, transSpace);
+				 numGroups,
+				 numAggs);
 
 	plan->qual = qual;
 	plan->targetlist = tlist;
@@ -5116,8 +5031,8 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 			 AggStrategy aggstrategy,
 			 bool streaming,
 			 int numGroupCols, AttrNumber *grpColIdx,
-			 long numGroups, int num_nullcols,
-			 int numAggs, int transSpace)
+			 long numGroups,
+			 int numAggs)
 {
 	Path		agg_path;		/* dummy for result of cost_agg */
 	QualCost	qual_cost;
@@ -5125,7 +5040,6 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 	double entrywidth;
 
 	UnusedArg(grpColIdx);
-	UnusedArg(num_nullcols);
 
     /* Solution for MPP-11942
      * Before this fix, we calculated the width from the sub_tlist which
@@ -5145,7 +5059,7 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 		/* The following estimate is very rough but good enough for planning. */
 		entrywidth = agg_hash_entrywidth(numAggs,
 								   sizeof(HeapTupleData) + sizeof(HeapTupleHeaderData) + plan->plan_width,
-								   transSpace);
+										 0 /* FIXME: was transspace */);
 		if (!calcHashAggTableSizes(global_work_mem(root),
 								   numGroups,
 								   entrywidth,
@@ -5653,95 +5567,3 @@ plan_pushdown_tlist(PlannerInfo *root, Plan *plan, List *tlist)
 	}
 	return plan;
 }	/* plan_pushdown_tlist */
-
-/*
- * Return true if there is the same tleSortGroupRef in an entry in glist
- * as the tleSortGroupRef in gc.
- */
-static bool
-groupcol_in_list(SortGroupClause *gc, List *glist)
-{
-	bool		found = false;
-	ListCell   *lc;
-
-	foreach(lc, glist)
-	{
-		SortGroupClause *entry = (SortGroupClause *) lfirst(lc);
-
-		Assert(IsA(entry, SortGroupClause));
-		if (gc->tleSortGroupRef == entry->tleSortGroupRef)
-		{
-			found = true;
-			break;
-		}
-	}
-	return found;
-}
-
-
-/*
- * Construct a list of GroupClauses from the transformed GROUP BY clause.
- * This list of GroupClauses has unique tleSortGroupRefs.
- */
-static List *
-flatten_grouping_list(List *groupcls)
-{
-	List	   *result = NIL;
-	ListCell   *gc;
-
-	foreach(gc, groupcls)
-	{
-		Node	   *node = (Node *) lfirst(gc);
-
-		if (node == NULL)
-			continue;
-
-		Assert(IsA(node, GroupingClause) ||
-			   IsA(node, SortGroupClause) ||
-			   IsA(node, List));
-
-		if (IsA(node, GroupingClause))
-		{
-			List	   *groupsets = ((GroupingClause *) node)->groupsets;
-			List	   *flatten_groupsets =
-			flatten_grouping_list(groupsets);
-			ListCell   *lc;
-
-			foreach(lc, flatten_groupsets)
-			{
-				SortGroupClause *flatten_gc = (SortGroupClause *) lfirst(lc);
-
-				Assert(IsA(flatten_gc, SortGroupClause));
-
-				if (!groupcol_in_list(flatten_gc, result))
-					result = lappend(result, flatten_gc);
-			}
-
-		}
-		else if (IsA(node, List))
-		{
-			List	   *flatten_groupsets =
-			flatten_grouping_list((List *) node);
-			ListCell   *lc;
-
-			foreach(lc, flatten_groupsets)
-			{
-				SortGroupClause *flatten_gc = (SortGroupClause *) lfirst(lc);
-
-				Assert(IsA(flatten_gc, SortGroupClause));
-
-				if (!groupcol_in_list(flatten_gc, result))
-					result = lappend(result, flatten_gc);
-			}
-		}
-		else
-		{
-			Assert(IsA(node, SortGroupClause));
-
-			if (!groupcol_in_list((SortGroupClause *) node, result))
-				result = lappend(result, node);
-		}
-	}
-
-	return result;
-}

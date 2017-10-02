@@ -301,7 +301,6 @@ CTranslatorQueryToDXL::CheckUnsupportedNodeTypes
 		{T_FieldSelect, GPOS_WSZ_LIT("FIELDSELECT")},
 		{T_FieldStore, GPOS_WSZ_LIT("FIELDSTORE")},
 		{T_CoerceToDomainValue, GPOS_WSZ_LIT("COERCETODOMAINVALUE")},
-		{T_GroupId, GPOS_WSZ_LIT("GROUPID")},
 		{T_CurrentOfExpr, GPOS_WSZ_LIT("CURRENT OF")},
 	};
 
@@ -3715,28 +3714,7 @@ CTranslatorQueryToDXL::PdxlnProjectNullsForGroupingSets
 
 		ULONG ulColId = 0;
 		
-		if (IsA(pte->expr, GroupingFunc))
-		{
-			ulColId = m_pidgtorCol->UlNextId();
-			CDXLNode *pdxlnGroupingFunc = PdxlnGroupingFunc(pte->expr, pbs, phmululGrpColPos);
-			CMDName *pmdnameAlias = NULL;
-
-			if (NULL == pte->resname)
-			{
-				CWStringConst strUnnamedCol(GPOS_WSZ_LIT("grouping"));
-				pmdnameAlias = GPOS_NEW(m_pmp) CMDName(m_pmp, &strUnnamedCol);
-			}
-			else
-			{
-				CWStringDynamic *pstrAlias = CDXLUtils::PstrFromSz(m_pmp, pte->resname);
-				pmdnameAlias = GPOS_NEW(m_pmp) CMDName(m_pmp, pstrAlias);
-				GPOS_DELETE(pstrAlias);
-			}
-			CDXLNode *pdxlnPrEl = GPOS_NEW(m_pmp) CDXLNode(m_pmp, GPOS_NEW(m_pmp) CDXLScalarProjElem(m_pmp, ulColId, pmdnameAlias), pdxlnGroupingFunc);
-			pdxlnPrL->AddChild(pdxlnPrEl);
-			StoreAttnoColIdMapping(phmiulOutputCols, ulResno, ulColId);
-		}
-		else if (!fGroupingCol && !IsA(pte->expr, Aggref))
+		if (!fGroupingCol && !IsA(pte->expr, Aggref))
 		{
 			OID oidType = gpdb::OidExprType((Node *) pte->expr);
 
@@ -3795,38 +3773,6 @@ CTranslatorQueryToDXL::PdxlnProjectGroupingFuncs
 
 	// construct a proj element node for those non-aggregate entries in the target list which
 	// are not included in the grouping set
-	ListCell *plcTE = NULL;
-	ForEach (plcTE, plTargetList)
-	{
-		TargetEntry *pte = (TargetEntry *) lfirst(plcTE);
-		GPOS_ASSERT(IsA(pte, TargetEntry));
-
-		ULONG ulResno = pte->resno;
-
-		if (IsA(pte->expr, GroupingFunc))
-		{
-			ULONG ulColId = m_pidgtorCol->UlNextId();
-			CDXLNode *pdxlnGroupingFunc = PdxlnGroupingFunc(pte->expr, pbs, phmululGrpColPos);
-			CMDName *pmdnameAlias = NULL;
-
-			if (NULL == pte->resname)
-			{
-				CWStringConst strUnnamedCol(GPOS_WSZ_LIT("grouping"));
-				pmdnameAlias = GPOS_NEW(m_pmp) CMDName(m_pmp, &strUnnamedCol);
-			}
-			else
-			{
-				CWStringDynamic *pstrAlias = CDXLUtils::PstrFromSz(m_pmp, pte->resname);
-				pmdnameAlias = GPOS_NEW(m_pmp) CMDName(m_pmp, pstrAlias);
-				GPOS_DELETE(pstrAlias);
-			}
-			CDXLNode *pdxlnPrEl = GPOS_NEW(m_pmp) CDXLNode(m_pmp, GPOS_NEW(m_pmp) CDXLScalarProjElem(m_pmp, ulColId, pmdnameAlias), pdxlnGroupingFunc);
-			pdxlnPrL->AddChild(pdxlnPrEl);
-			StoreAttnoColIdMapping(phmiulOutputCols, ulResno, ulColId);
-			AddSortingGroupingColumn(pte, phmiulSortgrouprefColId, ulColId);
-		}
-	}
-
 	if (0 == pdxlnPrL->UlArity())
 	{
 		// no project necessary
@@ -4004,59 +3950,6 @@ CTranslatorQueryToDXL::PdxlnScConstValueTrue()
 	gpdb::GPDBFree(pconst);
 
 	return pdxln;
-}
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorQueryToDXL::PdxlnGroupingFunc
-//
-//	@doc:
-//		Translate grouping func
-//
-//---------------------------------------------------------------------------
-CDXLNode *
-CTranslatorQueryToDXL::PdxlnGroupingFunc
-	(
-	const Expr *pexpr,
-	CBitSet *pbs,
-	HMUlUl *phmululGrpColPos
-	)
-	const
-{
-	GPOS_ASSERT(IsA(pexpr, GroupingFunc));
-	GPOS_ASSERT(NULL != phmululGrpColPos);
-
-	const GroupingFunc *pgroupingfunc = (GroupingFunc *) pexpr;
-
-	if (1 < gpdb::UlListLength(pgroupingfunc->args))
-	{
-		GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiQuery2DXLUnsupportedFeature, GPOS_WSZ_LIT("Grouping function with multiple arguments"));
-	}
-	
-	Node *pnode = (Node *) gpdb::PvListNth(pgroupingfunc->args, 0);
-	ULONG ulGroupingIndex = gpdb::IValue(pnode); 
-		
-	// generate a constant value for the result of the grouping function as follows:
-	// if the grouping function argument is a group-by column, result is 0
-	// otherwise, the result is 1 
-	LINT lValue = 0;
-	
-	ULONG *pulSortGrpRef = phmululGrpColPos->PtLookup(&ulGroupingIndex);
-	GPOS_ASSERT(NULL != pulSortGrpRef);
-	BOOL fGroupingCol = pbs->FBit(*pulSortGrpRef);	
-	if (!fGroupingCol)
-	{
-		// not a grouping column
-		lValue = 1; 
-	}
-
-	const IMDType *pmdtype = m_pmda->PtMDType<IMDTypeInt8>(m_sysid);
-	CMDIdGPDB *pmdidMDC = CMDIdGPDB::PmdidConvert(pmdtype->Pmdid());
-	CMDIdGPDB *pmdid = GPOS_NEW(m_pmp) CMDIdGPDB(*pmdidMDC);
-	
-	CDXLDatum *pdxldatum = GPOS_NEW(m_pmp) CDXLDatumInt8(m_pmp, pmdid, false /* fNull */, lValue);
-	CDXLScalarConstValue *pdxlop = GPOS_NEW(m_pmp) CDXLScalarConstValue(m_pmp, pdxldatum);
-	return GPOS_NEW(m_pmp) CDXLNode(m_pmp, pdxlop);
 }
 
 //---------------------------------------------------------------------------

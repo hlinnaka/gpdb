@@ -66,7 +66,6 @@ static void check_ungrouped_columns(Node *node, ParseState *pstate,
 						List *groupClauses, bool have_non_var_grouping);
 static bool check_ungrouped_columns_walker(Node *node,
 							   check_ungrouped_columns_context *context);
-static List* get_groupclause_exprs(Node *grpcl, List *targetList);
 
 
 /*
@@ -821,28 +820,13 @@ parseCheckAggregates(ParseState *pstate, Query *qry)
 	 */
 	foreach(l, qry->groupClause)
 	{
-		Node	   *grpcl = lfirst(l);
-		List	   *exprs;
-		ListCell   *l2;
+		SortGroupClause *grpcl = (SortGroupClause *) lfirst(l);
+		Node	   *expr;
 
-		if (grpcl == NULL)
-			continue;
-
-		Assert(IsA(grpcl, SortGroupClause) || IsA(grpcl, GroupingClause));
-
-		exprs = get_groupclause_exprs(grpcl, qry->targetList);
-
-		foreach(l2, exprs)
-		{
-			Node	   *expr = (Node *) lfirst(l2);
-
-			// FIXME: Should this go into check_agg_arguments now?
-			if (checkExprHasGroupExtFuncs(expr))
-				ereport(ERROR,
-						(errcode(ERRCODE_GROUPING_ERROR),
-						 errmsg("grouping() or group_id() not allowed in GROUP BY clause")));
-			groupClauses = lcons(expr, groupClauses);
-		}
+		expr = get_sortgroupclause_expr(grpcl, qry->targetList);
+		if (expr == NULL)
+			continue;			/* probably cannot happen */
+		groupClauses = lcons(expr, groupClauses);
 	}
 
 	/*
@@ -1333,108 +1317,4 @@ build_aggregate_fnexprs(Oid *agg_input_types,
 											 args,
 											 COERCE_DONTCARE);
 	}
-}
-
-/*
- * get_groupclause_exprs -
- *     Return a list of expressions appeared in a given GroupClause or
- *     GroupingClause.
- */
-List*
-get_groupclause_exprs(Node *grpcl, List *targetList)
-{
-	List *result = NIL;
-	
-	if ( !grpcl )
-		return result;
-
-	Assert(IsA(grpcl, SortGroupClause) ||
-		   IsA(grpcl, GroupingClause) ||
-		   IsA(grpcl, List));
-
-	if (IsA(grpcl, SortGroupClause))
-	{
-		Node *node = get_sortgroupclause_expr((SortGroupClause *) grpcl, targetList);
-		result = lappend(result, node);
-	}
-
-	else if (IsA(grpcl, GroupingClause))
-	{
-		ListCell* l;
-		GroupingClause *gc = (GroupingClause*)grpcl;
-
-		foreach(l, gc->groupsets)
-		{
-			result = list_concat(result,
-								 get_groupclause_exprs((Node*)lfirst(l), targetList));
-		}
-	}
-
-	else
-	{
-		List *exprs = (List *)grpcl;
-		ListCell *lc;
-
-		foreach (lc, exprs)
-		{
-			result = list_concat(result, get_groupclause_exprs((Node *)lfirst(lc),
-															   targetList));
-		}
-	}
-
-	return result;
-}
-
-static bool
-checkExprHasGroupExtFuncs_walker(Node *node, checkHasGroupExtFuncs_context *context)
-{
-	if (node == NULL)
-		return false;
-	if (IsA(node, GroupingFunc) || IsA(node, GroupId))
-	{
-		/* XXX do GroupingFunc or GroupId need 'levelsup'? */
-		return true;		/* abort the tree traversal and return true */
-	}
-	if (IsA(node, Query))
-	{
-		/* Recurse into subselects */
-		bool		result;
-
-		context->sublevels_up++;
-		result = query_tree_walker((Query *) node,
-								   checkExprHasGroupExtFuncs_walker,
-								   (void *) context, 0);
-		context->sublevels_up--;
-		return result;
-	}
-	return expression_tree_walker(node, checkExprHasGroupExtFuncs_walker,
-								  (void *) context);
-}
-
-/*
- * checkExprHasGroupExtFuncs -
- *  Check if an expression contains a grouping() or group_id() call.
- *
- * 
- * The objective of this routine is to detect whether there are window functions
- * belonging to the initial query level. Window functions belonging to 
- * subqueries or outer queries do NOT cause a true result.  We must recurse into
- * subqueries to detect outer-reference window functions that logically belong 
- * to the initial query level.
- *
- * Compare this function to checkExprHasAggs().
- */
-bool
-checkExprHasGroupExtFuncs(Node *node)
-{
-	checkHasGroupExtFuncs_context context;
-	context.sublevels_up = 0;
-	
-	/*
-	 * Must be prepared to start with a Query or a bare expression tree; if
-	 * it's a Query, we don't want to increment sublevels_up.
-	 */
-	return query_or_expression_tree_walker(node,
-										   checkExprHasGroupExtFuncs_walker,
-										   (void *) &context, 0);	
 }

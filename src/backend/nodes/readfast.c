@@ -1929,13 +1929,6 @@ _readAgg(void)
 	READ_INT_ARRAY(grpColIdx, local_node->numCols, AttrNumber);
 	READ_OID_ARRAY(grpOperators, local_node->numCols);
 	READ_LONG_FIELD(numGroups);
-	READ_INT_FIELD(transSpace);
-	READ_INT_FIELD(numNullCols);
-	READ_UINT64_FIELD(inputGrouping);
-	READ_UINT64_FIELD(grouping);
-	READ_BOOL_FIELD(inputHasGrouping);
-	READ_INT_FIELD(rollupGSTimes);
-	READ_BOOL_FIELD(lastAgg);
 	READ_BOOL_FIELD(streaming);
 
 	READ_DONE();
@@ -3278,18 +3271,6 @@ readNodeBinary(void)
 				break;
 			case T_SortGroupClause:
 				return_value = _readSortGroupClause();
-				break;
-			case T_GroupingClause:
-				return_value = _readGroupingClause();
-				break;
-			case T_GroupingFunc:
-				return_value = _readGroupingFunc();
-				break;
-			case T_Grouping:
-				return_value = _readGrouping();
-				break;
-			case T_GroupId:
-				return_value = _readGroupId();
 				break;
 			case T_DMLActionExpr:
 				return_value = _readDMLActionExpr();

@@ -69,7 +69,7 @@ CQueryMutators::FNeedsPrLNormalization
 
 		// Normalize when there is an expression that is neither used for grouping
 		// nor is an aggregate function
-		if (!IsA(pte->expr, Aggref) && !IsA(pte->expr, GroupingFunc) && !CTranslatorUtils::FGroupingColumn( (Node*) pte->expr, pquery->groupClause, pquery->targetList))
+		if (!IsA(pte->expr, Aggref) && !CTranslatorUtils::FGroupingColumn( (Node*) pte->expr, pquery->groupClause, pquery->targetList))
 		{
 			return true;
 		}
@@ -99,7 +99,7 @@ CQueryMutators::FNeedsToFallback
 		return false;
 	}
 
-	if (IsA(pnode, Const) || IsA(pnode, Aggref) || IsA(pnode, GroupingFunc) || IsA(pnode, SubLink))
+	if (IsA(pnode, Const) || IsA(pnode, Aggref) || IsA(pnode, SubLink))
 	{
 		return false;
 	}
@@ -203,7 +203,7 @@ CQueryMutators::PqueryNormalizeGrpByPrL
 			pte->expr = (Expr*) PnodeGrpbyPrLMutator( (Node*) pte->expr, &ctxGbPrLMutator);
 			GPOS_ASSERT
 				(
-				!IsA(pte->expr, Aggref) && !IsA(pte->expr, GroupingFunc) &&
+				!IsA(pte->expr, Aggref) &&
 				"New target list entry should not contain any Aggrefs"
 				);
 		}
@@ -536,28 +536,6 @@ CQueryMutators::PnodeGrpbyPrLMutator
 		return (Node*) pvarNew;
 	}
 
-	if (IsA(pnode, GroupingFunc))
-	{
-		Node *pnodeCopy = (Node *) gpdb::PvCopyObject(pnode);
-
-		const ULONG ulAttno = gpdb::UlListLength(pctxGrpByMutator->m_plTENewGroupByQuery) + 1;
-		TargetEntry *pte = PteAggregateExpr(pctxGrpByMutator->m_pmp, pctxGrpByMutator->m_pmda, pnodeCopy, ulAttno);
-
-		// Add a new target entry to the query
-		pctxGrpByMutator->m_plTENewGroupByQuery = gpdb::PlAppendElement(pctxGrpByMutator->m_plTENewGroupByQuery, pte);
-
-		Var *pvarNew = gpdb::PvarMakeVar
-								(
-								1, // varno
-								(AttrNumber) ulAttno,
-								gpdb::OidExprType(pnode),
-								gpdb::IExprTypeMod(pnode),
-								0 // query levelsup
-								);
-
-		return (Node*) pvarNew;
-	}
-
 	if (!pctxGrpByMutator->m_fAggregateArg)
 	{
 		// if we find a target entry in the new derived table then return the appropriate var
@@ -679,11 +657,6 @@ CQueryMutators::PnodeGrpColMutator
 		paggref->args = plArgsNew;
 
 		return (Node*) paggref;
-	}
-
-	if (IsA(pnode, GroupingFunc))
-	{
-		return (Node *) gpdb::PvCopyObject(pnode);
 	}
 
 	if (IsA(pnode, SubLink))
@@ -833,15 +806,10 @@ CQueryMutators::PteAggregateExpr
 	ULONG ulAttno
 	)
 {
-	GPOS_ASSERT(IsA(pnode, Aggref) || IsA(pnode, GroupingFunc));
+	GPOS_ASSERT(IsA(pnode, Aggref));
 
 	// get the function/aggregate name
 	CHAR *szName = NULL;
-	if (IsA(pnode, GroupingFunc))
-	{
-		szName = CTranslatorUtils::SzFromWsz(GPOS_WSZ_LIT("grouping"));
-	}
-	else
 	{
 		Aggref *paggref = (Aggref*) pnode;
 
@@ -903,13 +871,6 @@ CQueryMutators::PnodeHavingQualMutator
 		if (NULL != pnodeFound)
 		{
 			return pnodeFound;
-		}
-
-		if (IsA(pnode, GroupingFunc))
-		{
-			// create a new entry in the derived table and return its corresponding var
-			Node *pnodeCopy = (Node*) gpdb::PvCopyObject(pnode);
-			return (Node *) PvarInsertIntoDerivedTable(pnodeCopy, pctxHavingQualMutator);
 		}
 	}
 
@@ -1073,7 +1034,7 @@ CQueryMutators::PvarInsertIntoDerivedTable
 {
 	GPOS_ASSERT(NULL != pnode);
 	GPOS_ASSERT(NULL != context);
-	GPOS_ASSERT(IsA(pnode, Aggref) || IsA(pnode, GroupingFunc));
+	GPOS_ASSERT(IsA(pnode, Aggref));
 
 	const ULONG ulAttno = gpdb::UlListLength(context->m_plTENewGroupByQuery) + 1;
 	TargetEntry *pte = PteAggregateExpr(context->m_pmp, context->m_pmda, (Node *) pnode, ulAttno);

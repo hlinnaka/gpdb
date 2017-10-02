@@ -34,8 +34,6 @@
 #include "cdb/cdbpath.h"        /* cdbpath_rows() */
 #include "cdb/cdbvars.h"
 
-static Bitmapset *distcols_in_groupclause(List *gc, Bitmapset *bms);
-
 /*
  * query_planner
  *	  Generate a path (that is, a simplified plan) for a basic query,
@@ -309,14 +307,11 @@ query_planner(PlannerInfo *root, List *tlist,
 	{
 		List	   *groupExprs;
 
-		groupExprs = get_grouplist_exprs(parse->groupClause,
-										 parse->targetList);
-		if (groupExprs == NULL)
-			*num_groups = 1;
-		else
-			*num_groups = estimate_num_groups(root,
-											  groupExprs,
-											  final_rel->rows);
+		groupExprs = get_sortgrouplist_exprs(parse->groupClause,
+											 parse->targetList);
+		*num_groups = estimate_num_groups(root,
+										  groupExprs,
+										  final_rel->rows);
 
 		/*
 		 * In GROUP BY mode, an absolute LIMIT is relative to the number of
@@ -439,69 +434,6 @@ query_planner(PlannerInfo *root, List *tlist,
 
 	*cheapest_path = cheapestpath;
 	*sorted_path = sortedpath;
-}
-
-
-/*
- * distcols_in_groupclause -
- *     Return all distinct tleSortGroupRef values in a GROUP BY clause.
- *
- * If this is a GROUPING_SET, this function is called recursively to
- * find the tleSortGroupRef values for underlying grouping columns.
- */
-static Bitmapset *
-distcols_in_groupclause(List *gc, Bitmapset *bms)
-{
-	ListCell *l;
-
-	foreach(l, gc)
-	{
-		Node *node = lfirst(l);
-
-		if (node == NULL)
-			continue;
-
-		Assert(IsA(node, SortGroupClause) ||
-			   IsA(node, List) ||
-			   IsA(node, GroupingClause));
-
-		if (IsA(node, SortGroupClause))
-		{
-			bms = bms_add_member(bms, ((SortGroupClause *) node)->tleSortGroupRef);
-		}
-
-		else if (IsA(node, List))
-		{
-			bms = distcols_in_groupclause((List *)node, bms);
-		}
-
-		else if (IsA(node, GroupingClause))
-		{
-			List *groupsets = ((GroupingClause *)node)->groupsets;
-			bms = distcols_in_groupclause(groupsets, bms);
-		}
-	}
-
-	return bms;
-}
-
-/*
- * num_distcols_in_grouplist -
- *      Return number of distinct columns/expressions that appeared in
- *      a list of GroupClauses or GroupingClauses.
- */
-int
-num_distcols_in_grouplist(List *gc)
-{
-	Bitmapset *bms = NULL;
-	int num_cols;
-
-	bms = distcols_in_groupclause(gc, bms);
-
-	num_cols = bms_num_members(bms);
-	bms_free(bms);
-
-	return num_cols;
 }
 
 /**

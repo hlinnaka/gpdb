@@ -757,7 +757,7 @@ create_agg_hash_table(AggState *aggstate)
 	keywidth = est_hash_tuple_size(aggstate->ss.ss_ScanTupleSlot, aggstate->hash_needed);
 	keywidth = Min(keywidth, agg->plan.plan_width);
 
-	entrywidth = agg_hash_entrywidth(aggstate->numaggs, keywidth, agg->transSpace);
+	entrywidth = agg_hash_entrywidth(aggstate->numaggs, keywidth, 100 /* FIXME: was transspace */);
 
 	if (!calcHashAggTableSizes(1024.0 * (double) operatorMemKB,
 							agg->numGroups,

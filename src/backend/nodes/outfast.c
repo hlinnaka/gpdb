@@ -427,14 +427,7 @@ _outAgg(StringInfo str, Agg *node)
 	WRITE_OID_ARRAY(grpOperators, node->numCols);
 
 	WRITE_LONG_FIELD(numGroups);
-	WRITE_INT_FIELD(transSpace);
 
-	WRITE_INT_FIELD(numNullCols);
-	WRITE_UINT64_FIELD(inputGrouping);
-	WRITE_UINT64_FIELD(grouping);
-	WRITE_BOOL_FIELD(inputHasGrouping);
-	WRITE_INT_FIELD(rollupGSTimes);
-	WRITE_BOOL_FIELD(lastAgg);
 	WRITE_BOOL_FIELD(streaming);
 }
 
@@ -1769,18 +1762,6 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_SortGroupClause:
 				_outSortGroupClause(str, obj);
-				break;
-			case T_GroupingClause:
-				_outGroupingClause(str, obj);
-				break;
-			case T_GroupingFunc:
-				_outGroupingFunc(str, obj);
-				break;
-			case T_Grouping:
-				_outGrouping(str, obj);
-				break;
-			case T_GroupId:
-				_outGroupId(str, obj);
 				break;
 			case T_WindowClause:
 				_outWindowClause(str, obj);

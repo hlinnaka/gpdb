@@ -127,7 +127,6 @@ static Query *substitute_actual_srf_parameters(Query *expr,
 								 int nargs, List *args);
 static Node *substitute_actual_srf_parameters_mutator(Node *node,
 						  substitute_actual_srf_parameters_context *context);
-static bool contain_grouping_clause_walker(Node *node, void *context);
 
 
 /*****************************************************************************
@@ -399,9 +398,6 @@ contain_agg_clause_walker(Node *node, void *context)
 		Assert(((Aggref *) node)->agglevelsup == 0);
 		return true;			/* abort the tree traversal and return true */
 	}
-
-	if (IsA(node, GroupId) || IsA(node, GroupingFunc))
-		return true;
 
 	Assert(!IsA(node, SubLink));
 	return expression_tree_walker(node, contain_agg_clause_walker, context);
@@ -4618,49 +4614,6 @@ flatten_join_alias_var_optimizer(Query *query, int queryLevel)
 	}
 
     return queryNew;
-}
-
-/* 
- * Does grp contain GroupingClause or not? Useful for indentifying use of
- * ROLLUP, CUBE and grouping sets.
- */
-bool
-contain_extended_grouping(List *grp)
-{
-	return contain_grouping_clause_walker((Node *)grp, NULL);
-}
-
-static bool
-contain_grouping_clause_walker(Node *node, void *context)
-{
-	if (node == NULL)
-		return false;
-	else if (IsA(node, GroupingClause))
-		return true;			/* abort the tree traversal and return true */
-	
-	Assert(!IsA(node, SubLink));
-	return expression_tree_walker(node, contain_grouping_clause_walker, 
-								  context);
-}
-
-/*
- * is_grouping_extension -
- *     Return true if a given grpsets contain multiple grouping sets.
- *
- * This function also returns false when a query has a single unique
- * groupig set appearing multiple times.
- */
-bool
-is_grouping_extension(CanonicalGroupingSets *grpsets)
-{
-	if (grpsets == NULL ||
-		grpsets->ngrpsets == 0)
-		return false;
-
-	if (grpsets->ngrpsets == 1)
-		return false;
-
-	return true;
 }
 
 /**

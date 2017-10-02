@@ -270,60 +270,6 @@ typedef struct Aggref
 } Aggref;
 
 
-/*
- * Grouping: describe the hidden GROUPING column for grouping extensions.
- *
- * Defined for making it easily to distinguish this column with others.
- *
- * Used with GroupingFunc to distinguish 'null' values that are created
- * through grouping with those that are in the raw data. See also GroupingFunc
- * for more details.
- */
-typedef struct Grouping
-{
-	Expr        xpr;
-} Grouping;
-
-/*
- * GroupId -
- *    representation of the hidden GROUP_ID column for grouping extensions.
- *
- * Defined to make it easy to distinguish this column from others.
- *
- * This is used to determine whether output tuples are coming from
- * duplicate grouping sets. For example, a table
- *
- *    test (a integer, b integer)
- *
- * has two rows:
- *
- *       (1,2), (1,2).
- *
- * Consider a rollup clause "rollup(a),a", which contains a grouping
- * set (a) twice. Therefore, the query
- *
- *    select a,sum(b),group_id() from test group by rollup(a),a;
- *
- * returns two rows:
- *
- *    1,4,0
- *    1,4,1
- *
- * The GROUP_ID value 0 indicates this tuple is from the grouping set (a).
- * The value 1 indicates this tuple is from the first duplicate grouping set of
- * (a).
- *
- * This query can be also re-written to the following:
- *
- *    select a,avg(b),0 from test group by a
- *      union all
- *    select a,avg(b),1 from test group by a;
- */
-typedef struct GroupId
-{
-	Expr      xpr;
-} GroupId;
-
 /* WinStage enumeration indicates what stage of the evaluation of a
  * window function is expressed by a WindowRef.
  */
@@ -1390,14 +1336,6 @@ typedef struct Flow
     struct Flow    *flow_before_req_move;
 
 } Flow;
-
-typedef enum GroupingType
-{
-	GROUPINGTYPE_ROLLUP,         /* ROLLUP grouping extension */
-	GROUPINGTYPE_CUBE,           /* CUBE grouping extension */
-	GROUPINGTYPE_GROUPING_SETS   /* GROUPING SETS grouping extension */
-} GroupingType;
-
 
 /*
  * DMLActionExpr

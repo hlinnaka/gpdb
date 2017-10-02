@@ -154,11 +154,6 @@ typedef struct ExprContext
 
 	/* Functions to call back when ExprContext is shut down or rescanned */
 	ExprContext_CB *ecxt_callbacks;
-
-	/* Representing the final grouping and group_id for a tuple
-	 * in a grouping extension query. */
-	uint64      grouping;
-	uint32      group_id;
 } ExprContext;
 
 /*
@@ -839,18 +834,6 @@ typedef struct AggrefExprState
 	ExprState  *aggfilter;		/* state of FILTER expression, if any */
 	int			aggno;			/* ID number for agg within its plan node */
 } AggrefExprState;
-
-/*
- * ----------------
- *		GroupingFuncExprState node
- * ----------------
- */
-typedef struct GroupingFuncExprState
-{
-	ExprState  xprstate;
-	List          *args;
-	int        ngrpcols;   /* number of unique grouping attributes */
-} GroupingFuncExprState;
 
 /* ----------------
  *		WindowFuncExprState node
@@ -2385,9 +2368,6 @@ typedef struct AggState
 	ExprContext *tmpcontext;	/* econtext for input expressions */
 	AggStatePerAgg curperagg;	/* identifies currently active aggregate */
 	bool		agg_done;		/* indicates completion of Agg scan */
-	bool        has_partial_agg;/* indicate if a partial aggregate result
-								 * has been calculated in the previous call.
-								 */
 
 	/* these fields are used in AGG_PLAIN and AGG_SORTED modes: */
 	AggStatePerGroup pergroup;	/* per-Aggref-per-group working state */
@@ -2402,18 +2382,6 @@ typedef struct AggState
 	struct HashAggTable *hhashtable;
 	HashAggStatus hashaggstatus;
 	MemoryManagerContainer mem_manager;
-
-	/* ROLLUP */
-	AggStatePerGroup perpassthru; /* per-Aggref-per-pass-through-tuple working state */
-
-	/*
-	 * The following are used to define how to modify input tuples to
-	 * satisfy the rollup level of this Agg node.
-	 */
-	int			num_attrs;	/* number of grouping attributes for the Agg node */
-	Datum	   *replValues;
-	bool	   *replIsnull;
-	bool	   *doReplace;
 
 	/* set if the operator created workfiles */
 	bool		workfiles_created;

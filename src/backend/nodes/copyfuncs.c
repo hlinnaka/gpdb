@@ -970,13 +970,6 @@ _copyAgg(Agg *from)
 		COPY_POINTER_FIELD(grpOperators, from->numCols * sizeof(Oid));
 	}
 	COPY_SCALAR_FIELD(numGroups);
-	COPY_SCALAR_FIELD(transSpace);
-	COPY_SCALAR_FIELD(numNullCols);
-	COPY_SCALAR_FIELD(inputGrouping);
-	COPY_SCALAR_FIELD(grouping);
-	COPY_SCALAR_FIELD(inputHasGrouping);
-	COPY_SCALAR_FIELD(rollupGSTimes);
-	COPY_SCALAR_FIELD(lastAgg);
 	COPY_SCALAR_FIELD(streaming);
 
 	return newnode;
@@ -2307,43 +2300,6 @@ _copySortGroupClause(SortGroupClause *from)
 	COPY_SCALAR_FIELD(eqop);
 	COPY_SCALAR_FIELD(sortop);
 	COPY_SCALAR_FIELD(nulls_first);
-
-	return newnode;
-}
-
-static GroupingClause *
-_copyGroupingClause(GroupingClause *from)
-{
-	GroupingClause *newnode = makeNode(GroupingClause);
-	COPY_SCALAR_FIELD(groupType);
-	COPY_NODE_FIELD(groupsets);
-
-	return newnode;
-}
-
-static GroupingFunc *
-_copyGroupingFunc(GroupingFunc *from)
-{
-	GroupingFunc *newnode = makeNode(GroupingFunc);
-
-	COPY_NODE_FIELD(args);
-	COPY_SCALAR_FIELD(ngrpcols);
-
-	return newnode;
-}
-
-static Grouping *
-_copyGrouping(Grouping *from)
-{
-	Grouping *newnode = makeNode(Grouping);
-
-	return newnode;
-}
-
-static GroupId *
-_copyGroupId(GroupId *from)
-{
-	GroupId *newnode = makeNode(GroupId);
 
 	return newnode;
 }
@@ -5304,18 +5260,6 @@ copyObject(void *from)
 			break;
 		case T_SortGroupClause:
 			retval = _copySortGroupClause(from);
-			break;
-		case T_GroupingClause:
-			retval = _copyGroupingClause(from);
-			break;
-		case T_GroupingFunc:
-			retval = _copyGroupingFunc(from);
-			break;
-		case T_Grouping:
-			retval = _copyGrouping(from);
-			break;
-		case T_GroupId:
-			retval = _copyGroupId(from);
 			break;
 		case T_WindowClause:
 			retval = _copyWindowClause(from);

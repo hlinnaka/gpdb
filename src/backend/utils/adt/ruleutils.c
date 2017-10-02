@@ -175,10 +175,6 @@ static void get_target_list(List *targetList, deparse_context *context,
 static void get_setop_query(Node *setOp, Query *query,
 				deparse_context *context,
 				TupleDesc resultDesc);
-static void get_rule_grouplist(List *grplist, List *tlist,
-							   bool in_grpsets, deparse_context *context);
-static void get_rule_groupingclause(GroupingClause *grp, List *tlist,
-									deparse_context *context);
 static Node *get_rule_sortgroupclause(SortGroupClause *srt, List *tlist,
 						 bool force_colno,
 						 deparse_context *context);
@@ -199,8 +195,6 @@ static void get_rule_expr(Node *node, deparse_context *context,
 static void get_oper_expr(OpExpr *expr, deparse_context *context);
 static void get_func_expr(FuncExpr *expr, deparse_context *context,
 			  bool showimplicit);
-static void get_groupingfunc_expr(GroupingFunc *grpfunc,
-								  deparse_context *context);
 static void get_agg_expr(Aggref *aggref, deparse_context *context);
 static void get_sortlist_expr(List *l, List *targetList, bool force_colno,
                               deparse_context *context, char *keyword_clause);
@@ -2539,7 +2533,16 @@ get_basic_select_query(Query *query, deparse_context *context,
 	{
 		appendContextKeyword(context, " GROUP BY ",
 							 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
-		get_rule_grouplist(query->groupClause, query->targetList, false, context);
+		sep = "";
+		foreach(l, query->groupClause)
+		{
+			SortGroupClause *grp = (SortGroupClause *) lfirst(l);
+
+			appendStringInfoString(buf, sep);
+			get_rule_sortgroupclause(grp, query->targetList,
+									 false, context);
+			sep = ", ";
+		}
 	}
 
 	/* Add the HAVING clause if given */
@@ -2741,98 +2744,6 @@ get_setop_query(Node *setOp, Query *query, deparse_context *context,
 		elog(ERROR, "unrecognized node type: %d",
 			 (int) nodeTag(setOp));
 	}
-}
-
-/*
- * Display a list of grouping or (grouping extension) clauses.
- *
- * The param 'in_grpsets' indicates if the given grplist is
- * immediatelly inside a GROUPING SETS clause. This is used
- * to determine how to use parantheses.
- */
-static void
-get_rule_grouplist(List *grplist, List *tlist,
-				   bool in_grpsets, deparse_context *context)
-{
-	StringInfo buf = context->buf;
-	char *sep;
-	ListCell *lc;
-
-	sep = "";
-	foreach (lc, grplist)
-	{
-		Node *node = (Node *)lfirst(lc);
-		Assert (node == NULL ||
-				IsA(node, List) ||
-				IsA(node, SortGroupClause) ||
-				IsA(node, GroupingClause));
-
-		appendStringInfoString(buf, sep);
-
-		if (node == NULL)
-		{
-			if (!in_grpsets)
-				appendStringInfoString(buf, "()");
-			else
-				continue; /* do nothing */
-		}
-
-		else if (IsA(node, List))
-		{
-			appendStringInfoString(buf, "(");
-			get_rule_grouplist((List *)node, tlist, in_grpsets, context);
-			appendStringInfoString(buf, ")");
-		}
-
-		else if (IsA(node, SortGroupClause))
-		{
-			if (in_grpsets)
-				appendStringInfoString(buf, "(");
-			get_rule_sortgroupclause((SortGroupClause *) node, tlist,
-									  false,context);
-			if (in_grpsets)
-				appendStringInfoString(buf, ")");
-		}
-
-		else
-		{
-			get_rule_groupingclause((GroupingClause *)node, tlist,
-									context);
-		}
-
-		sep = ", ";
-	}
-}
-
-/*
- * Display a grouping extension clause.
- */
-static void
-get_rule_groupingclause(GroupingClause *grp, List *tlist,
-						deparse_context *context)
-{
-	StringInfo buf = context->buf;
-	bool in_grpsets = false;
-
-	switch(grp->groupType)
-	{
-		case GROUPINGTYPE_ROLLUP:
-			appendStringInfoString(buf, "ROLLUP (");
-			break;
-		case GROUPINGTYPE_CUBE:
-			appendStringInfoString(buf, "CUBE (");
-			break;
-		case GROUPINGTYPE_GROUPING_SETS:
-			in_grpsets = true;
-			appendStringInfoString(buf, "GROUPING SETS (");
-			break;
-		default:
-			elog(ERROR, "unrecognized grouping type: %d",
-				 grp->groupType);
-	}
-
-	get_rule_grouplist(grp->groupsets, tlist, in_grpsets, context);
-	appendStringInfoString(buf, ")");
 }
 
 /*
@@ -4333,19 +4244,6 @@ get_rule_expr(Node *node, deparse_context *context,
 			appendStringInfo(buf, "$%d", ((Param *) node)->paramid);
 			break;
 
-
-		case T_Grouping:
-			appendStringInfo(buf, "Grouping");
-			break;
-
-		case T_GroupId:
-			appendStringInfo(buf, "group_id()");
-			break;
-
-		case T_GroupingFunc:
-			get_groupingfunc_expr((GroupingFunc *)node, context);
-			break;
-
 		case T_Aggref:
 			get_agg_expr((Aggref *) node, context);
 			break;
@@ -5347,42 +5245,6 @@ get_func_expr(FuncExpr *expr, deparse_context *context,
 		get_rule_expr((Node *) lfirst(l), context, true);
 	}
 	appendStringInfoChar(buf, ')');
-}
-
-/*
- * get_groupingfunc_expr - Parse back a grouping function node.
- */
-static void
-get_groupingfunc_expr(GroupingFunc *grpfunc, deparse_context *context)
-{
-	StringInfo buf = context->buf;
-	ListCell *lc;
-	char *sep = "";
-	List *group_exprs;
-
-	if (!context->groupClause)
-	{
-		appendStringInfoString(buf, "grouping");
-		return;
-	}
-
-	group_exprs = get_grouplist_exprs(context->groupClause,
-									  context->windowTList);
-
-	appendStringInfoString(buf, "grouping(");
-	foreach (lc, grpfunc->args)
-	{
-		int entry_no = (int)intVal(lfirst(lc));
-		Node *expr;
-		Assert (entry_no < list_length(context->windowTList));
-
-		expr = (Node *)list_nth(group_exprs, entry_no);
-		appendStringInfoString(buf, sep);
-		get_rule_expr(expr, context, true);
-		sep = ", ";
-	}
-
-	appendStringInfoString(buf, ")");
 }
 
 static void
