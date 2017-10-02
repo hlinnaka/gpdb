@@ -4647,11 +4647,11 @@ DATA(insert OID = 3973 ( percentile_disc_final	PGNSP PGUID 12 1 0 0 f f f f f i 
 DESCR("aggregate final function");
 DATA(insert OID = 3974 ( percentile_cont		PGNSP PGUID 12 1 0 0 t f f f f i 2 0 701 "701 701" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ n a ));
 DESCR("continuous distribution percentile");
-DATA(insert OID = 3975 ( percentile_cont_float8_final	PGNSP PGUID 12 1 0 0 f f f f f i 3 0 701 "2281 701 701" _null_ _null_ _null_ _null_ percentile_cont_float8_final _null_ _null_ _null_ n a ));
+DATA(insert OID = 3975 ( percentile_cont_float8_final	PGNSP PGUID 12 1 0 0 f f f f f i 2 0 701 "2281 701" _null_ _null_ _null_ _null_ percentile_cont_float8_final _null_ _null_ _null_ n a ));
 DESCR("aggregate final function");
 DATA(insert OID = 3976 ( percentile_cont		PGNSP PGUID 12 1 0 0 t f f f f i 2 0 1186 "701 1186" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ n a ));
 DESCR("continuous distribution percentile");
-DATA(insert OID = 3977 ( percentile_cont_interval_final PGNSP PGUID 12 1 0 0 f f f f f i 3 0 1186 "2281 701 1186" _null_ _null_ _null_ _null_ percentile_cont_interval_final _null_ _null_ _null_ n a ));
+DATA(insert OID = 3977 ( percentile_cont_interval_final PGNSP PGUID 12 1 0 0 f f f f f i 2 0 1186 "2281 701" _null_ _null_ _null_ _null_ percentile_cont_interval_final _null_ _null_ _null_ n a ));
 DESCR("aggregate final function");
 DATA(insert OID = 3978 ( percentile_disc		PGNSP PGUID 12 1 0 0 t f f f f i 2 0 2277 "1022 2283" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ n a ));
 DESCR("multiple discrete percentiles");
@@ -4659,11 +4659,11 @@ DATA(insert OID = 3979 ( percentile_disc_multi_final	PGNSP PGUID 12 1 0 0 f f f 
 DESCR("aggregate final function");
 DATA(insert OID = 3980 ( percentile_cont		PGNSP PGUID 12 1 0 0 t f f f f i 2 0 1022 "1022 701" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ n a ));
 DESCR("multiple continuous percentiles");
-DATA(insert OID = 3981 ( percentile_cont_float8_multi_final PGNSP PGUID 12 1 0 0 f f f f f i 3 0 1022 "2281 1022 701" _null_ _null_ _null_ _null_ percentile_cont_float8_multi_final _null_ _null_ _null_ n a ));
+DATA(insert OID = 3981 ( percentile_cont_float8_multi_final PGNSP PGUID 12 1 0 0 f f f f f i 2 0 1022 "2281 1022" _null_ _null_ _null_ _null_ percentile_cont_float8_multi_final _null_ _null_ _null_ n a ));
 DESCR("aggregate final function");
 DATA(insert OID = 3982 ( percentile_cont		PGNSP PGUID 12 1 0 0 t f f f f i 2 0 1187 "1022 1186" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ n a ));
 DESCR("multiple continuous percentiles");
-DATA(insert OID = 3983 ( percentile_cont_interval_multi_final	PGNSP PGUID 12 1 0 0 f f f f f i 3 0 1187 "2281 1022 1186" _null_ _null_ _null_ _null_ percentile_cont_interval_multi_final _null_ _null_ _null_ n a ));
+DATA(insert OID = 3983 ( percentile_cont_interval_multi_final	PGNSP PGUID 12 1 0 0 f f f f f i 2 0 1187 "2281 1022" _null_ _null_ _null_ _null_ percentile_cont_interval_multi_final _null_ _null_ _null_ n a ));
 DESCR("aggregate final function");
 DATA(insert OID = 3984 ( mode					PGNSP PGUID 12 1 0 0 t f f f f i 1 0 2283 "2283" _null_ _null_ _null_ _null_	aggregate_dummy _null_ _null_ _null_ n a ));
 DESCR("most common value");

@@ -17,7 +17,7 @@
 
  CREATE FUNCTION array_agg_transfn(internal, anyelement) RETURNS internal LANGUAGE internal IMMUTABLE AS 'array_agg_transfn' WITH (OID=6096, DESCRIPTION="array_agg transition function");
 
- CREATE FUNCTION array_agg_finalfn(internal) RETURNS anyarray LANGUAGE internal IMMUTABLE AS 'array_agg_finalfn' WITH (OID=6097, DESCRIPTION="array_agg final function");
+ CREATE FUNCTION array_agg_finalfn(internal, anyelement) RETURNS anyarray LANGUAGE internal IMMUTABLE AS 'array_agg_finalfn' WITH (OID=6097, DESCRIPTION="array_agg final function");
 
  CREATE FUNCTION array_agg(anyelement) RETURNS anyarray LANGUAGE internal IMMUTABLE AS 'aggregate_dummy' WITH (OID=6098, DESCRIPTION="concatenate aggregate input into an array", proisagg="t");
 
