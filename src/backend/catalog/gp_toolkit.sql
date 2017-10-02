@@ -2115,7 +2115,7 @@ CREATE VIEW gp_toolkit.gp_workfile_usage_per_query AS
 SELECT datname, pid, sess_id, command_cnt, usename, query, segid, state,
     SUM(size) AS size, SUM(numfiles) AS numfiles
 FROM gp_toolkit.gp_workfile_entries
-GROUP BY (datname, pid, sess_id, command_cnt, usename, query, segid, state);
+GROUP BY datname, pid, sess_id, command_cnt, usename, query, segid, state;
 
 GRANT SELECT ON gp_toolkit.gp_workfile_usage_per_query TO public;
 

@@ -1848,40 +1848,27 @@ set_upper_references(PlannerInfo *root, Plan *plan, int rtoffset)
 		TargetEntry *tle = (TargetEntry *) lfirst(l);
 		Node	   *newexpr;
 
-		if (IsA(plan, Repeat) &&
-			(IsA(tle->expr, Grouping) || IsA(tle->expr, GroupId)))
+		/* If it's a non-Var sort/group item, first try to match by sortref */
+		if (tle->ressortgroupref != 0 && !IsA(tle->expr, Var))
 		{
-			/*
-			 * CDB: group_id() & grouping() rely on Repeat to generate non-zero
-			 * values for repeated grouping columns. So, always compute them, rather
-			 * than using OUTER refs from subplan.
-			 */
-			newexpr = copyObject(tle->expr);
-		}
-		else
-		{
-			/* If it's a non-Var sort/group item, first try to match by sortref */
-			if (tle->ressortgroupref != 0 && !IsA(tle->expr, Var))
-			{
-				newexpr = (Node *)
-					search_indexed_tlist_for_sortgroupref((Node *) tle->expr,
-														  tle->ressortgroupref,
-														  subplan_itlist,
-														  OUTER_VAR);
-				if (!newexpr)
-					newexpr = fix_upper_expr(root,
-											 (Node *) tle->expr,
-											 subplan_itlist,
-											 OUTER_VAR,
-											 rtoffset);
-			}
-			else
+			newexpr = (Node *)
+				search_indexed_tlist_for_sortgroupref((Node *) tle->expr,
+													  tle->ressortgroupref,
+													  subplan_itlist,
+													  OUTER_VAR);
+			if (!newexpr)
 				newexpr = fix_upper_expr(root,
 										 (Node *) tle->expr,
 										 subplan_itlist,
 										 OUTER_VAR,
 										 rtoffset);
 		}
+		else
+			newexpr = fix_upper_expr(root,
+									 (Node *) tle->expr,
+									 subplan_itlist,
+									 OUTER_VAR,
+									 rtoffset);
 		tle = flatCopyTargetEntry(tle);
 		tle->expr = (Expr *) newexpr;
 		output_targetlist = lappend(output_targetlist, tle);
@@ -2507,7 +2494,7 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 		return fix_upper_expr_mutator((Node *) phv->phexpr, context);
 	}
 	/* Try matching more complex expressions too, if tlist has any */
-	if (context->subplan_itlist->has_non_vars && !IsA(node, GroupId))
+	if (context->subplan_itlist->has_non_vars)
 	{
 		newvar = search_indexed_tlist_for_non_var(node,
 												  context->subplan_itlist,
@@ -2610,10 +2597,6 @@ static bool
 fix_opfuncids_walker(Node *node, void *context)
 {
 	if (node == NULL)
-		return false;
-	if (IsA(node, Grouping))
-		return false;
-	if (IsA(node, GroupId))
 		return false;
 	if (IsA(node, OpExpr))
 		set_opfuncid((OpExpr *) node);

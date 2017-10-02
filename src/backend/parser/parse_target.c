@@ -1775,9 +1775,6 @@ FigureColnameInternal(Node *node, char **name)
 		case T_XmlSerialize:
 			*name = "xmlserialize";
 			return 2;
-		case T_GroupingFunc:
-			*name = "grouping";
-			return 2;
 		default:
 			break;
 	}

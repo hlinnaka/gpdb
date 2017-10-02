@@ -47,7 +47,6 @@ typedef struct GroupContext
 	List *tlist;
 	bool use_hashed_grouping;
 	double tuple_fraction;
-	CanonicalGroupingSets *canonical_grpsets;
 	uint64 grouping;
 
 	/*
@@ -85,42 +84,6 @@ extern Plan *optimize_minmax_aggregates(PlannerInfo *root, List *tlist,
 						   const AggClauseCosts *aggcosts, Path *best_path);
 
 /*
- * prototype for plan/plangroupexp.c
- */
-extern Plan *make_distinctaggs_for_rollup(PlannerInfo *root, bool is_agg,
-										  List *tlist, bool twostage, List *sub_tlist,
-										  List *qual, AggStrategy aggstrategy,
-										  int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
-										  double numGroups, int *rollup_gs_times,
-										  int numAggs, int transSpace,
-										  double *p_dNumGroups,
-										  List **p_current_pathkeys,
-										  Plan *lefttree);
-
-/*
- * prototype for plan/plangroupext.c
- */
-extern Plan *plan_grouping_extension(PlannerInfo *root,
-									 Path *path,
-									 double tuple_fraction,
-									 bool use_hashed_grouping,
-									 List **p_tlist, List *sub_tlist,
-									 bool is_agg, bool twostage,
-									 List *qual,
-									 int *p_numGroupCols,
-									 AttrNumber **p_grpColIdx,
-									 Oid **p_grpOperators,
-									 AggClauseCosts *agg_costs,
-									 CanonicalGroupingSets *canonical_grpsets,
-									 double *p_dNumGroups,
-									 bool *querynode_changed,
-									 List **p_current_pathkeys,
-									 Plan *lefttree);
-extern void free_canonical_groupingsets(CanonicalGroupingSets *canonical_grpsets);
-extern Plan *add_repeat_node(Plan *result_plan, int repeat_count, uint64 grouping);
-extern bool contain_group_id(Node *node);
-
-/*
  * prototypes for plan/createplan.c
  */
 extern Plan *create_plan(PlannerInfo *root, Path *best_path);
@@ -138,7 +101,7 @@ extern Sort *make_sort_from_pathkeys(PlannerInfo *root, Plan *lefttree,
 extern Sort *make_sort_from_sortclauses(PlannerInfo *root, List *sortcls,
 						   Plan *lefttree);
 extern Sort *make_sort_from_groupcols(PlannerInfo *root, List *groupcls,
-									  AttrNumber *grpColIdx, bool appendGrouping,
+									  AttrNumber *grpColIdx,
 									  Plan *lefttree);
 extern List *reconstruct_group_clause(List *orig_groupClause, List *tlist,
 						 AttrNumber *grpColIdx, int numcols);
@@ -147,19 +110,13 @@ extern Motion *make_motion(PlannerInfo *root, Plan *lefttree,
 			int numSortCols, AttrNumber *sortColIdx,
 			Oid *sortOperators, Oid *collations, bool *nullsFirst,
 			bool useExecutorVarFormat);
-extern Sort *make_sort(PlannerInfo *root, Plan *lefttree, int numCols,
-		  AttrNumber *sortColIdx, Oid *sortOperators,
-		  Oid *collations, bool *nullsFirst,
-		  double limit_tuples);
-
 extern Agg *make_agg(PlannerInfo *root, List *tlist, List *qual,
 		 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 		 bool streaming,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
-		 long numGroups, int numNullCols,
-		 uint64 inputGrouping, uint64 grouping,
-		 int rollupGSTimes,
+		 long numGroups,
 		 Plan *lefttree);
+
 extern HashJoin *make_hashjoin(List *tlist,
 			  List *joinclauses, List *otherclauses,
 			  List *hashclauses, List *hashqualclauses,
@@ -284,8 +241,6 @@ extern void extract_query_dependencies(Node *query,
 						   List **relationOids,
 						   List **invalItems);
 extern void cdb_extract_plan_dependencies(PlannerInfo *root, Plan *plan);
-
-extern int num_distcols_in_grouplist(List *gc);
 
 extern void add_proc_oids_for_dump(Oid funcid);
 

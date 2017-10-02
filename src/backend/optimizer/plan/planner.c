@@ -142,15 +142,6 @@ static void get_column_info_for_window(PlannerInfo *root, WindowClause *wc,
 						   Oid **ordOperators);
 static int	common_prefix_cmp(const void *a, const void *b);
 
-static Bitmapset *canonicalize_colref_list(Node *node);
-static List *canonicalize_gs_list(List *gsl, bool ordinary);
-static List *rollup_gs_list(List *gsl);
-static List *add_gs_combinations(List *list, int n, int i, Bitmapset **base, Bitmapset **work);
-static List *cube_gs_list(List *gsl);
-static CanonicalGroupingSets *make_canonical_groupingsets(List *groupClause);
-static int	gs_compare(const void *a, const void *b);
-static void sort_canonical_gs_list(List *gs, int *p_nsets, Bitmapset ***p_sets);
-
 static Plan *pushdown_preliminary_limit(Plan *plan, Node *limitCount, int64 count_est, Node *limitOffset, int64 offset_est);
 
 static Plan *getAnySubplan(Plan *node);
@@ -821,8 +812,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 			/* keep it in HAVING */
 			newHaving = lappend(newHaving, havingclause);
 		}
-		else if (parse->groupClause &&
-				 !contain_extended_grouping(parse->groupClause))
+		else if (parse->groupClause)
 		{
 			/* move it to WHERE */
 			parse->jointree->quals = (Node *)
@@ -1703,8 +1693,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		bool		use_hashed_grouping = false;
 		WindowFuncLists *wflists = NULL;
 		List	   *activeWindows = NIL;
-		bool		grpext = false;
-		CanonicalGroupingSets *canonical_grpsets;
 
 		MemSet(&agg_costs, 0, sizeof(AggClauseCosts));
 
@@ -1740,22 +1728,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			else
 				parse->hasWindowFuncs = false;
 		}
-
-		/* Obtain canonical grouping sets */
-		canonical_grpsets = make_canonical_groupingsets(parse->groupClause);
-		numGroupCols = canonical_grpsets->num_distcols;
-
-		/*
-		 * Clean up parse->groupClause if the grouping set is an empty
-		 * set.
-		 */
-		if (numGroupCols == 0)
-		{
-			list_free(parse->groupClause);
-			parse->groupClause = NIL;
-		}
-
-		grpext = is_grouping_extension(canonical_grpsets);
 
 		/*
 		 * Generate appropriate target list for subplan; may be different from
@@ -1844,12 +1816,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			List	   *groupExprs;
 
-			groupExprs = get_grouplist_exprs(parse->groupClause,
-											 parse->targetList);
-			if (groupExprs == NULL)
-				dNumGroups = 1;
-			else
-				dNumGroups = estimate_num_groups(root, groupExprs, path_rows);
+			groupExprs = get_sortgrouplist_exprs(parse->groupClause,
+												 parse->targetList);
+			dNumGroups = estimate_num_groups(root, groupExprs, path_rows);
 
 			/*
 			 * In GROUP BY mode, an absolute LIMIT is relative to the number
@@ -2063,7 +2032,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			group_context.tlist = tlist;
 			group_context.use_hashed_grouping = use_hashed_grouping;
 			group_context.tuple_fraction = tuple_fraction;
-			group_context.canonical_grpsets = canonical_grpsets;
 			group_context.grouping = 0;
 			group_context.numGroupCols = 0;
 			group_context.groupColIdx = NULL;
@@ -2078,39 +2046,12 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 											   &agg_costs,
 											   &group_context);
 
-			/* Add the Repeat node if needed. */
-			if (result_plan != NULL &&
-				canonical_grpsets != NULL &&
-				canonical_grpsets->grpset_counts != NULL)
-			{
-				bool		need_repeat_node = false;
-				int			grpset_no;
-				int			repeat_count = 0;
-
-				for (grpset_no = 0; grpset_no < canonical_grpsets->ngrpsets; grpset_no++)
-				{
-					if (canonical_grpsets->grpset_counts[grpset_no] > 1)
-					{
-						need_repeat_node = true;
-						break;
-					}
-				}
-
-				if (canonical_grpsets->ngrpsets == 1)
-					repeat_count = canonical_grpsets->grpset_counts[0];
-
-				if (need_repeat_node)
-				{
-					result_plan = add_repeat_node(result_plan, repeat_count, 0);
-				}
-			}
-
 			if (result_plan != NULL && querynode_changed)
 			{
 				/*
 				 * We want to re-write sort_pathkeys here since the 2-stage
-				 * aggregation subplan or grouping extension subplan may
-				 * change the previous root->parse Query node, which makes the
+				 * aggregation subplan subplan may change the previous
+				 * root->parse Query node, which makes the
 				 * current sort_pathkeys invalid.
 				 */
 				if (parse->distinctClause)
@@ -2208,7 +2149,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			 *
 			 * HAVING clause, if any, becomes qual of the Agg or Group node.
 			 */
-			if (!grpext && use_hashed_grouping)
+			if (use_hashed_grouping)
 			{
 				/* Hashed aggregate plan --- no sort needed */
 				result_plan = (Plan *) make_agg(root,
@@ -2221,27 +2162,13 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												groupColIdx,
 												groupOperators,
 												numGroups,
-												0, /* num_nullcols */
-												0, /* input_grouping */
-												0, /* grouping */
-												0, /* rollup_gs_times */
 												result_plan);
-
-				if (canonical_grpsets != NULL &&
-					canonical_grpsets->grpset_counts != NULL &&
-					canonical_grpsets->grpset_counts[0] > 1)
-				{
-					result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
-					result_plan = add_repeat_node(result_plan,
-										 canonical_grpsets->grpset_counts[0],
-												  0);
-				}
 
 				/* Hashed aggregation produces randomly-ordered results */
 				current_pathkeys = NIL;
 				CdbPathLocus_MakeNull(&current_locus, __GP_POLICY_EVIL_NUMSEGMENTS);
 			}
-			else if (!grpext && (parse->hasAggs || parse->groupClause))
+			else if (parse->hasAggs || parse->groupClause)
 			{
 				/* Plain aggregate plan --- sort if needed */
 				AggStrategy aggstrategy;
@@ -2254,7 +2181,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 							make_sort_from_groupcols(root,
 													 parse->groupClause,
 													 groupColIdx,
-													 false,
 													 result_plan);
 						current_pathkeys = root->group_pathkeys;
 
@@ -2275,9 +2201,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					current_pathkeys = NIL;
 				}
 
-				/*
-				 * We make a single Agg node if this is not a grouping extension.
-				 */
 				result_plan = (Plan *) make_agg(root,
 												tlist,
 												(List *) parse->havingQual,
@@ -2288,84 +2211,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												groupColIdx,
 												groupOperators,
 												numGroups,
-												0, /* num_nullcols */
-												0, /* input_grouping */
-												0, /* grouping */
-												0, /* rollup_gs_times */
 												result_plan);
 
-				if (canonical_grpsets != NULL &&
-					canonical_grpsets->grpset_counts != NULL &&
-					canonical_grpsets->grpset_counts[0] > 1)
-				{
-					result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
-					result_plan = add_repeat_node(result_plan,
-										 canonical_grpsets->grpset_counts[0],
-												  0);
-				}
-
 				CdbPathLocus_MakeNull(&current_locus, __GP_POLICY_EVIL_NUMSEGMENTS);
-			}
-			else if (grpext && (parse->hasAggs || parse->groupClause))
-			{
-				/* Plan the grouping extension */
-				ListCell   *lc;
-				bool		querynode_changed = false;
-
-				/*
-				 * Make a copy of tlist. Really need to?
-				 */
-				List	   *new_tlist = copyObject(tlist);
-
-				/* Make EXPLAIN output look nice */
-				foreach(lc, result_plan->targetlist)
-				{
-					TargetEntry *tle = (TargetEntry *) lfirst(lc);
-
-					if (IsA(tle->expr, Var) &&tle->resname == NULL)
-					{
-						TargetEntry *vartle = tlist_member((Node *) tle->expr, tlist);
-
-						if (vartle != NULL && vartle->resname != NULL)
-							tle->resname = pstrdup(vartle->resname);
-					}
-				}
-
-				result_plan = plan_grouping_extension(root, best_path, tuple_fraction,
-													  use_hashed_grouping,
-													  &new_tlist, result_plan->targetlist,
-													  true, false,
-													  (List *) parse->havingQual,
-													  &numGroupCols,
-													  &groupColIdx,
-													  &groupOperators,
-													  &agg_costs,
-													  canonical_grpsets,
-													  &dNumGroups,
-													  &querynode_changed,
-													  &current_pathkeys,
-													  result_plan);
-				if (querynode_changed)
-				{
-					/*
-					 * We want to re-write sort_pathkeys here since the
-					 * 2-stage aggregation subplan or grouping extension
-					 * subplan may change the previous root->parse Query node,
-					 * which makes the current sort_pathkeys invalid.
-					 */
-					if (parse->distinctClause &&
-						grouping_is_sortable(parse->distinctClause))
-						root->distinct_pathkeys =
-							make_pathkeys_for_sortclauses(root,
-														  parse->distinctClause,
-														  result_plan->targetlist);
-					if (parse->sortClause)
-						root->sort_pathkeys =
-							make_pathkeys_for_sortclauses(root,
-														  parse->sortClause,
-														  result_plan->targetlist);
-					CdbPathLocus_MakeNull(&current_locus, __GP_POLICY_EVIL_NUMSEGMENTS);
-				}
 			}
 			else if (root->hasHavingQual)
 			{
@@ -2648,9 +2496,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								   result_plan);
 			}
 		}
-
-		/* free canonical_grpsets */
-		free_canonical_groupingsets(canonical_grpsets);
 	}							/* end of if (setOperations) */
 
 	/*
@@ -2869,10 +2714,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 													result_plan->targetlist),
 								 extract_grouping_ops(parse->distinctClause),
 											numDistinctRows,
-											0, /* num_nullcols */
-											0, /* input_grouping */
-											0, /* grouping */
-											0, /* rollupGSTimes */
 											result_plan);
 			/* Hashed aggregation produces randomly-ordered results */
 			current_pathkeys = NIL;
@@ -3793,19 +3634,6 @@ preprocess_groupclause(PlannerInfo *root)
 		return;
 
 	/*
-	 * GPDB: The grouping clause might contain grouping sets, not just plain
-	 * SortGroupClauses. Give up if we see any. (Yes, we could probably do
-	 * better than that, but this will do for now.)
-	 */
-	foreach(gl, parse->groupClause)
-	{
-		Node *node = lfirst(gl);
-
-		if (node == NULL || !IsA(node, SortGroupClause))
-			return;
-	}
-
-	/*
 	 * Scan the ORDER BY clause and construct a list of matching GROUP BY
 	 * items, but only as far as we can make a matching prefix.
 	 *
@@ -3882,7 +3710,7 @@ standard_qp_callback(PlannerInfo *root, void *extra)
 	if (parse->groupClause &&
 		grouping_is_sortable(parse->groupClause))
 		root->group_pathkeys =
-			make_pathkeys_for_groupclause(root,
+			make_pathkeys_for_sortclauses(root,
 										  parse->groupClause,
 										  tlist);
 	else
@@ -4063,7 +3891,7 @@ choose_hashed_grouping(PlannerInfo *root,
 	 * These path variables are dummies that just hold cost fields; we don't
 	 * make actual Paths for these steps.
 	 */
-	numGroupCols = num_distcols_in_grouplist(root->parse->groupClause);
+	numGroupCols = list_length(root->parse->groupClause);
 	cost_agg(&hashed_p, root, AGG_HASHED, agg_costs,
 			 numGroupCols, dNumGroups,
 			 cheapest_path->startup_cost, cheapest_path->total_cost,
@@ -4415,7 +4243,7 @@ make_subplanTargetList(PlannerInfo *root,
 	 * (GROUP BY items that are simple Vars should be in the list already),
 	 * and make an array showing where the group columns are in the sub_tlist.
 	 */
-	numCols = num_distcols_in_grouplist(parse->groupClause);
+	numCols = list_length(parse->groupClause);
 
 	/*
 	 * GPDB_92_MERGE_FIXME: The codes below are different from PG 9.2.
@@ -5028,6 +4856,7 @@ get_column_info_for_window(PlannerInfo *root, WindowClause *wc, List *tlist,
 	}
 }
 
+
 /*
  * expression_planner
  *		Perform planner's transformations on a standalone expression.
@@ -5176,444 +5005,6 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 									  NULL, 1.0);
 
 	return (seqScanAndSortPath.total_cost < indexScanPath->path.total_cost);
-}
-
-/*
- * Produce the canonical form of a GROUP BY clause given the parse
- * tree form.
- *
- * The result is a CanonicalGroupingSets, which contains a list of
- * Bitmapsets.  Each Bitmapset contains the sort-group reference
- * values of the attributes in one of the grouping sets specified in
- * the GROUP BY clause.  The number of list elements is the number of
- * grouping sets specified.
- */
-static CanonicalGroupingSets *
-make_canonical_groupingsets(List *groupClause)
-{
-	CanonicalGroupingSets *canonical_grpsets = 
-		(CanonicalGroupingSets *) palloc0(sizeof(CanonicalGroupingSets));
-	ListCell *lc;
-	List *ord_grping = NIL; /* the ordinary grouping */
-	List *rollups = NIL;    /* the grouping sets from ROLLUP */
-	List *grpingsets = NIL; /* the grouping sets from GROUPING SETS */
-	List *cubes = NIL;      /* the grouping sets from CUBE */
-	Bitmapset *bms = NULL;
-	List *final_grpingsets = NIL;
-	List *list_grpingsets = NIL;
-	int setno;
-	int prev_setno = 0;
-
-	if (groupClause == NIL)
-		return canonical_grpsets;
-
-	foreach (lc, groupClause)
-	{
-		GroupingClause *gc;
-
-		Node *node = lfirst(lc);
-
-		if (node == NULL)
-			continue;
-
-		/* Note that the top-level empty sets have been removed
-		 * in the parser.
-		 */
-		Assert(IsA(node, SortGroupClause) ||
-			   IsA(node, GroupingClause) ||
-			   IsA(node, List));
-
-		if (IsA(node, SortGroupClause) ||
-			IsA(node, List))
-		{
-			ord_grping = lappend(ord_grping,
-								 canonicalize_colref_list(node));
-			continue;
-		}
-
-		gc = (GroupingClause *)node;
-		switch (gc->groupType)
-		{
-			case GROUPINGTYPE_ROLLUP:
-				rollups = lappend(rollups,
-								  rollup_gs_list(canonicalize_gs_list(gc->groupsets, true)));
-				break;
-			case GROUPINGTYPE_CUBE:
-				cubes = lappend(cubes,
-								cube_gs_list(canonicalize_gs_list(gc->groupsets, true)));
-				break;
-			case GROUPINGTYPE_GROUPING_SETS:
-				grpingsets = lappend(grpingsets,
-									 canonicalize_gs_list(gc->groupsets, false));
-				break;
-			default:
-				elog(ERROR, "invalid grouping set");
-		}
-	}
-
-	/* Obtain the cartesian product of grouping sets generated for ordinary
-	 * grouping sets, rollups, cubes, and grouping sets.
-	 *
-	 * We apply a small optimization here. We always append grouping sets
-	 * generated for rollups, cubes and grouping sets to grouping sets for
-	 * ordinary sets. This makes it easier to tell if there is a partial
-	 * rollup. Consider the example of GROUP BY rollup(i,j),k. There are
-	 * three grouping sets for rollup(i,j): (i,j), (i), (). If we append
-	 * k after each grouping set for rollups, we get three sets:
-	 * (i,j,k), (i,k) and (k). We can not easily tell that this is a partial
-	 * rollup. However, if we append each grouping set after k, we get
-	 * these three sets: (k,i,j), (k,i), (k), which is obviously a partial
-	 * rollup.
-	 */
-
-	/* First, we bring all columns in ordinary grouping sets together into
-	 * one list.
-	 */
-	foreach (lc, ord_grping)
-	{
-	    Bitmapset *sub_bms = (Bitmapset *)lfirst(lc);
-		bms = bms_add_members(bms, sub_bms);
-	}
-
-	final_grpingsets = lappend(final_grpingsets, bms);
-
-	/* Make the list of grouping sets */
-	if (rollups)
-		list_grpingsets = list_concat(list_grpingsets, rollups);
-	if (cubes)
-		list_grpingsets = list_concat(list_grpingsets, cubes);
-	if (grpingsets)
-		list_grpingsets = list_concat(list_grpingsets, grpingsets);
-
-	/* Obtain the cartesian product of grouping sets generated from ordinary
-	 * grouping sets, rollups, cubes, and grouping sets.
-	 */
-	foreach (lc, list_grpingsets)
-	{
-		List *bms_list = (List *)lfirst(lc);
-		ListCell *tmp_lc;
-		List *tmp_list;
-
-		tmp_list = final_grpingsets;
-		final_grpingsets = NIL;
-
-		foreach (tmp_lc, tmp_list)
-		{
-			Bitmapset *tmp_bms = (Bitmapset *)lfirst(tmp_lc);
-			ListCell *bms_lc;
-
-			foreach (bms_lc, bms_list)
-			{
-				bms = bms_copy(tmp_bms);
-				bms = bms_add_members(bms, (Bitmapset *)lfirst(bms_lc));
-				final_grpingsets = lappend(final_grpingsets, bms);
-			}
-		}
-	}
-
-	/* Sort final_grpingsets */
-	sort_canonical_gs_list(final_grpingsets,
-						   &(canonical_grpsets->ngrpsets),
-						   &(canonical_grpsets->grpsets));
-
-	/* Combine duplicate grouping sets and set the counts for
-	 * each grouping set.
-	 */
-	canonical_grpsets->grpset_counts =
-		(int *)palloc0(canonical_grpsets->ngrpsets * sizeof(int));
-	prev_setno = 0;
-	canonical_grpsets->grpset_counts[0] = 1;
-	for (setno = 1; setno<canonical_grpsets->ngrpsets; setno++)
-	{
-		if (bms_equal(canonical_grpsets->grpsets[setno],
-					  canonical_grpsets->grpsets[prev_setno]))
-		{
-			canonical_grpsets->grpset_counts[prev_setno]++;
-			if (canonical_grpsets->grpsets[setno])
-				pfree(canonical_grpsets->grpsets[setno]);
-		}
-
-		else
-		{
-			prev_setno++;
-			canonical_grpsets->grpsets[prev_setno] =
-				canonical_grpsets->grpsets[setno];
-			canonical_grpsets->grpset_counts[prev_setno]++;
-		}
-	}
-	/* Reset ngrpsets to eliminate duplicate groupint sets */
-	canonical_grpsets->ngrpsets = prev_setno + 1;
-
-	/* Obtain the number of distinct columns appeared in these
-	 * grouping sets.
-	 */
-	{
-		Bitmapset *distcols = NULL;
-		for (setno =0; setno < canonical_grpsets->ngrpsets; setno++)
-			distcols =
-				bms_add_members(distcols, canonical_grpsets->grpsets[setno]);
-		
-		canonical_grpsets->num_distcols = bms_num_members(distcols);
-		bms_free(distcols);
-	}
-	
-
-	/* Release spaces */
-	list_free_deep(ord_grping);
-	list_free_deep(list_grpingsets);
-	list_free(final_grpingsets);
-	
-	return canonical_grpsets;
-}
-
-/* Produce the canonical representation of a column reference list.
- *
- * A column reference list (in SQL) is a comma-delimited list of
- * column references which are represented by the parser as a
- * List of GroupClauses.  No nesting is allowed in column reference 
- * lists.
- *
- * As a convenience, this function also recognizes a bare column
- * reference.
- *
- * The result is a Bitmapset of the sort-group-ref values in the list.
- */
-static Bitmapset* canonicalize_colref_list(Node * node)
-{
-	ListCell *lc;
-	SortGroupClause *gc;
-	Bitmapset* gs = NULL;
-	
-	if ( node == NULL )
-		elog(ERROR,"invalid column reference list");
-	
-	if ( IsA(node, SortGroupClause) )
-	{
-		gc = (SortGroupClause *) node;
-		return bms_make_singleton(gc->tleSortGroupRef);
-	}
-	
-	if ( !IsA(node, List) )
-		elog(ERROR,"invalid column reference list");
-	
-	foreach (lc, (List*)node)
-	{
-		Node *cr = lfirst(lc);
-		
-		if ( cr == NULL )
-			continue;
-			
-		if ( !IsA(cr, SortGroupClause) )
-			elog(ERROR,"invalid column reference list");
-
-		gc = (SortGroupClause *) cr;
-		gs = bms_add_member(gs, gc->tleSortGroupRef);	
-	}
-	return gs;
-}
-
-/* Produce the list of canonical grouping sets corresponding to a
- * grouping set list or an ordinary grouping set list.
- * 
- * An ordinary grouping set list (in SQL) is a comma-delimited list 
- * of ordinary grouping sets.  
- * 
- * Each ordinary grouping set is either a grouping column reference 
- * or a parenthesized list of grouping column references.  No nesting 
- * is allowed.  
- *
- * A grouping set list (in SQL) is a comma-delimited list of grouping 
- * sets.  
- *
- * Each grouping set is either an ordinary grouping set, a rollup list, 
- * a cube list, the empty grouping set, or (recursively) a grouping set 
- * list.
- *
- * The parse tree form of an ordinary grouping set is a  list containing
- * GroupClauses and lists of GroupClauses (without nesting).  In the case
- * of a (general) grouping set, the parse tree list may also include
- * NULLs and GroupingClauses.
- *
- * The result is a list of bit map sets.
- */
-static List *canonicalize_gs_list(List *gsl, bool ordinary)
-{
-	ListCell *lc;
-	List *list = NIL;
-
-	foreach (lc, gsl)
-	{
-		Node *node = lfirst(lc);
-
-		if ( node == NULL )
-		{
-			if ( ordinary )
-				elog(ERROR,"invalid ordinary grouping set");
-			
-			list = lappend(list, NIL); /* empty grouping set */
-		}
-		else if ( IsA(node, SortGroupClause) || IsA(node, List) )
-		{
-			/* ordinary grouping set */
-			list = lappend(list, canonicalize_colref_list(node));
-		}
-		else if ( IsA(node, GroupingClause) )
-		{	
-			List *gs = NIL;
-			GroupingClause *gc = (GroupingClause*)node;
-			
-			if ( ordinary )
-				elog(ERROR,"invalid ordinary grouping set");
-				
-			switch ( gc->groupType )
-			{
-				case GROUPINGTYPE_ROLLUP:
-					gs = rollup_gs_list(canonicalize_gs_list(gc->groupsets, true));
-					break;
-				case GROUPINGTYPE_CUBE:
-					gs = cube_gs_list(canonicalize_gs_list(gc->groupsets, true));
-					break;
-				case GROUPINGTYPE_GROUPING_SETS:
-					gs = canonicalize_gs_list(gc->groupsets, false);
-					break;
-				default:
-					elog(ERROR,"invalid grouping set");
-			}
-			list = list_concat(list,gs);
-		}
-		else
-		{
-			elog(ERROR,"invalid grouping set list");
-		}
-	}
-	return list;
-}
-
-/* Produce the list of N+1 canonical grouping sets corresponding
- * to the rollup of the given list of N canonical grouping sets.
- * These N+1 grouping sets are listed in the descending order
- * based on the number of columns.
- *
- * Argument and result are both a list of bit map sets.
- */
-static List *rollup_gs_list(List *gsl)
-{
-	ListCell *lc;
-	Bitmapset **bms;
-	int i, n = list_length(gsl);
-	
-	if ( n == 0 )
-		elog(ERROR,"invalid grouping ordinary grouping set list");
-	
-	if ( n > 1 )
-	{
-		/* Reverse the elements in gsl */
-		List *new_gsl = NIL;
-		foreach (lc, gsl)
-		{
-			new_gsl = lcons(lfirst(lc), new_gsl);
-		}
-		list_free(gsl);
-		gsl = new_gsl;
-
-		bms = (Bitmapset**)palloc(n*sizeof(Bitmapset*));
-		i = 0;
-		foreach (lc, gsl)
-		{
-			bms[i++] = (Bitmapset*)lfirst(lc);
-		}
-		for ( i = n-2; i >= 0; i-- )
-		{
-			bms[i] = bms_add_members(bms[i], bms[i+1]);
-		}
-		pfree(bms);
-	}
-
-	return lappend(gsl, NULL);
-}
-
-/* Subroutine for cube_gs_list. */
-static List *add_gs_combinations(List *list, int n, int i,
-								 Bitmapset **base, Bitmapset **work)
-{
-	if ( i < n )
-	{
-		work[i] = base[i];
-		list = add_gs_combinations(list, n, i+1, base, work);
-		work[i] = NULL;
-		list = add_gs_combinations(list, n, i+1, base, work);	
-	}
-	else
-	{
-		Bitmapset *gs = NULL;
-		int j;
-		for ( j = 0; j < n; j++ )
-		{
-			gs = bms_add_members(gs, work[j]);
-		}
-		list = lappend(list,gs);
-	}
-	return list;
-}
-
-/* Produce the list of 2^N canonical grouping sets corresponding
- * to the cube of the given list of N canonical grouping sets.
- *
- * We could do this more efficiently, but the number of grouping
- * sets should be small, so don't bother.
- *
- * Argument and result are both a list of bit map sets.
- */
-static List *cube_gs_list(List *gsl)
-{
-	ListCell *lc;
-	Bitmapset **bms_base;
-	Bitmapset **bms_work;
-	int i, n = list_length(gsl);
-	
-	if ( n == 0 )
-		elog(ERROR,"invalid grouping ordinary grouping set list");
-	
-	bms_base = (Bitmapset**)palloc(n*sizeof(Bitmapset*));
-	bms_work = (Bitmapset**)palloc(n*sizeof(Bitmapset*));
-	i = 0;
-	foreach (lc, gsl)
-	{
-		bms_work[i] = NULL;
-		bms_base[i++] = (Bitmapset*)lfirst(lc);
-	}
-
-	return add_gs_combinations(NIL, n, 0, bms_base, bms_work);
-}
-
-/* Subroutine for sort_canonical_gs_list. */
-static int gs_compare(const void *a, const void*b)
-{
-	/* Put the larger grouping sets before smaller ones. */
-	return (0-bms_compare(*(Bitmapset**)a, *(Bitmapset**)b));
-}
-
-/* Produce a sorted array of Bitmapsets from the given list of Bitmapsets in
- * descending order.
- */
-static void sort_canonical_gs_list(List *gs, int *p_nsets, Bitmapset ***p_sets)
-{
-	ListCell *lc;
-	int nsets = list_length(gs);
-	Bitmapset **sets = palloc(nsets*sizeof(Bitmapset*));
-	int i = 0;
-	
-	foreach (lc, gs)
-	{
-		sets[i++] =  (Bitmapset*)lfirst(lc);
-	}
-	
-	qsort(sets, nsets, sizeof(Bitmapset*), gs_compare);
-	
-	Assert( p_nsets != NULL && p_sets != NULL );
-	
-	*p_nsets = nsets;
-	*p_sets = sets;
 }
 
 /*

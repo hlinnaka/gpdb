@@ -2053,9 +2053,6 @@ push_down_restrict(PlannerInfo *root, RelOptInfo *rel,
  * 3. If the subquery contains EXCEPT or EXCEPT ALL set ops we cannot push
  * quals into it, because that could change the results.
  *
- * 4. Do not push down quals if the subquery is a grouping extension
- * query, since this may change the meaning of the query.
- *
  * In addition, we make several checks on the subquery's output columns
  * to see if it is safe to reference them in pushed-down quals.  If output
  * column k is found to be unsafe to reference, we set unsafeColumns[k] to
@@ -2078,11 +2075,6 @@ subquery_is_pushdown_safe(Query *subquery, Query *topquery,
 
 	/* Targetlist must not contain SRF */
 	if (expression_returns_set((Node *) subquery->targetList))
-		return false;
-
-	/* See point 5. */
-	if (subquery->groupClause != NULL &&
-		contain_extended_grouping(subquery->groupClause))
 		return false;
 
 	/*

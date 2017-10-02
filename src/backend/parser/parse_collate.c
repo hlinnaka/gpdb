@@ -486,7 +486,6 @@ assign_collations_walker(Node *node, assign_collations_context *context)
 		case T_JoinExpr:
 		case T_FromExpr:
 		case T_SortGroupClause:
-		case T_GroupingClause:
 		case T_WindowClause:
 			(void) expression_tree_walker(node,
 										  assign_collations_walker,

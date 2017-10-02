@@ -1224,14 +1224,6 @@ map_sgr_mutator(Node *node, void *context)
 		new_g->tleSortGroupRef = ctx->sgr_map[g->tleSortGroupRef];
 		return (Node*)new_g;
 	}
-	else if (IsA(node, GroupingClause))
-	{
-		GroupingClause *gc = (GroupingClause*)node;
-		GroupingClause *new_gc = makeNode(GroupingClause);
-		memcpy(new_gc, gc, sizeof(GroupingClause));
-		new_gc->groupsets = (List*)map_sgr_mutator((Node*)gc->groupsets, ctx);
-		return (Node*)new_gc;
-	}
 
 	return NULL; /* Never happens */
 }
@@ -1314,9 +1306,7 @@ static Node* grouped_window_mutator(Node *node, void *context)
 		ctx->tle = NULL;
 		result = (Node*)new_tle;
 	}
-	else if (IsA(node, Aggref) ||
-			 IsA(node, GroupingFunc) ||
-			 IsA(node, GroupId) )
+	else if (IsA(node, Aggref))
 	{
 		/* Aggregation expression */
 		result = (Node*) var_for_gw_expr(ctx, node, true);
@@ -1710,8 +1700,6 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->windowClause = transformWindowDefinitions(pstate,
 												   pstate->p_windowdefs,
 												   &qry->targetList);
-
-	processExtendedGrouping(pstate, qry->havingQual, qry->windowClause, qry->targetList);
 
 	qry->rtable = pstate->p_rtable;
 	qry->jointree = makeFromExpr(pstate->p_joinlist, qual);

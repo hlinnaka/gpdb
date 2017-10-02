@@ -73,7 +73,6 @@ static Node *transformWholeRowRef(ParseState *pstate, RangeTblEntry *rte,
 					 int location);
 static Node *transformIndirection(ParseState *pstate, Node *basenode,
 					 List *indirection);
-static Node *transformGroupingFunc(ParseState *pstate, GroupingFunc *gf);
 static Node *transformTypeCast(ParseState *pstate, TypeCast *tc);
 static Node *transformCollateClause(ParseState *pstate, CollateClause *c);
 static Node *make_row_comparison_op(ParseState *pstate, List *opname,
@@ -330,13 +329,6 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 			result = transformCurrentOfExpr(pstate, (CurrentOfExpr *) expr);
 			break;
 
-		case T_GroupingFunc:
-			{
-				GroupingFunc *gf = (GroupingFunc *)expr;
-				result = transformGroupingFunc(pstate, gf);
-				break;
-			}
-
 		case T_PartitionBoundSpec:
 			{
 				PartitionBoundSpec *in = (PartitionBoundSpec *)expr;
@@ -487,7 +479,6 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 		case T_CoerceToDomain:
 		case T_CoerceToDomainValue:
 		case T_SetToDefault:
-		case T_GroupId:
 		case T_Integer:
 			{
 				result = (Node *) expr;
@@ -2457,29 +2448,6 @@ transformWholeRowRef(ParseState *pstate, RangeTblEntry *rte, int location)
 	markVarForSelectPriv(pstate, result, rte);
 
 	return (Node *) result;
-}
-
-static Node *
-transformGroupingFunc(ParseState *pstate, GroupingFunc *gf)
-{
-	List *targs = NIL;
-	ListCell *lc;
-	GroupingFunc *new_gf;
-
-	new_gf = makeNode(GroupingFunc);
-
-	/*
-	 * Transform the list of arguments.
-	 */
-	foreach (lc, gf->args)
-		targs = lappend(targs, transformExpr(pstate, (Node *)lfirst(lc),
-											 EXPR_KIND_GROUP_BY));
-
-	new_gf->args = targs;
-
-	new_gf->ngrpcols = gf->ngrpcols;
-
-	return (Node *)new_gf;
 }
 
 /*

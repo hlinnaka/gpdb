@@ -886,7 +886,6 @@ check_collation_walker(Node *node, check_collation_context *context)
 		case T_RowCompareExpr:
 		case T_FieldSelect:
 		case T_FieldStore:
-		case T_GroupId:
 		case T_CoerceToDomainValue:
 		case T_CurrentOfExpr:
 		case T_NamedArgExpr:
@@ -899,8 +898,6 @@ check_collation_walker(Node *node, check_collation_context *context)
 		case T_Param:
 		case T_SubPlan:
 		case T_AlternativeSubPlan:
-		case T_GroupingFunc:
-		case T_Grouping:
 		case T_DMLActionExpr:
 		case T_PartBoundExpr:
 			collation = exprCollation(node);

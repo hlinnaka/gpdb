@@ -69,7 +69,7 @@ CQueryMutators::NeedsProjListNormalization
 
 		// Normalize when there is an expression that is neither used for grouping
 		// nor is an aggregate function
-		if (!IsA(target_entry->expr, Aggref) && !IsA(target_entry->expr, GroupingFunc) && !CTranslatorUtils::IsGroupingColumn( (Node*) target_entry->expr, query->groupClause, query->targetList))
+		if (!IsA(target_entry->expr, Aggref) && !CTranslatorUtils::IsGroupingColumn( (Node*) target_entry->expr, query->groupClause, query->targetList))
 		{
 			return true;
 		}
@@ -99,7 +99,7 @@ CQueryMutators::ShouldFallback
 		return false;
 	}
 
-	if (IsA(node, Const) || IsA(node, Aggref) || IsA(node, GroupingFunc) || IsA(node, SubLink))
+	if (IsA(node, Const) || IsA(node, Aggref) || IsA(node, SubLink))
 	{
 		return false;
 	}
@@ -201,7 +201,7 @@ CQueryMutators::NormalizeGroupByProjList
 			target_entry->expr = (Expr*) RunGroupByProjListMutator( (Node*) target_entry->expr, &context);
 			GPOS_ASSERT
 				(
-				!IsA(target_entry->expr, Aggref) && !IsA(target_entry->expr, GroupingFunc) &&
+				!IsA(target_entry->expr, Aggref) &&
 				"New target list entry should not contain any Aggrefs"
 				);
 		}
@@ -529,28 +529,6 @@ CQueryMutators::RunGroupByProjListMutator
 		return (Node*) new_var;
 	}
 
-	if (IsA(node, GroupingFunc))
-	{
-		Node *pnodeCopy = (Node *) gpdb::CopyObject(node);
-
-		const ULONG attno = gpdb::ListLength(context->m_groupby_target_list) + 1;
-		TargetEntry *target_entry = GetTargetEntryForAggExpr(context->m_mp, context->m_md_accessor, pnodeCopy, attno);
-
-		// Add a new target entry to the query
-		context->m_groupby_target_list = gpdb::LAppend(context->m_groupby_target_list, target_entry);
-
-		Var *new_var = gpdb::MakeVar
-								(
-								1, // varno
-								(AttrNumber) attno,
-								gpdb::ExprType(node),
-								gpdb::ExprTypeMod(node),
-								0 // query levelsup
-								);
-
-		return (Node*) new_var;
-	}
-
 	if (!context->m_is_mutating_agg_arg)
 	{
 		// if we find a target entry in the new derived table then return the appropriate var
@@ -670,11 +648,6 @@ CQueryMutators::RunGroupingColMutator
 		aggref->args = new_args;
 
 		return (Node*) aggref;
-	}
-
-	if (IsA(node, GroupingFunc))
-	{
-		return (Node *) gpdb::CopyObject(node);
 	}
 
 	if (IsA(node, SubLink))
@@ -824,15 +797,10 @@ CQueryMutators::GetTargetEntryForAggExpr
 	ULONG attno
 	)
 {
-	GPOS_ASSERT(IsA(node, Aggref) || IsA(node, GroupingFunc));
+	GPOS_ASSERT(IsA(node, Aggref));
 
 	// get the function/aggregate name
 	CHAR *name = NULL;
-	if (IsA(node, GroupingFunc))
-	{
-		name = CTranslatorUtils::CreateMultiByteCharStringFromWCString(GPOS_WSZ_LIT("grouping"));
-	}
-	else
 	{
 		Aggref *aggref = (Aggref*) node;
 
@@ -892,13 +860,6 @@ CQueryMutators::RunHavingQualMutator
 		if (NULL != found_node)
 		{
 			return found_node;
-		}
-
-		if (IsA(node, GroupingFunc))
-		{
-			// create a new entry in the derived table and return its corresponding var
-			Node *node_copy = (Node*) gpdb::CopyObject(node);
-			return (Node *) MakeVarInDerivedTable(node_copy, context);
 		}
 	}
 
@@ -1062,7 +1023,7 @@ CQueryMutators::MakeVarInDerivedTable
 {
 	GPOS_ASSERT(NULL != node);
 	GPOS_ASSERT(NULL != context);
-	GPOS_ASSERT(IsA(node, Aggref) || IsA(node, GroupingFunc));
+	GPOS_ASSERT(IsA(node, Aggref));
 
 	const ULONG attno = gpdb::ListLength(context->m_groupby_target_list) + 1;
 	TargetEntry *target_entry = GetTargetEntryForAggExpr(context->m_mp, context->m_md_accessor, (Node *) node, attno);

@@ -379,7 +379,7 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 				target_list opt_target_list insert_column_list set_target_list
 				set_clause_list set_clause multiple_set_clause
 				ctext_expr_list ctext_row def_list indirection opt_indirection
-				reloption_list group_clause group_elem_list group_elem TriggerFuncArgs select_limit
+				reloption_list group_clause TriggerFuncArgs select_limit
 				opt_select_limit opclass_item_list opclass_drop_list
 				opclass_purpose opt_opfamily transaction_mode_list_or_empty
 				OptTableFuncElementList TableFuncElementList opt_type_modifiers
@@ -703,7 +703,7 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 
 	CONTAINS CPUSET CPU_RATE_LIMIT
 
-	CREATEEXTTABLE CUBE
+	CREATEEXTTABLE
 
 	DECODE DENY DISTRIBUTED DXL
 
@@ -712,8 +712,6 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 	FIELDS FILL FORMAT
 
 	FULLSCAN
-
-	GROUP_ID GROUPING
 
 	HASH HOST
 
@@ -732,7 +730,7 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 	QUEUE
 
 	RANDOMLY READABLE READS REJECT_P REPLICATED RESOURCE
-	ROLLUP ROOTPARTITION
+	ROOTPARTITION
 
 	SCATTER SEGMENT SEGMENTS SETS SPLIT SQL SUBPARTITION
 
@@ -1050,15 +1048,12 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 			%nonassoc CHAR_P
 			%nonassoc CHARACTER
 			%nonassoc COALESCE
-			%nonassoc CUBE
 			%nonassoc DEC
 			%nonassoc DECIMAL_P
 			%nonassoc EXISTS
 			%nonassoc EXTRACT
 			%nonassoc FLOAT_P
 			%nonassoc GREATEST
-			%nonassoc GROUP_ID
-			%nonassoc GROUPING
 			%nonassoc INOUT
 			%nonassoc INT_P
 			%nonassoc INTEGER
@@ -1075,7 +1070,6 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 			%nonassoc POSITION
 			%nonassoc PRECISION
 			%nonassoc REAL
-			%nonassoc ROLLUP
 			%nonassoc ROW
 			%nonassoc SETOF
 			%nonassoc SETS
@@ -12266,41 +12260,9 @@ first_or_next: FIRST_P								{ $$ = 0; }
 
 
 group_clause:
-			GROUP_P BY group_elem_list				{ $$ = $3; }
+			GROUP_P BY expr_list					{ $$ = $3; }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
-
-group_elem_list:
-            group_elem                                { $$ = $1; }
-            | group_elem_list ',' group_elem            { $$ = list_concat($1, $3); }
-        ;
-
-group_elem:
-			a_expr                                  { $$ = list_make1($1); }
-			| ROLLUP '(' expr_list ')'
-                {
-					GroupingClause *n = makeNode(GroupingClause);
-					n->groupType = GROUPINGTYPE_ROLLUP;
-					n->groupsets = $3;
-					$$ = list_make1 ((Node*)n);
-				}
-            | CUBE '(' expr_list ')'
-                {
-					GroupingClause *n = makeNode(GroupingClause);
-					n->groupType = GROUPINGTYPE_CUBE;
-					n->groupsets = $3;
-					$$ = list_make1 ((Node*)n);
-				}
-            | GROUPING SETS '(' group_elem_list ')'
-                {
-					GroupingClause *n = makeNode(GroupingClause);
-					n->groupType = GROUPINGTYPE_GROUPING_SETS;
-					n->groupsets = $4;
-					$$ = list_make1 ((Node*)n);
-				}
-            | '(' ')'
-                { $$ = list_make1(NIL); }
-        ;
 
 having_clause:
 			HAVING a_expr							{ $$ = $2; }
@@ -14271,18 +14233,6 @@ func_expr_common_subexpr:
 					v->location = @1;
 					$$ = (Node *)v;
 				}
-            | GROUPING '(' expr_list ')'
-                {
-					GroupingFunc *f = makeNode(GroupingFunc);
-					f->args = $3;
-					$$ = (Node*)f;
-				}
-
-			| GROUP_ID '(' ')'
-				{
-					GroupId *gid = makeNode(GroupId);
-					$$ = (Node *)gid;
-				}
 			| MEDIAN '(' a_expr ')'
 				{
 					/*
@@ -16075,15 +16025,12 @@ PartitionIdentKeyword: ABORT_P
 			| BIT
 			| BOOLEAN_P
 			| COALESCE
-			| CUBE
 			| DEC
 			| DECIMAL_P
 			| EXISTS
 			| EXTRACT
 			| FLOAT_P
 			| GREATEST
-			| GROUP_ID
-			| GROUPING
 			| INOUT
 			| INT_P
 			| INTEGER
@@ -16099,7 +16046,6 @@ PartitionIdentKeyword: ABORT_P
 			| POSITION
 			| PRECISION
 			| REAL
-			| ROLLUP
 			| ROW
 			| SETOF
 			| SETS
@@ -16137,15 +16083,12 @@ col_name_keyword:
 			| CHAR_P
 			| CHARACTER
 			| COALESCE
-			| CUBE
 			| DEC
 			| DECIMAL_P
 			| EXISTS
 			| EXTRACT
 			| FLOAT_P
 			| GREATEST
-			| GROUPING
-			| GROUP_ID
 			| INOUT
 			| INT_P
 			| INTEGER
@@ -16162,7 +16105,6 @@ col_name_keyword:
 			| POSITION
 			| PRECISION
 			| REAL
-			| ROLLUP
 			| ROW
 			| SETOF
 			| SETS

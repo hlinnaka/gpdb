@@ -856,10 +856,6 @@ make_union_unique(SetOperationStmt *op, Plan *plan,
 													   plan->targetlist),
 								 extract_grouping_ops(groupList),
 								 numGroups,
-								 0, /* num_nullcols */
-								 0, /* input_grouping */
-								 0, /* grouping */
-								 0, /* rollupGSTimes */
 								 plan);
 		/* Hashed aggregation produces randomly-ordered results */
 		*sortClauses = NIL;

@@ -197,12 +197,6 @@ cdb_pull_up_eclass(PlannerInfo    *root,
                     List           *newvarlist,
                     Index           newrelid);
 
-extern List *make_pathkeys_for_groupclause(PlannerInfo *root,
-										   List *groupclause,
-										   List *tlist);
-extern List *make_pathkeys_for_groupclause_noncanonical(PlannerInfo *root,
-										   List *groupclause,
-										   List *tlist);
 extern List *make_pathkeys_for_sortclauses(PlannerInfo *root,
 							  List *sortclauses,
 							  List *tlist);
