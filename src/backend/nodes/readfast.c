@@ -3315,11 +3315,8 @@ readNodeBinary(void)
 			case T_Query:
 				return_value = _readQuery();
 				break;
-			case T_SortClause:
-				return_value = _readSortClause();
-				break;
-			case T_GroupClause:
-				return_value = _readGroupClause();
+			case T_SortGroupClause:
+				return_value = _readSortGroupClause();
 				break;
 			case T_GroupingClause:
 				return_value = _readGroupingClause();

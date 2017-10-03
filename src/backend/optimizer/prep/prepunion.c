@@ -106,7 +106,7 @@ static List *adjust_inherited_tlist(List *tlist,
  * zero means "all the tuples will be fetched".  Any LIMIT present at the
  * top level has already been factored into tuple_fraction.
  *
- * *sortClauses is an output argument: it is set to a list of SortClauses
+ * *sortClauses is an output argument: it is set to a list of SortGroupClauses
  * representing the result ordering of the topmost set operation.
  */
 Plan *
@@ -168,7 +168,7 @@ plan_set_operations(PlannerInfo *root, double tuple_fraction,
  * junkOK: if true, child resjunk columns may be left in the result
  * flag: if >= 0, add a resjunk output column indicating value of flag
  * refnames_tlist: targetlist to take column names from
- * *sortClauses: receives list of SortClauses for result plan, if any
+ * *sortClauses: receives list of SortGroupClauses for result plan, if any
  *
  * We don't have to care about typmods here: the only allowed difference
  * between set-op input and output typmods is input is a specific typmod

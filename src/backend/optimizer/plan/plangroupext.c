@@ -1919,7 +1919,6 @@ convert_gs_to_rollups(AttrNumber *grpColIdx, Oid *grpOperators,
 	for (no = 0; no < max_sortgroupref; no++)
 	{
 		TargetEntry *tle = NULL;
-		SortClause sc = { };
 		
 		if (sortrefs_to_resnos[no] > 0)
 			continue;
@@ -1928,8 +1927,7 @@ convert_gs_to_rollups(AttrNumber *grpColIdx, Oid *grpOperators,
 		 * and find the corresponding target entry in sub_tlist. Fill in the
 		 * resno.
 		 */
-		sc.tleSortGroupRef = no+1;
-		tle = get_sortgroupclause_tle(&sc, tlist);
+		tle = get_sortgroupref_tle(no + 1, tlist);
 		foreach (sub_lc, sub_tlist)
 		{
 			TargetEntry *sub_tle = (TargetEntry *)lfirst(sub_lc);

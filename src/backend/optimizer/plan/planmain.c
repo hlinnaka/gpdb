@@ -457,13 +457,13 @@ distcols_in_groupclause(List *gc, Bitmapset *bms)
 		if (node == NULL)
 			continue;
 
-		Assert(IsA(node, GroupClause) ||
+		Assert(IsA(node, SortGroupClause) ||
 			   IsA(node, List) ||
 			   IsA(node, GroupingClause));
 
-		if (IsA(node, GroupClause))
+		if (IsA(node, SortGroupClause))
 		{
-			bms = bms_add_member(bms, ((GroupClause *)node)->tleSortGroupRef);
+			bms = bms_add_member(bms, ((SortGroupClause *) node)->tleSortGroupRef);
 		}
 
 		else if (IsA(node, List))

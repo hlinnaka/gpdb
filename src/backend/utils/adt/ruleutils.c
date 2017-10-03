@@ -177,7 +177,7 @@ static void get_rule_grouplist(List *grplist, List *tlist,
 							   bool in_grpsets, deparse_context *context);
 static void get_rule_groupingclause(GroupingClause *grp, List *tlist,
 									deparse_context *context);
-static Node *get_rule_sortgroupclause(SortClause *srt, List *tlist,
+static Node *get_rule_sortgroupclause(SortGroupClause *srt, List *tlist,
 						 bool force_colno,
 						 deparse_context *context);
 static void get_rule_windowspec(WindowClause *wc, List *targetList,
@@ -2463,13 +2463,13 @@ get_basic_select_query(Query *query, deparse_context *context,
 	/* Add the DISTINCT clause if given */
 	if (query->distinctClause != NIL)
 	{
-		if (has_distinct_on_clause(query))
+		if (query->hasDistinctOn)
 		{
 			appendStringInfo(buf, " DISTINCT ON (");
 			sep = "";
 			foreach(l, query->distinctClause)
 			{
-				SortClause *srt = (SortClause *) lfirst(l);
+				SortGroupClause *srt = (SortGroupClause *) lfirst(l);
 
 				appendStringInfoString(buf, sep);
 				get_rule_sortgroupclause(srt, query->targetList,
@@ -2726,7 +2726,7 @@ get_rule_grouplist(List *grplist, List *tlist,
 		Node *node = (Node *)lfirst(lc);
 		Assert (node == NULL ||
 				IsA(node, List) ||
-				IsA(node, GroupClause) ||
+				IsA(node, SortGroupClause) ||
 				IsA(node, GroupingClause));
 
 		appendStringInfoString(buf, sep);
@@ -2746,11 +2746,11 @@ get_rule_grouplist(List *grplist, List *tlist,
 			appendStringInfoString(buf, ")");
 		}
 
-		else if (IsA(node, GroupClause))
+		else if (IsA(node, SortGroupClause))
 		{
 			if (in_grpsets)
 				appendStringInfoString(buf, "(");
-			get_rule_sortgroupclause((GroupClause *)node, tlist,
+			get_rule_sortgroupclause((SortGroupClause *) node, tlist,
 									  false,context);
 			if (in_grpsets)
 				appendStringInfoString(buf, ")");
@@ -2803,7 +2803,7 @@ get_rule_groupingclause(GroupingClause *grp, List *tlist,
  * Also returns the expression tree, so caller need not find it again.
  */
 static Node *
-get_rule_sortgroupclause(SortClause *srt, List *tlist, bool force_colno,
+get_rule_sortgroupclause(SortGroupClause *srt, List *tlist, bool force_colno,
 						 deparse_context *context)
 {
 	StringInfo	buf = context->buf;
@@ -5471,7 +5471,7 @@ get_sortlist_expr(List *l, List *targetList, bool force_colno,
 	sep = "";
 	foreach(cell, l)
 	{
-		SortClause *srt = (SortClause *) lfirst(cell);
+		SortGroupClause *srt = (SortGroupClause *) lfirst(cell);
 		Node	   *sortexpr;
 		Oid			sortcoltype;
 		TypeCacheEntry *typentry;

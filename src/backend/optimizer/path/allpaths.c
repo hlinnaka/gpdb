@@ -1631,11 +1631,12 @@ qual_is_pushdown_safe_set_operation(Query *subquery, Node *qual)
  *
  * 4. If the subquery uses DISTINCT ON, we must not push down any quals that
  * refer to non-DISTINCT output columns, because that could change the set
- * of rows returned.  This condition is vacuous for DISTINCT, because then
- * there are no non-DISTINCT output columns, but unfortunately it's fairly
- * expensive to tell the difference between DISTINCT and DISTINCT ON in the
- * parsetree representation.  It's cheaper to just make sure all the Vars
- * in the qual refer to DISTINCT columns.
+ * of rows returned.  (This condition is vacuous for DISTINCT, because then
+ * there are no non-DISTINCT output columns, so we needn't check.  But note
+ * we are assuming that the qual can't distinguish values that the DISTINCT
+ * operator sees as equal.  This is a bit shaky but we have no way to test
+ * for the case, and it's unlikely enough that we shouldn't refuse the
+ * optimization just because it could theoretically happen.)
  *
  * 5. We must not push down any quals that refer to subselect outputs that
  * return sets, else we'd introduce functions-returning-sets into the
@@ -1722,9 +1723,9 @@ qual_is_pushdown_safe(Query *subquery, Index rti, Node *qual,
 		Assert(tle != NULL);
 		Assert(!tle->resjunk);
 
-		/* If subquery uses DISTINCT or DISTINCT ON, check point 4 */
-		if (subquery->distinctClause != NIL &&
-			!targetIsInSortGroupList(tle, InvalidOid, subquery->distinctClause))
+		/* If subquery uses DISTINCT ON, check point 4 */
+		if (subquery->hasDistinctOn &&
+			!targetIsInSortList(tle, InvalidOid, subquery->distinctClause))
 		{
 			/* non-DISTINCT column, so fail */
 			safe = false;
@@ -1765,7 +1766,7 @@ qual_is_pushdown_safe(Query *subquery, Index rti, Node *qual,
 			{
 				WindowClause *wc = (WindowClause *) lfirst(lc);
 
-				if (!targetIsInSortGroupList(tle, InvalidOid, wc->partitionClause))
+				if (!targetIsInSortList(tle, InvalidOid, wc->partitionClause))
 				{
 					/*
 					 * qual's columns are not included in Partition-By clause,

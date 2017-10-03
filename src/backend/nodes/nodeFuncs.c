@@ -1173,21 +1173,12 @@ expression_tree_mutator(Node *node,
 
 				return (Node *) newnode;
 			}
-		case T_SortClause:
+		case T_SortGroupClause:
 			{
-				SortClause *sortcl = (SortClause *) node;
-				SortClause *newnode;
+				SortGroupClause *sortcl = (SortGroupClause *) node;
+				SortGroupClause *newnode;
 
-				FLATCOPY(newnode, sortcl, SortClause);
-
-				return (Node *) newnode;
-			}
-		case T_GroupClause: /* same as SortClause for now */
-			{
-				GroupClause *groupcl = (GroupClause *) node;
-				GroupClause *newnode;
-
-				FLATCOPY(newnode, groupcl, GroupClause);
+				FLATCOPY(newnode, sortcl, SortGroupClause);
 
 				return (Node *) newnode;
 			}

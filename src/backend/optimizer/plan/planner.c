@@ -83,6 +83,7 @@ static Plan *grouping_planner(PlannerInfo *root, double tuple_fraction);
 static double preprocess_limit(PlannerInfo *root,
 				 double tuple_fraction,
 				 int64 *offset_est, int64 *count_est);
+static void preprocess_groupclause(PlannerInfo *root);
 #ifdef NOT_USED
 static Oid *extract_grouping_ops(List *groupClause, int *numGroupOps);
 #endif
@@ -1395,7 +1396,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		Path	   *sorted_path;
 		long		numGroups = 0;
 		AggClauseCounts agg_counts;
-		int			numGroupCols = list_length(parse->groupClause);
+		int			numGroupCols;
 		bool		use_hashed_grouping = false;
 		bool		grpext = false;
 		bool		has_within = false;
@@ -1405,6 +1406,11 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 		/* A recursive query should always have setOperations */
 		Assert(!root->hasRecursion);
+
+		/* Preprocess GROUP BY clause, if any */
+		if (parse->groupClause)
+			preprocess_groupclause(root);
+		numGroupCols = list_length(parse->groupClause);
 
 		/* Preprocess targetlist */
 		tlist = preprocess_targetlist(root, tlist);
@@ -2556,6 +2562,88 @@ preprocess_limit(PlannerInfo *root, double tuple_fraction,
 	return tuple_fraction;
 }
 
+
+/*
+ * preprocess_groupclause - do preparatory work on GROUP BY clause
+ *
+ * The idea here is to adjust the ordering of the GROUP BY elements
+ * (which in itself is semantically insignificant) to match ORDER BY,
+ * thereby allowing a single sort operation to both implement the ORDER BY
+ * requirement and set up for a Unique step that implements GROUP BY.
+ *
+ * In principle it might be interesting to consider other orderings of the
+ * GROUP BY elements, which could match the sort ordering of other
+ * possible plans (eg an indexscan) and thereby reduce cost.  We don't
+ * bother with that, though.  Hashed grouping will frequently win anyway.
+ */
+static void
+preprocess_groupclause(PlannerInfo *root)
+{
+	Query	   *parse = root->parse;
+	List	   *new_groupclause;
+	bool		partial_match;
+	ListCell   *sl;
+	ListCell   *gl;
+
+	/* If no ORDER BY, nothing useful to do here anyway */
+	if (parse->sortClause == NIL)
+		return;
+
+	/*
+	 * Scan the ORDER BY clause and construct a list of matching GROUP BY
+	 * items, but only as far as we can make a matching prefix.
+	 *
+	 * This code assumes that the sortClause contains no duplicate items.
+	 */
+	new_groupclause = NIL;
+	foreach(sl, parse->sortClause)
+	{
+		SortGroupClause *sc = (SortGroupClause *) lfirst(sl);
+
+		foreach(gl, parse->groupClause)
+		{
+			SortGroupClause *gc = (SortGroupClause *) lfirst(gl);
+
+			if (equal(gc, sc))
+			{
+				new_groupclause = lappend(new_groupclause, gc);
+				break;
+			}
+		}
+		if (gl == NULL)
+			break;				/* no match, so stop scanning */
+	}
+
+	/* Did we match all of the ORDER BY list, or just some of it? */
+	partial_match = (sl != NULL);
+
+	/* If no match at all, no point in reordering GROUP BY */
+	if (new_groupclause == NIL)
+		return;
+
+	/*
+	 * Add any remaining GROUP BY items to the new list, but only if we
+	 * were able to make a complete match.  In other words, we only
+	 * rearrange the GROUP BY list if the result is that one list is a
+	 * prefix of the other --- otherwise there's no possibility of a
+	 * common sort.
+	 */
+	foreach(gl, parse->groupClause)
+	{
+		SortGroupClause *gc = (SortGroupClause *) lfirst(gl);
+
+		if (list_member_ptr(new_groupclause, gc))
+			continue;			/* it matched an ORDER BY item */
+		if (partial_match)
+			return;				/* give up, no common sort possible */
+		new_groupclause = lappend(new_groupclause, gc);
+	}
+
+	/* Success --- install the rearranged GROUP BY list */
+	Assert(list_length(parse->groupClause) == list_length(new_groupclause));
+	parse->groupClause = new_groupclause;
+}
+
 /*
  * extract_grouping_ops - make an array of the equality operator OIDs
  *		for the GROUP BY clause
@@ -2582,9 +2670,9 @@ extract_grouping_ops(List *groupClause, int *numGroupOps)
 		if (node == NULL)
 			continue;
 
-		if (IsA(node, GroupClause) ||IsA(node, SortClause))
+		if (IsA(node, SortGroupClause))
 		{
-			GroupClause *groupcl = (GroupClause *) lfirst(glitem);
+			SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
 
 			if (colno == maxCols)
 			{
@@ -2903,9 +2991,10 @@ make_subplanTargetList(PlannerInfo *root,
 		AttrNumber *grpColIdx;
 		Oid		   *grpOperators;
 		List	   *grouptles;
-		List	   *groupops;
+		List	   *sortops;
+		List	   *eqops;
 		ListCell   *lc_tle;
-		ListCell   *lc_op;
+		ListCell   *lc_eqop;
 
 		grpColIdx = (AttrNumber *) palloc(sizeof(AttrNumber) * numCols);
 		grpOperators = (Oid *) palloc(sizeof(Oid) * numCols);
@@ -2913,10 +3002,11 @@ make_subplanTargetList(PlannerInfo *root,
 		*groupOperators = grpOperators;
 
 		get_sortgroupclauses_tles(parse->groupClause, tlist,
-								  &grouptles, &groupops);
+								  &grouptles, &sortops, &eqops);
 		Assert(numCols == list_length(grouptles) &&
-			   numCols == list_length(groupops));
-		forboth(lc_tle, grouptles, lc_op, groupops)
+			   numCols == list_length(sortops) &&
+			   numCols == list_length(eqops));
+		forboth(lc_tle, grouptles, lc_eqop, eqops)
 		{
 			Node	   *groupexpr;
 			TargetEntry *tle;
@@ -2948,10 +3038,9 @@ make_subplanTargetList(PlannerInfo *root,
 			sub_tle->ressortgroupref = tle->ressortgroupref;
 			grpColIdx[keyno] = sub_tle->resno;
 
-			grpOperators[keyno] = get_equality_op_for_ordering_op(lfirst_oid(lc_op));
+			grpOperators[keyno] = lfirst_oid(lc_eqop);
 			if (!OidIsValid(grpOperators[keyno]))		/* shouldn't happen */
-				elog(ERROR, "could not find equality operator for ordering operator %u",
-					 lfirst_oid(lc_op));
+				elog(ERROR, "could not find equality operator for grouping column");
 			keyno++;
 		}
 		Assert(keyno == numCols);
@@ -3051,7 +3140,7 @@ register_ordered_aggs_mutator(Node *node,
  */
 typedef struct agg_order_update_spec
 {
-	SortClause *sort;
+	SortGroupClause *sort;
 	TargetEntry *entry;
 	Index sortgroupref;
 }
@@ -3071,12 +3160,12 @@ void register_AggOrder(AggOrder *aggorder,
 	
 	foreach (lc, aggorder->sortClause)
 	{
-		SortClause *sort;
+		SortGroupClause *sort;
 		TargetEntry *sort_tle;
 		TargetEntry *sub_tle;
 		
-		sort = (SortClause *)lfirst(lc);
-		Assert(IsA(sort, SortClause));
+		sort = (SortGroupClause *) lfirst(lc);
+		Assert(IsA(sort, SortGroupClause));
 		Assert( sort->tleSortGroupRef != 0 );
 		sort_tle = get_sortgroupclause_tle(sort, aggorder->sortTargets);
 		
@@ -3157,7 +3246,8 @@ locate_grouping_columns(PlannerInfo *root,
 {
 	int			keyno = 0;
 	List	   *grouptles;
-	List	   *groupops;
+	List	   *sortops;
+	List	   *eqops;
 	ListCell   *ge;
 
 	/*
@@ -3171,7 +3261,7 @@ locate_grouping_columns(PlannerInfo *root,
 	Assert(groupColIdx != NULL);
 
 	get_sortgroupclauses_tles(root->parse->groupClause, tlist,
-							  &grouptles, &groupops);
+							  &grouptles, &sortops, &eqops);
 
 	foreach (ge, grouptles)
 	{
@@ -3279,11 +3369,11 @@ make_canonical_groupingsets(List *groupClause)
 		/* Note that the top-level empty sets have been removed
 		 * in the parser.
 		 */
-		Assert(IsA(node, GroupClause) ||
+		Assert(IsA(node, SortGroupClause) ||
 			   IsA(node, GroupingClause) ||
 			   IsA(node, List));
 
-		if (IsA(node, GroupClause) ||
+		if (IsA(node, SortGroupClause) ||
 			IsA(node, List))
 		{
 			ord_grping = lappend(ord_grping,
@@ -3441,15 +3531,15 @@ make_canonical_groupingsets(List *groupClause)
 static Bitmapset* canonicalize_colref_list(Node * node)
 {
 	ListCell *lc;
-	GroupClause *gc;
+	SortGroupClause *gc;
 	Bitmapset* gs = NULL;
 	
 	if ( node == NULL )
 		elog(ERROR,"invalid column reference list");
 	
-	if ( IsA(node, GroupClause) )
+	if ( IsA(node, SortGroupClause) )
 	{
-		gc = (GroupClause*)node;
+		gc = (SortGroupClause *) node;
 		return bms_make_singleton(gc->tleSortGroupRef);
 	}
 	
@@ -3463,10 +3553,10 @@ static Bitmapset* canonicalize_colref_list(Node * node)
 		if ( cr == NULL )
 			continue;
 			
-		if ( !IsA(cr, GroupClause) )
+		if ( !IsA(cr, SortGroupClause) )
 			elog(ERROR,"invalid column reference list");
 
-		gc = (GroupClause*)cr;
+		gc = (SortGroupClause *) cr;
 		gs = bms_add_member(gs, gc->tleSortGroupRef);	
 	}
 	return gs;
@@ -3512,7 +3602,7 @@ static List *canonicalize_gs_list(List *gsl, bool ordinary)
 			
 			list = lappend(list, NIL); /* empty grouping set */
 		}
-		else if ( IsA(node, GroupClause) || IsA(node, List) )
+		else if ( IsA(node, SortGroupClause) || IsA(node, List) )
 		{
 			/* ordinary grouping set */
 			list = lappend(list, canonicalize_colref_list(node));

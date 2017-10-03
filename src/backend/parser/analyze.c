@@ -1020,11 +1020,12 @@ init_grouped_window_context(grouped_window_ctx *ctx, Query *qry)
 {
 	List *grp_tles;
 	List *grp_sortops;
+	List *grp_eqops;
 	ListCell *lc = NULL;
 	Index maxsgr = 0;
 
 	get_sortgroupclauses_tles(qry->groupClause, qry->targetList,
-							  &grp_tles, &grp_sortops);
+							  &grp_tles, &grp_sortops, &grp_eqops);
 	list_free(grp_sortops);
 	maxsgr = maxSortGroupRef(grp_tles, true);
 
@@ -1157,23 +1158,14 @@ map_sgr_mutator(Node *node, void *context)
 		return (Node*)new_lst;
 	}
 
-	else if (IsA(node, GroupClause))
+	else if (IsA(node, SortGroupClause))
 	{
-		GroupClause *g = (GroupClause*)node;
-		GroupClause *new_g = makeNode(GroupClause);
-		memcpy(new_g, g, sizeof(GroupClause));
+		SortGroupClause *g = (SortGroupClause *) node;
+		SortGroupClause *new_g = makeNode(SortGroupClause);
+
+		memcpy(new_g, g, sizeof(SortGroupClause));
 		new_g->tleSortGroupRef = ctx->sgr_map[g->tleSortGroupRef];
 		return (Node*)new_g;
-	}
-
-	/* Just like above, but don't assume identical */
-	else if (IsA(node, SortClause))
-	{
-	SortClause *s = (SortClause*)node;
-		 SortClause *new_s = makeNode(SortClause);
-		 memcpy(new_s, s, sizeof(SortClause));
-		 new_s->tleSortGroupRef = ctx->sgr_map[s->tleSortGroupRef];
-		 return (Node*)new_s;
 	}
 
 	else if (IsA(node, GroupingClause))
@@ -1560,26 +1552,42 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 												stmt->scatterClause,
 												&qry->targetList);
 
-	if (stmt->distinctClause && linitial(stmt->distinctClause) == NULL &&
-		!pstate->p_hasAggs && !pstate->p_hasWindowFuncs && qry->groupClause == NIL)
+	if (stmt->distinctClause == NIL)
 	{
-		/*
-		 * MPP-15040
-		 * turn distinct clause into grouping clause to make both sort-based
-		 * and hash-based grouping implementations viable plan options
-		 */
-
-		qry->distinctClause = transformDistinctToGroupBy(pstate,
-														 &qry->targetList,
-														 &qry->sortClause,
-														 &qry->groupClause);
+		qry->distinctClause = NIL;
+		qry->hasDistinctOn = false;
+	}
+	else if (linitial(stmt->distinctClause) == NULL)
+	{
+		/* We had SELECT DISTINCT */
+		if (!pstate->p_hasAggs && !pstate->p_hasWindowFuncs && qry->groupClause == NIL)
+		{
+			/*
+			 * MPP-15040
+			 * turn distinct clause into grouping clause to make both sort-based
+			 * and hash-based grouping implementations viable plan options
+			 */
+			qry->distinctClause = transformDistinctToGroupBy(pstate,
+															 &qry->targetList,
+															 &qry->sortClause,
+															 &qry->groupClause);
+		}
+		else
+		{
+			qry->distinctClause = transformDistinctClause(pstate,
+														  &qry->targetList,
+														  qry->sortClause);
+		}
+		qry->hasDistinctOn = false;
 	}
 	else
 	{
-		qry->distinctClause = transformDistinctClause(pstate,
-													  stmt->distinctClause,
-													  &qry->targetList,
-													  qry->sortClause);
+		/* We had SELECT DISTINCT ON */
+		qry->distinctClause = transformDistinctOnClause(pstate,
+														stmt->distinctClause,
+														&qry->targetList,
+														qry->sortClause);
+		qry->hasDistinctOn = true;
 	}
 
 	/* transform LIMIT */
