@@ -112,12 +112,6 @@ static void show_sort_keys(Plan *sortplan, int nkeys, AttrNumber *keycols,
 static const char *explain_get_index_name(Oid indexId);
 
 static void
-show_grouping_keys(Plan        *plan,
-                   int          numCols,
-                   AttrNumber  *subplanColIdx,
-                   const char  *qlabel,
-			       StringInfo str, int indent, ExplainState *es);
-static void
 show_motion_keys(Plan *plan, List *hashExpr, int nkeys, AttrNumber *keycols,
 			     const char *qlabel,
                  StringInfo str, int indent, ExplainState *es);
@@ -1590,11 +1584,6 @@ explain_outNode(StringInfo str,
 			show_upper_qual(plan->qual,
 							"Filter", plan,
 							str, indent, es);
-			show_grouping_keys(plan,
-						       ((Agg *) plan)->numCols,
-						       ((Agg *) plan)->grpColIdx,
-						       "Group By",
-						       str, indent, es);
 			break;
 		case T_WindowAgg:
 			{
@@ -1602,11 +1591,6 @@ explain_outNode(StringInfo str,
 
 				if ( window->partNumCols > 0 )
 				{
-					show_grouping_keys(plan,
-									   window->partNumCols,
-									   window->partColIdx,
-									   "Partition By",
-									   str, indent, es);
 				}
 
 				show_sort_keys(outerPlan(plan),
@@ -2020,70 +2004,6 @@ show_upper_qual(List *qual, const char *qlabel, Plan *plan,
 		appendStringInfo(str, "  ");
 	appendStringInfo(str, "  %s: %s\n", qlabel, exprstr);
 }
-
-/*
- * CDB: Show GROUP BY keys for an Agg or Group node.
- */
-void
-show_grouping_keys(Plan        *plan,
-                   int          numCols,
-                   AttrNumber  *subplanColIdx,
-                   const char  *qlabel,
-			       StringInfo str, int indent, ExplainState *es)
-{
-    Plan       *subplan = plan->lefttree;
-    List	   *context;
-    char	   *exprstr;
-    bool		useprefix = list_length(es->rtable) > 1;
-    int			keyno;
-    int			i;
-
-    if (numCols <= 0)
-        return;
-
-    for (i = 0; i < indent; i++)
-        appendStringInfoString(str, "  ");
-    appendStringInfo(str, "  %s: ", qlabel);
-
-    Node *outerPlan = (Node *) outerPlan(subplan);
-
-	/*
-	 * Dig the child nodes of the subplan. This logic should match that in
-	 * push_plan function, in ruleutils.c!
-	 */
-	if (IsA(subplan, Append))
-		outerPlan = linitial(((Append *) subplan)->appendplans);
-	else if (IsA(subplan, Sequence))
-		outerPlan = (Node *) llast(((Sequence *) subplan)->subplans);
-
-	/* Set up deparse context */
-	context = deparse_context_for_plan((Node *) subplan,
-									   outerPlan,
-									   es->rtable,
-									   es->pstmt->subplans);
-
-    for (keyno = 0; keyno < numCols; keyno++)
-    {
-	    /* find key expression in tlist */
-	    AttrNumber      keyresno = subplanColIdx[keyno];
-	    TargetEntry    *target = get_tle_by_resno(subplan->targetlist, keyresno);
-
-	    if (!target)
-		    elog(ERROR, "no tlist entry for key %d", keyresno);
-
-		/* Deparse the expression, showing any top-level cast */
-		exprstr = deparse_expr_sweet((Node *) target->expr, context,
-									 useprefix, true);
-
-		/* And add to str */
-		if (keyno > 0)
-			appendStringInfoString(str, ", ");
-		appendStringInfoString(str, exprstr);
-    }
-
-    appendStringInfoChar(str, '\n');
-}                               /* show_grouping_keys */
-
 
 /*
  * Show the sort keys for a Sort node.
