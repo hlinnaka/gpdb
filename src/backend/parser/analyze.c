@@ -1560,12 +1560,29 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 												stmt->scatterClause,
 												&qry->targetList);
 
-	qry->distinctClause = transformDistinctClause(pstate,
-												  stmt->distinctClause,
-												  &qry->targetList,
-												  &qry->sortClause,
-												  &qry->groupClause);
+	if (stmt->distinctClause && linitial(stmt->distinctClause) == NULL &&
+		!pstate->p_hasAggs && !pstate->p_hasWindowFuncs && qry->groupClause == NIL)
+	{
+		/*
+		 * MPP-15040
+		 * turn distinct clause into grouping clause to make both sort-based
+		 * and hash-based grouping implementations viable plan options
+		 */
 
+		qry->distinctClause = transformDistinctToGroupBy(pstate,
+														 &qry->targetList,
+														 &qry->sortClause,
+														 &qry->groupClause);
+	}
+	else
+	{
+		qry->distinctClause = transformDistinctClause(pstate,
+													  stmt->distinctClause,
+													  &qry->targetList,
+													  qry->sortClause);
+	}
+
+	/* transform LIMIT */
 	qry->limitOffset = transformLimitClause(pstate, stmt->limitOffset,
 											"OFFSET");
 	qry->limitCount = transformLimitClause(pstate, stmt->limitCount,
