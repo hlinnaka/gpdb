@@ -18,54 +18,11 @@
 
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
-#include "optimizer/clauses.h" /* AggClauseCounts */
 #include "utils/uri.h"
 
 /* GUC parameters */
 #define DEFAULT_CURSOR_TUPLE_FRACTION 1.0 /* assume all rows will be fetched */
 extern double cursor_tuple_fraction;
-
-/*
- * A structure that contains information for planning GROUP BY 
- * queries.
- */
-typedef struct GroupContext
-{
-	Path *best_path;
-	Path *cheapest_path;
-
-	/*
-	 * If subplan is given, use it (including its targetlist).  
-	 *
-	 * If sub_tlist and no subplan is given, then use sub_tlist
-	 * on the input plan. (This is intended to  assure that targets 
-	 * that appear in the SortClauses of AggOrder  nodes have targets 
-	 * in the subplan that match in sortgroupref.
-	 *
-	 * If neither subplan nor sub_tlist is given, just make a plan with
-	 * a flat target list.
-	 */
-	Plan *subplan;
-	List *sub_tlist;
-
-	List *tlist;
-	bool use_hashed_grouping;
-	double tuple_fraction;
-	uint64 grouping;
-
-	/*
-	 * When subplan is privided, groupColIdx and distinctColIdx are also provided.
-	 */
-	int numGroupCols;
-	AttrNumber *groupColIdx;
-	Oid		   *groupOperators;
-	int numDistinctCols;
-	AttrNumber *distinctColIdx;
-
-	double *p_dNumGroups;
-	List **pcurrent_pathkeys;
-	bool *querynode_changed;
-} GroupContext;
 
 /*
  * prototypes for plan/planmain.c

@@ -13,6 +13,7 @@
  */
 #include "postgres.h"
 
+#include "optimizer/clauses.h"
 #include "optimizer/pathnode.h" /* Path */
 #include "optimizer/planmain.h" /* make_sort_from_pathkeys() */
 #include "optimizer/tlist.h"

@@ -17,6 +17,7 @@
 #include "catalog/pg_proc.h"    /* CDB_PROC_TIDTOI8 */
 #include "catalog/pg_type.h"    /* INT8OID */
 #include "nodes/makefuncs.h"    /* makeFuncExpr() */
+#include "nodes/nodeFuncs.h"    /* exprType() */
 #include "nodes/relation.h"     /* PlannerInfo, RelOptInfo, CdbRelDedupInfo */
 #include "optimizer/cost.h"     /* cpu_tuple_cost */
 #include "optimizer/pathnode.h" /* Path, pathnode_walker() */

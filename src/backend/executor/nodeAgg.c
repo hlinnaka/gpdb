@@ -348,32 +348,16 @@ initialize_aggregates(AggState *aggstate,
 		 */
 		if (peraggstate->initValueIsNull)
 		{
-			/* Clear the old transition value */
-			if (!peraggstate->transtypeByVal &&
-				!pergroupstate->transValueIsNull &&
-				DatumGetPointer(pergroupstate->transValue) != NULL)
-				pfree(DatumGetPointer(pergroupstate->transValue));
 			pergroupstate->transValue = peraggstate->initValue;
 		}
-		
 		else
 		{
-			if (!peraggstate->transtypeByVal &&
-				!pergroupstate->transValueIsNull &&
-				DatumGetPointer(pergroupstate->transValue) != NULL)
-				pergroupstate->transValue =
-					datumCopyWithMemManager(pergroupstate->transValue,
-											peraggstate->initValue,
-											peraggstate->transtypeByVal,
-											peraggstate->transtypeLen,
-											mem_manager);
-			else
-				pergroupstate->transValue =
-					datumCopyWithMemManager(0,
-											peraggstate->initValue,
-											peraggstate->transtypeByVal,
-											peraggstate->transtypeLen,
-											mem_manager);
+			pergroupstate->transValue =
+				datumCopyWithMemManager(0,
+										peraggstate->initValue,
+										peraggstate->transtypeByVal,
+										peraggstate->transtypeLen,
+										mem_manager);
 		}
 		pergroupstate->transValueIsNull = peraggstate->initValueIsNull;
 
@@ -583,7 +567,7 @@ advance_aggregates(AggState *aggstate, AggStatePerGroup pergroup,
 				if (i < numTransInputs)
 					continue;
 			}
-			
+
 			/* OK, put the tuple into the tuplesort object */
 			if (peraggstate->numInputs == 1)
 			{

@@ -49,6 +49,7 @@
 #include "utils/syscache.h"
 
 #include "catalog/pg_proc.h"
+#include "cdb/cdbhash.h"
 #include "cdb/cdbllize.h"
 #include "cdb/cdbmutate.h"		/* apply_shareinput */
 #include "cdb/cdbpartition.h"
@@ -1542,7 +1543,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			best_path = cheapest_path;
 		else
 			best_path = sorted_path;
-
+#if 0
 		/*
 		 * CDB:  For now, we either - construct a general parallel plan, - let
 		 * the sequential planner handle the situation, or - construct a
@@ -1602,6 +1603,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			}
 		}
 		else	/* Not GP_ROLE_DISPATCH */
+#endif
 		{
 			/*
 			 * Check to see if it's possible to optimize MIN/MAX aggregates.
@@ -1635,6 +1637,67 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			result_plan = create_plan(root, best_path);
 			current_pathkeys = best_path->pathkeys;
 			current_locus = best_path->locus;	/* just use keys, don't copy */
+
+			/*
+			 * Each group in a GROUP BY needs to be handled in the same segment.
+			 * Redistribute the data if needed.
+			 */
+			if (group_pathkeys && !CdbPathLocus_IsGeneral(current_locus))
+			{
+				if (!cdbpathlocus_collocates(root, current_locus, group_pathkeys, false))
+				{
+					List	   *dist_exprs = NIL;
+					ListCell   *lc;
+					bool		hashable = true;
+
+					foreach (lc, parse->groupClause)
+					{
+						SortGroupClause *sc = (SortGroupClause *) lfirst(lc);
+						TargetEntry *tle = get_sortgroupclause_tle(sc, tlist);
+
+						if (!isGreenplumDbHashable(exprType((Node *) tle->expr)))
+						{
+							hashable = false;
+							break;
+						}
+
+						dist_exprs = lappend(dist_exprs, tle->expr);
+					}
+
+					if (hashable)
+					{
+						result_plan = (Plan *) make_motion_hash(root, result_plan, dist_exprs);
+						result_plan->total_cost += motion_cost_per_row * result_plan->plan_rows;
+						current_pathkeys = NIL; /* no longer sorted */
+						Assert(result_plan->flow);
+
+						/*
+						 * Change current_locus based on the new distribution
+						 * pathkeys.
+						 */
+						CdbPathLocus_MakeHashed(&current_locus, group_pathkeys);
+					}
+					else
+					{
+						if (result_plan->flow->flotype != FLOW_SINGLETON)
+							result_plan =
+								(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
+					}
+				}
+			}
+			/*
+			 * If are aggregates, but no GROUP BY (or a dummy GROUP by with a constant), must
+			 * gather everything to single node.
+			 */
+			else if (parse->hasAggs)
+			{
+				if (!CdbPathLocus_IsGeneral(current_locus) &&
+					result_plan->flow->flotype != FLOW_SINGLETON)
+				{
+					result_plan =
+						(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
+				}
+			}
 
 			/* Detect if we'll need an explicit sort for grouping */
 			if (parse->groupClause && !use_hashed_grouping &&
@@ -1799,6 +1862,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				CdbPathLocus_MakeNull(&current_locus);
 			}
 		}						/* end of non-minmax-aggregate case */
+
+		if (!result_plan->flow)
+			result_plan->flow = pull_up_Flow(result_plan,
+											 getAnySubplan(result_plan));
 
 		/*
 		 * Since each window function could require a different sort order, we

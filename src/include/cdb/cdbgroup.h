@@ -23,39 +23,9 @@
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
 
-#include "optimizer/clauses.h" /* AggClauseCounts */
-#include "optimizer/planmain.h"   /* GroupContext */
-
-extern Plan *
-cdb_grouping_planner(PlannerInfo* root,
-					 AggClauseCounts *agg_counts,
-					 GroupContext *group_context);
+extern void UpdateScatterClause(Query *query, List *newtlist);
 
 extern bool cdbpathlocus_collocates(PlannerInfo *root, CdbPathLocus locus, List *pathkeys, bool exact_match);
 extern CdbPathLocus cdbpathlocus_from_flow(Flow *flow);
-extern Plan *add_second_stage_agg(PlannerInfo *root,
-								  bool is_agg,
-								  List *prelim_tlist,
-								  List *final_tlist,
-								  List *final_qual,
-								  AggStrategy aggstrategy,
-								  int numGroupCols,
-								  AttrNumber *prelimGroupColIdx,
-								  Oid *prelimGroupOperators,
-								  double numGroups,
-								  int numAggs,
-								  const char *alias,
-								  List **p_current_pathkeys,
-								  Plan *result_plan,
-								  bool use_root,
-								  bool adjust_scatter);
-extern List *generate_subquery_tlist(Index varno, List *input_tlist,
-									 bool keep_resjunk, int **p_resno_map);
-extern List *reconstruct_pathkeys(PlannerInfo *root, List *pathkeys, int *resno_map,
-								  List *orig_tlist, List *new_tlist);
-extern List *augment_subplan_tlist(List *tlist, List *exprs, int *pnum, AttrNumber **pcols, bool return_resno);
-
-extern Plan *within_agg_planner(PlannerInfo *root, AggClauseCounts *agg_counts,
-								GroupContext *group_context);
 
 #endif   /* CDBGROUP_H */
