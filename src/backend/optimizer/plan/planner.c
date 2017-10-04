@@ -1822,9 +1822,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					current_pathkeys = NIL;
 				}
 
-				/*
-				 * We make a single Agg node if this is not a grouping extension.
-				 */
 				result_plan = (Plan *) make_agg(root,
 												tlist,
 												(List *) parse->havingQual,
