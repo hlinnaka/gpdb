@@ -1401,23 +1401,19 @@ push_down_restrict(PlannerInfo *root, RelOptInfo *rel,
  * 1. If the subquery has a LIMIT clause, we must not push down any quals,
  * since that could change the set of rows returned.
  *
- * 2. If the subquery contains EXCEPT or EXCEPT ALL set ops we cannot push
+ * 2. If the subquery contains any window functions, we can't push quals
+ * into it, because that would change the results.
+
+ * 3. If the subquery contains EXCEPT or EXCEPT ALL set ops we cannot push
  * quals into it, because that would change the results.
  *
- * 3. For subqueries using UNION/UNION ALL/INTERSECT/INTERSECT ALL, we can
+ * 4. For subqueries using UNION/UNION ALL/INTERSECT/INTERSECT ALL, we can
  * push quals into each component query, but the quals can only reference
  * subquery columns that suffer no type coercions in the set operation.
  * Otherwise there are possible semantic gotchas.  So, we check the
  * component queries to see if any of them have different output types;
  * differentTypes[k] is set true if column k has different type in any
  * component.
- *
- * 4. If the subquery target list has expressions containing calls to
- * window functions, we must not push down any quals since this could
- * change the meaning of the query.  At runtime, window functions refer
- * to the executor state of their Window node.  If a pushed-down qual
- * removed a tuple, the state seen by later tuples (hence the values
- * of window functions) could be affected.
  *
  * 5. Do not push down quals if the subquery is a grouping extension
  * query, since this may change the meaning of the query.
@@ -1430,6 +1426,10 @@ subquery_is_pushdown_safe(Query *subquery, Query *topquery,
 
 	/* Check point 1 */
 	if (subquery->limitOffset != NULL || subquery->limitCount != NULL)
+		return false;
+
+	/* Check point 2 */
+	if (subquery->hasWindowFuncs)
 		return false;
 
 	/* Targetlist must not contain SRF */
@@ -1658,6 +1658,12 @@ qual_is_pushdown_safe(Query *subquery, Index rti, Node *qual,
 	/* Refuse subselects (point 1) */
 	if (contain_subplans(qual))
 		return false;
+
+	/*
+	 * It would be unsafe to push down window function calls, but at least for
+	 * the moment we could never see any in a qual anyhow.
+	 */
+	Assert(!contain_window_function(qual));
 
 	/*
 	 * (point 2X)

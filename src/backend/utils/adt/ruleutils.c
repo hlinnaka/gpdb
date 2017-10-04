@@ -6670,7 +6670,9 @@ generate_function_name(Oid funcid, int nargs, Oid *argtypes,
 							   &p_funcid, &p_rettype,
 							   &p_retset,
 							   &p_nvargs, &p_true_typeids, NULL);
-	if ((p_result == FUNCDETAIL_NORMAL || p_result == FUNCDETAIL_AGGREGATE) &&
+	if ((p_result == FUNCDETAIL_NORMAL ||
+		 p_result == FUNCDETAIL_AGGREGATE ||
+		 p_result == FUNCDETAIL_WINDOWFUNC) &&
 		p_funcid == funcid)
 		nspname = NULL;
 	else

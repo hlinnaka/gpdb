@@ -2440,6 +2440,13 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params)
 							  &context);
 			break;
 
+		case T_WindowAgg:
+			finalize_primnode(((WindowAgg *) plan)->startOffset,
+							  &context);
+			finalize_primnode(((WindowAgg *) plan)->endOffset,
+							  &context);
+			break;
+
 		case T_PartitionSelector:
 			finalize_primnode((Node *) ((PartitionSelector *) plan)->levelEqExpressions,
 							  &context);
@@ -2458,7 +2465,6 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params)
 		case T_RecursiveUnion:
 		case T_Hash:
 		case T_Agg:
-		case T_WindowAgg:
 		case T_SeqScan:
 		case T_AppendOnlyScan:
 		case T_AOCSScan:

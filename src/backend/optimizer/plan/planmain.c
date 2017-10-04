@@ -74,9 +74,9 @@ static Bitmapset *distcols_in_groupclause(List *gc, Bitmapset *bms);
  * PlannerInfo field and not a passed parameter is that the low-level routines
  * in indxpath.c need to see it.)
  *
- * Note: the PlannerInfo node also includes group_pathkeys and sort_pathkeys,
- * which like query_pathkeys need to be canonicalized once the info is
- * available.
+ * Note: the PlannerInfo node also includes group_pathkeys, window_pathkeys,
+ * and sort_pathkeys, which like query_pathkeys need to be
+ * canonicalized once the info is available.
  *
  * tuple_fraction is interpreted as follows:
  *	  0: expect all tuples to be retrieved (normal case)
@@ -128,6 +128,8 @@ query_planner(PlannerInfo *root, List *tlist,
 													 root->query_pathkeys);
 		root->group_pathkeys = canonicalize_pathkeys(root,
 													 root->group_pathkeys);
+		root->window_pathkeys = canonicalize_pathkeys(root,
+													  root->window_pathkeys);
 		root->sort_pathkeys = canonicalize_pathkeys(root,
 													root->sort_pathkeys);
 
@@ -255,10 +257,12 @@ query_planner(PlannerInfo *root, List *tlist,
 	/*
 	 * We have completed merging equivalence sets, so it's now possible to
 	 * convert the requested query_pathkeys to canonical form.	Also
-	 * canonicalize the groupClause and sortClause pathkeys for use later.
+	 * canonicalize the groupClause, windowClause, and
+	 * sortClause pathkeys for use later.
 	 */
 	root->query_pathkeys = canonicalize_pathkeys(root, root->query_pathkeys);
 	root->group_pathkeys = canonicalize_pathkeys(root, root->group_pathkeys);
+	root->window_pathkeys = canonicalize_pathkeys(root, root->window_pathkeys);
 	root->sort_pathkeys = canonicalize_pathkeys(root, root->sort_pathkeys);
 
 	/*

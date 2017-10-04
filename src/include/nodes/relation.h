@@ -242,6 +242,7 @@ typedef struct PlannerInfo
 								 * actual pathkeys afterwards */
 
 	List	   *group_pathkeys; /* groupClause pathkeys, if any */
+	List	   *window_pathkeys;	/* pathkeys of bottom window, if any */
 	List	   *sort_pathkeys;	/* sortClause pathkeys, if any */
 
 	List	   *initial_rels;	/* RelOptInfos we are now trying to join */

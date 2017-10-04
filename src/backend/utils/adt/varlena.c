@@ -3353,12 +3353,11 @@ makeStringAggState(FunctionCallInfo fcinfo)
 	MemoryContext aggcontext;
 	MemoryContext oldcontext;
 
-	if (!(fcinfo->context && IsA(fcinfo->context, AggState)))
+	if (!AggCheckCallContext(fcinfo, &aggcontext))
 	{
 		/* cannot be called directly because of internal-type argument */
 		elog(ERROR, "string_agg_transfn called in non-aggregate context");
 	}
-	aggcontext = ((AggState*)fcinfo->context)->aggcontext;
 
 	/*
 	 * Create state in aggregate context.  It'll stay there across subsequent
@@ -3425,11 +3424,7 @@ string_agg_finalfn(PG_FUNCTION_ARGS)
 	StringInfo	state;
 
 	/* cannot be called directly because of internal-type argument */
-	if (!(fcinfo->context && IsA(fcinfo->context, AggState)))
-	{
-		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "string_agg_finalfn called in non-aggregate context");
-	}
+	Assert(AggCheckCallContext(fcinfo, NULL));
 
 	state = PG_ARGISNULL(0) ? NULL : (StringInfo) PG_GETARG_POINTER(0);
 

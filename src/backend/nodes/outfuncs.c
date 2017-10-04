@@ -825,6 +825,7 @@ _outWindowAgg(StringInfo str, WindowAgg *node)
 
 	_outPlanInfo(str, (Plan *) node);
 
+	WRITE_UINT_FIELD(winref);
 	WRITE_INT_FIELD(partNumCols);
 
 	appendStringInfoLiteral(str, " :partColIdx");

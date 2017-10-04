@@ -167,9 +167,9 @@ cdbpathtoplan_create_motion_plan(PlannerInfo   *root,
 
 				subplan = (Plan *) make_result(root, tlist, NULL, subplan);
 			}
-			subplan->targetlist = add_to_flat_tlist(subplan->targetlist,
-													hashExpr,
-													true /* resjunk */);
+			subplan->targetlist = add_to_flat_tlist_junk(subplan->targetlist,
+														 hashExpr,
+														 true /* resjunk */);
         }
         motion = make_hashed_motion(subplan,
                                     hashExpr,
@@ -198,7 +198,9 @@ cdbpathtoplan_create_motion_plan(PlannerInfo   *root,
 			&& subplan->flow->hashExpr
 			&& is_projection_capable_plan(subplan))
 	{
-		subplan->targetlist = add_to_flat_tlist(subplan->targetlist, subplan->flow->hashExpr, true /* resjunk */);
+		subplan->targetlist = add_to_flat_tlist_junk(subplan->targetlist,
+													 subplan->flow->hashExpr,
+													 true /* resjunk */);
 	}
 
     return motion;

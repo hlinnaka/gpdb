@@ -383,13 +383,5 @@
       "foreign_keys" : [
          [ ["typid"], "pg_type", ["oid"] ]
       ]
-   },
-   "pg_window" : {
-      "foreign_keys" : [
-         [ ["winfnoid"], "pg_proc", ["oid"] ],
-         [ ["winfunc"], "pg_proc", ["oid"] ],
-         [ ["winprefunc"], "pg_proc", ["oid"] ],
-         [ ["winfinfunc"], "pg_proc", ["oid"] ]
-      ]
    }
 }

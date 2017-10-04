@@ -136,35 +136,41 @@ flatten_tlist(List *tlist)
 	List	   *vlist = pull_var_clause((Node *) tlist, true);
 	List	   *new_tlist;
 
-	new_tlist = add_to_flat_tlist(NIL, vlist, false /* resjunk */);
+	new_tlist = add_to_flat_tlist(NIL, vlist);
 	list_free(vlist);
 	return new_tlist;
 }
 
 /*
  * add_to_flat_tlist
- *		Add more vars to a flattened tlist (if they're not already in it)
+ *		Add more items to a flattened tlist (if they're not already in it)
  *
  * 'tlist' is the flattened tlist
- * 'vars' is a list of Var and/or PlaceHolderVar nodes
+ * 'exprs' is a list of expressions (usually, but not necessarily, Vars)
  *
  * Returns the extended tlist.
  */
 List *
-add_to_flat_tlist(List *tlist, List *vars, bool resjunk)
+add_to_flat_tlist(List *tlist, List *exprs)
+{
+	return add_to_flat_tlist_junk(tlist, exprs, false);
+}
+
+List *
+add_to_flat_tlist_junk(List *tlist, List *exprs, bool resjunk)
 {
 	int			next_resno = list_length(tlist) + 1;
-	ListCell   *v;
+	ListCell   *lc;
 
-	foreach(v, vars)
+	foreach(lc, exprs)
 	{
-		Node	   *var = (Node *) lfirst(v);
+		Node	   *expr = (Node *) lfirst(lc);
 
-		if (!tlist_member_ignore_relabel(var, tlist))
+		if (!tlist_member_ignore_relabel(expr, tlist))
 		{
 			TargetEntry *tle;
 
-			tle = makeTargetEntry(copyObject(var),		/* copy needed?? */
+			tle = makeTargetEntry(copyObject(expr),		/* copy needed?? */
 								  next_resno++,
 								  NULL,
 								  resjunk);
@@ -218,7 +224,7 @@ get_sortgroupclause_tle(SortGroupClause *sgClause,
 /*
  * get_sortgroupclauses_tles
  *      Find a list of unique targetlist entries matching the given list of
- *      SortClause, GroupClause, or GroupingClauses.
+ *      SortGroupClauses or GroupingClauses.
  *
  * In each grouping set, targets that do not appear in a GroupingClause
  * will be put in the front of those that appear in a GroupingClauses.
@@ -340,6 +346,61 @@ get_sortgrouplist_exprs(List *sgClauses, List *targetList)
 	}
 	return result;
 }
+
+/*****************************************************************************
+ *		Functions to extract data from a list of SortGroupClauses
+ *
+ * These don't really belong in tlist.c, but they are sort of related to the
+ * functions just above, and they don't seem to deserve their own file.
+ *****************************************************************************/
+
+/*
+ * extract_grouping_ops - make an array of the equality operator OIDs
+ *		for a SortGroupClause list
+ */
+Oid *
+extract_grouping_ops(List *groupClause)
+{
+	int			numCols = list_length(groupClause);
+	int			colno = 0;
+	Oid		   *groupOperators;
+	ListCell   *glitem;
+
+	groupOperators = (Oid *) palloc(sizeof(Oid) * numCols);
+
+	foreach(glitem, groupClause)
+	{
+		SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
+
+		groupOperators[colno] = groupcl->eqop;
+		Assert(OidIsValid(groupOperators[colno]));
+		colno++;
+	}
+
+	return groupOperators;
+}
+
+/*
+ * grouping_is_sortable - is it possible to implement grouping list by sorting?
+ *
+ * This is easy since the parser will have included a sortop if one exists.
+ */
+bool
+grouping_is_sortable(List *groupClause)
+{
+	ListCell   *glitem;
+
+	foreach(glitem, groupClause)
+	{
+		SortGroupClause *groupcl = (SortGroupClause *) lfirst(glitem);
+
+		if (!OidIsValid(groupcl->sortop))
+			return false;
+	}
+	return true;
+}
+
+
 
 /*
  * get_grouplist_colidx

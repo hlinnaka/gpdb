@@ -20,6 +20,7 @@
 #include "executor/nodeBitmapHeapscan.h"
 #include "executor/nodeBitmapIndexscan.h"
 #include "executor/nodeBitmapOr.h"
+#include "executor/nodeCtescan.h"
 #include "executor/nodeFunctionscan.h"
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
@@ -37,7 +38,7 @@
 #include "executor/nodeTidscan.h"
 #include "executor/nodeUnique.h"
 #include "executor/nodeValuesscan.h"
-#include "executor/nodeCtescan.h"
+#include "executor/nodeWindowAgg.h"
 #include "executor/nodeWorktablescan.h"
 #include "executor/nodeAssertOp.h"
 #include "executor/nodeTableScan.h"
@@ -50,7 +51,6 @@
 #include "executor/nodeTableFunction.h"
 #include "executor/nodePartitionSelector.h"
 #include "executor/nodeBitmapAppendOnlyscan.h"
-#include "executor/nodeWindow.h"
 #include "executor/nodeShareInputScan.h"
 
 /*
@@ -243,6 +243,10 @@ ExecReScan(PlanState *node, ExprContext *exprCtxt)
 			ExecReScanAgg((AggState *) node, exprCtxt);
 			break;
 
+		case T_WindowAggState:
+			ExecReScanWindowAgg((WindowAggState *) node, exprCtxt);
+			break;
+
 		case T_UniqueState:
 			ExecReScanUnique((UniqueState *) node, exprCtxt);
 			break;
@@ -265,10 +269,6 @@ ExecReScan(PlanState *node, ExprContext *exprCtxt)
 
 		case T_TableFunctionScan:
 			ExecReScanTableFunction((TableFunctionState *) node, exprCtxt);
-			break;
-
-		case T_WindowState:
-			ExecReScanWindow((WindowState *) node, exprCtxt);
 			break;
 
 		case T_ShareInputScanState:
@@ -696,8 +696,8 @@ ExecEagerFree(PlanState *node)
 			ExecEagerFreeAgg((AggState*)node);
 			break;
 
-		case T_WindowState:
-			ExecEagerFreeWindow((WindowState *)node);
+		case T_WindowAggState:
+			ExecEagerFreeWindowAgg((WindowAggState *)node);
 			break;
 
 		case T_ShareInputScanState:
@@ -820,7 +820,7 @@ ExecEagerFreeChildNodes(PlanState *node, bool subplanDone)
 		case T_MaterialState:
 		case T_SortState:
 		case T_AggState:
-		case T_WindowState:
+		case T_WindowAggState:
 		{
 			planstate_walk_node(outerPlanState(node), EagerFreeWalker, &ctx);
 			break;

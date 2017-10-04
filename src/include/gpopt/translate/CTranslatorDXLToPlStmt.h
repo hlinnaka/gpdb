@@ -601,7 +601,7 @@ namespace gpdxl
 				const CDXLTranslateContext *pdxltrctxChild,
 				AttrNumber *pattnoSortColIds,
 				Oid *poidSortOpIds,
-				bool *pboolNullsFirst
+				bool *pboolNullsFirst = NULL
 				);
 
 			List *PlQualFromScalarCondNode

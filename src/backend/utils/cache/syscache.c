@@ -53,7 +53,6 @@
 #include "catalog/pg_ts_parser.h"
 #include "catalog/pg_ts_template.h"
 #include "catalog/pg_type.h"
-#include "catalog/pg_window.h"
 #include "utils/syscache.h"
 
 
@@ -651,17 +650,6 @@ static const struct cachedesc cacheinfo[] = {
 			0
 		},
 		1024
-	},
-	{WindowRelationId,			/* WINFNOID */
-		WindowWinfnoidIndexId,
-		1,
-		{
-			Anum_pg_window_winfnoid,
-			0,
-			0,
-			0
-		},
-		32
 	}
 };
 
