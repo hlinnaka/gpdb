@@ -30,6 +30,7 @@
 #include "optimizer/tlist.h"
 #include "utils/selfuncs.h"
 
+#include "optimizer/clauses.h"
 #include "catalog/pg_proc.h"
 #include "cdb/cdbpath.h"        /* cdbpath_rows() */
 #include "cdb/cdbvars.h"

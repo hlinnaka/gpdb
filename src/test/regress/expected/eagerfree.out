@@ -76,35 +76,34 @@ select count(*) from (select i, t, d, count(*) from bigt group by i, t, d) tmp;
 (1 row)
 
 explain analyze select count(*) from (select i, t, d, count(*) from bigt group by i, t, d) tmp;
-                                                                               QUERY PLAN                                                                               
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Aggregate  (cost=24194.52..24194.53 rows=1 width=8)
-   Rows out:  1 rows with 926 ms to end, start offset by 0.423 ms.
-   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=24194.46..24194.51 rows=1 width=8)
-         Rows out:  3 rows at destination with 855 ms to first row, 926 ms to end, start offset by 0.423 ms.
-         ->  Aggregate  (cost=24194.46..24194.47 rows=1 width=8)
-               Rows out:  Avg 1.0 rows x 3 workers.  Max 1 rows (seg0) with 866 ms to end, start offset by 1.300 ms.
-               ->  Subquery Scan tmp  (cost=21639.28..23938.94 rows=34069 width=0)
-                     Rows out:  Avg 44444.3 rows x 3 workers.  Max 44568 rows (seg0) with 748 ms to first row, 847 ms to end, start offset by 1.301 ms.
-                     ->  HashAggregate  (cost=21639.28..22916.87 rows=34069 width=48)
-                           Group By: bigt.i, bigt.t, bigt.d
-                           Rows out:  Avg 44444.3 rows x 3 workers.  Max 44568 rows (seg0) with 748 ms to first row, 823 ms to end, start offset by 1.301 ms.
-                           Executor memory:  2635K bytes avg, 2635K bytes max (seg0).
-                           Work_mem used:  2360K bytes avg, 2361K bytes max (seg0). Workfile: (3 spilling, 0 reused)
-                           Work_mem wanted: 4543K bytes avg, 4631K bytes max (seg0) to lessen workfile I/O affecting 3 workers.
-                           (seg0)   44568 groups total in 32 batches; 1 overflows; 44568 spill groups.
-                           (seg0)   Hash chain length 1.6 avg, 13 max, using 48983 of 270336 buckets.
-                           ->  Seq Scan on bigt  (cost=0.00..11615.14 rows=334138 width=18)
-                                 Rows out:  Avg 333333.3 rows x 3 workers.  Max 333490 rows (seg0) with 0.034 ms to first row, 111 ms to end, start offset by 1.328 ms.
+                                                                           QUERY PLAN                                                                            
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=24131.05..24131.06 rows=1 width=8)
+   Rows out:  1 rows with 780 ms to end, start offset by 0.453 ms.
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=24131.03..24131.04 rows=1 width=8)
+         Rows out:  3 rows at destination with 644 ms to first row, 780 ms to end, start offset by 0.454 ms.
+         ->  Aggregate  (cost=24131.03..24131.04 rows=1 width=8)
+               Rows out:  Avg 1.0 rows x 3 workers.  Max 1 rows (seg0) with 779 ms to end, start offset by 1.284 ms.
+               ->  HashAggregate  (cost=21605.78..22868.40 rows=33670 width=48)
+                     Group Key: bigt.i, bigt.t, bigt.d
+                     Rows out:  Avg 44444.3 rows x 3 workers.  Max 44568 rows (seg0) with 715 ms to first row, 764 ms to end, start offset by 1.284 ms.
+                     Executor memory:  3088K bytes avg, 3088K bytes max (seg0).
+                     Work_mem used:  2460K bytes avg, 2461K bytes max (seg1). Workfile: (3 spilling)
+                     Work_mem wanted: 4738K bytes avg, 4738K bytes max (seg0) to lessen workfile I/O affecting 3 workers.
+                     (seg0)   44568 groups total in 32 batches; 1 overflows; 44568 spill groups.
+                     (seg0)   Hash chain length 3.4 avg, 14 max, using 23378 of 24576 buckets; total 2 expansions.
+                     ->  Seq Scan on bigt  (cost=0.00..11598.39 rows=333580 width=18)
+                           Rows out:  Avg 333333.3 rows x 3 workers.  Max 333490 rows (seg0) with 0.038 ms to first row, 70 ms to end, start offset by 1.298 ms.
  Slice statistics:
-   (slice0)    Executor memory: 227K bytes.
-   (slice1)  * Executor memory: 2861K bytes avg x 3 workers, 2861K bytes max (seg0).  Work_mem: 2361K bytes max, 4631K bytes wanted.
+   (slice0)    Executor memory: 386K bytes.
+   (slice1)  * Executor memory: 3254K bytes avg x 3 workers, 3254K bytes max (seg0).  Work_mem: 2461K bytes max, 4738K bytes wanted.
  Statement statistics:
    Memory used: 2560K bytes
-   Memory wanted: 5130K bytes
- Settings:  optimizer_segments=3
- Total runtime: 939.757 ms
-(26 rows)
+   Memory wanted: 5137K bytes
+ Settings:  optimizer=off; optimizer_segments=3
+ Optimizer status: legacy query optimizer
+ Total runtime: 780.862 ms
+(25 rows)
 
 set statement_mem=128000;
 -- DQA

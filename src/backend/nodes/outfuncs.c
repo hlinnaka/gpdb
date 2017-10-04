@@ -805,6 +805,7 @@ _outAgg(StringInfo str, Agg *node)
 
 	WRITE_LONG_FIELD(numGroups);
 	WRITE_BOOL_FIELD(streaming);
+	WRITE_INT_FIELD(aggstage);
 }
 #endif /* COMPILING_BINARY_FUNCS */
 

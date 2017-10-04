@@ -916,6 +916,12 @@ typedef struct Agg
 
 	/* Stream entries when out of memory instead of spilling to disk */
 	bool 		streaming;
+
+	/*
+	 * Is this a normal, preliminary, or final Agg? This is not currently
+	 * needed by the executor, but it's useful for debugging purposes.
+	 */
+	AggStage	aggstage;
 } Agg;
 
 /* ----------------

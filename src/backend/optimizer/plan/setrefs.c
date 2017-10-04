@@ -2196,7 +2196,7 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 											  OUTER,
 											  context->rtoffset);
 		if (!newvar)
-			elog(ERROR, "variable not found in subplan target list");
+			elog(ERROR, "variable not found in subplan target list %d:%d", var->varno, var->varattno);
 		return (Node *) newvar;
 	}
 	if (IsA(node, PlaceHolderVar))

@@ -971,6 +971,7 @@ _copyAgg(Agg *from)
 	}
 	COPY_SCALAR_FIELD(numGroups);
 	COPY_SCALAR_FIELD(streaming);
+	COPY_SCALAR_FIELD(aggstage);
 
 	return newnode;
 }

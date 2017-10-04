@@ -1930,6 +1930,7 @@ _readAgg(void)
 	READ_OID_ARRAY(grpOperators, local_node->numCols);
 	READ_LONG_FIELD(numGroups);
 	READ_BOOL_FIELD(streaming);
+	READ_INT_FIELD(aggstage);
 
 	READ_DONE();
 }

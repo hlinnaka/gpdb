@@ -45,5 +45,9 @@ extern bool choose_hashed_grouping(PlannerInfo *root,
 								   Oid *groupOperators, int numGroupOps,
 								   double dNumGroups,
 								   AggClauseCounts *agg_counts);
+extern void locate_grouping_columns(PlannerInfo *root,
+						List *stlist,
+						List *sub_tlist,
+						AttrNumber *groupColIdx);
 
 #endif   /* PLANNER_H */

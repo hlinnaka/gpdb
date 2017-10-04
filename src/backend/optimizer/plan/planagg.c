@@ -198,6 +198,9 @@ optimize_minmax_aggregates(PlannerInfo *root, List *tlist, Path *best_path)
 	 * Note: at some point it might become necessary to mutate other
 	 * data structures too, such as the query's sortClause or distinctClause.
 	 * Right now, those won't be examined after this point.
+	 *
+	 * GPDB: We also do this with 2-stage aggregates, in cdbgroup.c. If you
+	 * need to modify something here, check if that needs updating too.
 	 */
 	mutate_eclass_expressions(root,
 							  replace_aggs_with_params_mutator,

@@ -22,6 +22,22 @@
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
+#include "optimizer/clauses.h"
+
+extern Plan *
+cdb_grouping_planner(PlannerInfo *root,
+					 List *tlist,
+					 Plan *result_plan,
+					 List *group_pathkeys,
+					 WindowFuncLists *wflists,
+					 List **current_pathkeys,
+					 CdbPathLocus *current_locus,
+					 int numGroupCols,
+					 AttrNumber *groupColIdx,
+					 Oid *groupOperators,
+					 bool need_sort_for_grouping,
+					 bool use_hashed_grouping,
+					 long numGroups /* estimate only */);
 
 extern void UpdateScatterClause(Query *query, List *newtlist);
 

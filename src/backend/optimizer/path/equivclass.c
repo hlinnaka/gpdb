@@ -1718,6 +1718,9 @@ add_child_rel_equivalences(PlannerInfo *root,
  * other properties we keep track of (which is a bit bogus, but by the time
  * planagg.c runs, it no longer matters).  Also we must be called in the
  * main planner memory context.
+ *
+ * GPDB: We also use this with 2-stage aggregates, in cdbgroup.c. If you
+ * need to modify something here, check if that needs updating too.
  */
 void
 mutate_eclass_expressions(PlannerInfo *root,

@@ -90,10 +90,6 @@ static Oid *extract_grouping_ops(List *groupClause, int *numGroupOps);
 #endif
 static List *make_subplanTargetList(PlannerInfo *root, List *tlist,
 					   AttrNumber **groupColIdx, Oid **groupOperators, bool *need_tlist_eval);
-static void locate_grouping_columns(PlannerInfo *root,
-						List *stlist,
-						List *sub_tlist,
-						AttrNumber *groupColIdx);
 static List *postprocess_setop_tlist(List *new_tlist, List *orig_tlist);
 static List *select_active_windows(PlannerInfo *root, WindowFuncLists *wflists);
 static List *add_volatile_sort_exprs(List *window_tlist, List *tlist,
@@ -1256,7 +1252,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	Plan	   *result_plan;
 	List	   *current_pathkeys = NIL;
 	CdbPathLocus current_locus;
-	List	   *sort_pathkeys;
 	Path	   *best_path = NULL;
 	double		dNumGroups = 0;
 	double		numDistinct = 1;
@@ -1340,16 +1335,15 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * Calculate pathkeys that represent result ordering requirements
 		 */
 		Assert(parse->distinctClause == NIL);
-		sort_pathkeys = make_pathkeys_for_sortclauses(root,
-													  parse->sortClause,
-													  tlist,
-													  true);
+		root->sort_pathkeys = make_pathkeys_for_sortclauses(root,
+															parse->sortClause,
+															tlist,
+															true);
 	}
 	else
 	{
 		/* No set operations, do regular planning */
 		List	   *sub_tlist;
-		List	   *group_pathkeys;
 		AttrNumber *groupColIdx = NULL;
 		Oid		   *groupOperators = NULL;
 		bool		need_tlist_eval = true;
@@ -1515,9 +1509,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		query_planner(root, sub_tlist, tuple_fraction, limit_tuples,
 					  &cheapest_path, &sorted_path, &dNumGroups);
 
-		group_pathkeys = root->group_pathkeys;
-		sort_pathkeys = root->sort_pathkeys;
-
 		/*
 		 * If grouping, extract the grouping operators and decide whether we
 		 * want to use hashed grouping.
@@ -1543,87 +1534,24 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			best_path = cheapest_path;
 		else
 			best_path = sorted_path;
-#if 0
+
 		/*
-		 * CDB:  For now, we either - construct a general parallel plan, - let
-		 * the sequential planner handle the situation, or - construct a
-		 * sequential plan using the mix-max index optimization.
-		 *
-		 * Eventually we should add a parallel version of the min-max
-		 * optimization.  For now, it's either-or.
+		 * Check to see if it's possible to optimize MIN/MAX aggregates.
+		 * If so, we will forget all the work we did so far to choose a
+		 * "regular" path ... but we had to do it anyway to be able to
+		 * tell which way is cheaper.
 		 */
-		if (Gp_role == GP_ROLE_DISPATCH)
-		{
-			bool		querynode_changed = false;
-			bool		pass_subtlist = agg_counts.hasOrderedAggs;
-			GroupContext group_context;
-
-			group_context.best_path = best_path;
-			group_context.cheapest_path = cheapest_path;
-			group_context.subplan = NULL;
-			group_context.sub_tlist = pass_subtlist ? sub_tlist : NIL;
-			group_context.tlist = tlist;
-			group_context.use_hashed_grouping = use_hashed_grouping;
-			group_context.tuple_fraction = tuple_fraction;
-			group_context.grouping = 0;
-			group_context.numGroupCols = 0;
-			group_context.groupColIdx = NULL;
-			group_context.groupOperators = NULL;
-			group_context.numDistinctCols = 0;
-			group_context.distinctColIdx = NULL;
-			group_context.p_dNumGroups = &dNumGroups;
-			group_context.pcurrent_pathkeys = &current_pathkeys;
-			group_context.querynode_changed = &querynode_changed;
-
-			result_plan = cdb_grouping_planner(root,
-											   &agg_counts,
-											   &group_context);
-
-			if (result_plan != NULL && querynode_changed)
-			{
-				/*
-				 * We want to re-write sort_pathkeys here since the 2-stage
-				 * aggregation subplan or grouping extension subplan may
-				 * change the previous root->parse Query node, which makes the
-				 * current sort_pathkeys invalid.
-				 */
-				if (list_length(parse->distinctClause) > list_length(parse->sortClause))
-					sort_pathkeys =
-						make_pathkeys_for_sortclauses(root,
-													  parse->distinctClause,
-													  result_plan->targetlist,
-													  true);
-				else
-					sort_pathkeys =
-						make_pathkeys_for_sortclauses(root,
-													  parse->sortClause,
-													  result_plan->targetlist,
-													  true);
-				sort_pathkeys = canonicalize_pathkeys(root, sort_pathkeys);
-			}
-		}
-		else	/* Not GP_ROLE_DISPATCH */
-#endif
+		result_plan = optimize_minmax_aggregates(root,
+												 tlist,
+												 best_path);
+		if (result_plan != NULL)
 		{
 			/*
-			 * Check to see if it's possible to optimize MIN/MAX aggregates.
-			 * If so, we will forget all the work we did so far to choose a
-			 * "regular" path ... but we had to do it anyway to be able to
-			 * tell which way is cheaper.
+			 * optimize_minmax_aggregates generated the full plan, with
+			 * the right tlist, and it has no sort order.
 			 */
-			result_plan = optimize_minmax_aggregates(root,
-													 tlist,
-													 best_path);
-			if (result_plan != NULL)
-			{
-				/*
-				 * optimize_minmax_aggregates generated the full plan, with
-				 * the right tlist, and it has no sort order.
-				 */
-				current_pathkeys = NIL;
-				mark_plan_entry(result_plan);
-			}
-
+			current_pathkeys = NIL;
+			mark_plan_entry(result_plan);
 		}
 
 		if (result_plan == NULL)
@@ -1638,77 +1566,16 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			current_pathkeys = best_path->pathkeys;
 			current_locus = best_path->locus;	/* just use keys, don't copy */
 
-			/*
-			 * Each group in a GROUP BY needs to be handled in the same segment.
-			 * Redistribute the data if needed.
-			 */
-			if (group_pathkeys && !CdbPathLocus_IsGeneral(current_locus))
-			{
-				if (!cdbpathlocus_collocates(root, current_locus, group_pathkeys, false))
-				{
-					List	   *dist_exprs = NIL;
-					ListCell   *lc;
-					bool		hashable = true;
-
-					foreach (lc, parse->groupClause)
-					{
-						SortGroupClause *sc = (SortGroupClause *) lfirst(lc);
-						TargetEntry *tle = get_sortgroupclause_tle(sc, tlist);
-
-						if (!isGreenplumDbHashable(exprType((Node *) tle->expr)))
-						{
-							hashable = false;
-							break;
-						}
-
-						dist_exprs = lappend(dist_exprs, tle->expr);
-					}
-
-					if (hashable)
-					{
-						result_plan = (Plan *) make_motion_hash(root, result_plan, dist_exprs);
-						result_plan->total_cost += motion_cost_per_row * result_plan->plan_rows;
-						current_pathkeys = NIL; /* no longer sorted */
-						Assert(result_plan->flow);
-
-						/*
-						 * Change current_locus based on the new distribution
-						 * pathkeys.
-						 */
-						CdbPathLocus_MakeHashed(&current_locus, group_pathkeys);
-					}
-					else
-					{
-						if (result_plan->flow->flotype != FLOW_SINGLETON)
-							result_plan =
-								(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
-					}
-				}
-			}
-			/*
-			 * If are aggregates, but no GROUP BY (or a dummy GROUP by with a constant), must
-			 * gather everything to single node.
-			 */
-			else if (parse->hasAggs)
-			{
-				if (!CdbPathLocus_IsGeneral(current_locus) &&
-					result_plan->flow->flotype != FLOW_SINGLETON)
-				{
-					result_plan =
-						(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
-				}
-			}
-
 			/* Detect if we'll need an explicit sort for grouping */
 			if (parse->groupClause && !use_hashed_grouping &&
-				!pathkeys_contained_in(group_pathkeys, current_pathkeys))
+				!pathkeys_contained_in(root->group_pathkeys, current_pathkeys))
 			{
 				need_sort_for_grouping = true;
 
 				/*
 				 * Always override query_planner's tlist, so that we don't
 				 * sort useless data from a "physical" tlist.
-				 */
+				 */			
 				need_tlist_eval = true;
 			}
 
@@ -1765,75 +1632,22 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 			Assert(result_plan->flow);
 
-			/*
-			 * Insert AGG or GROUP node if needed, plus an explicit sort step
-			 * if necessary.
-			 *
-			 * HAVING clause, if any, becomes qual of the Agg or Group node.
-			 */
-			if (use_hashed_grouping)
+			if (parse->hasAggs || parse->groupClause)
 			{
-				/* Hashed aggregate plan --- no sort needed */
-				result_plan = (Plan *) make_agg(root,
-												tlist,
-												(List *) parse->havingQual,
-												AGG_HASHED, false,
-												numGroupCols,
-												groupColIdx,
-												groupOperators,
-												numGroups,
-												agg_counts.numAggs,
-												result_plan);
-
-				/* Hashed aggregation produces randomly-ordered results */
-				current_pathkeys = NIL;
-				CdbPathLocus_MakeNull(&current_locus);
-			}
-			else if (parse->hasAggs || parse->groupClause)
-			{
-				/* Plain aggregate plan --- sort if needed */
-				AggStrategy aggstrategy;
-
-				if (parse->groupClause)
-				{
-					if (need_sort_for_grouping)
-					{
-						result_plan = (Plan *)
-							make_sort_from_groupcols(root,
-													 parse->groupClause,
-													 groupColIdx,
-													 result_plan);
-						current_pathkeys = group_pathkeys;
-
-						/* Decorate the Sort node with a Flow node. */
-						mark_sort_locus(result_plan);
-					}
-					aggstrategy = AGG_SORTED;
-
-					/*
-					 * The AGG node will not change the sort ordering of its
-					 * groups, so current_pathkeys describes the result too.
-					 */
-				}
-				else
-				{
-					aggstrategy = AGG_PLAIN;
-					/* Result will be only one row anyway; no sort order */
-					current_pathkeys = NIL;
-				}
-
-				result_plan = (Plan *) make_agg(root,
-												tlist,
-												(List *) parse->havingQual,
-												aggstrategy, false,
-												numGroupCols,
-												groupColIdx,
-												groupOperators,
-												numGroups,
-												agg_counts.numAggs,
-												result_plan);
-
-				CdbPathLocus_MakeNull(&current_locus);
+				result_plan = cdb_grouping_planner(root,
+												   tlist,
+												   result_plan,
+												   root->group_pathkeys,
+												   wflists,
+												   &current_pathkeys,
+												   &current_locus,
+												   numGroupCols,
+												   groupColIdx,
+												   groupOperators,
+												   need_sort_for_grouping,
+												   use_hashed_grouping,
+												   numGroups);
+				tlist = result_plan->targetlist;
 			}
 			else if (root->hasHavingQual)
 			{
@@ -2172,14 +1986,14 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					 */
 					if (parse->sortClause)
 					{
-						if (!pathkeys_contained_in(sort_pathkeys, current_pathkeys))
+						if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
 						{
 							result_plan = (Plan *)
 								make_sort_from_sortclauses(root,
 														   parse->sortClause,
 														   result_plan);
 							((Sort *) result_plan)->noduplicates = gp_enable_sort_distinct;
-							current_pathkeys = sort_pathkeys;
+							current_pathkeys = root->sort_pathkeys;
 							mark_sort_locus(result_plan);
 						}
 					}
@@ -2227,21 +2041,20 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	}
 
 	/*
-	 * If we were not able to make the plan come out in the right order, add
-	 * an explicit sort step.  Note that, if we going to add a Unique node,
-	 * the sort_pathkeys will have the distinct keys as a prefix.
+	 * If ORDER BY was given and we were not able to make the plan come out in
+	 * the right order, add an explicit sort step.
 	 */
-	if (sort_pathkeys)
+	if (root->sort_pathkeys)
 	{
-		if (!pathkeys_contained_in(sort_pathkeys, current_pathkeys))
+		if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
 		{
 			result_plan = (Plan *) make_sort_from_pathkeys(root,
 														   result_plan,
-														   sort_pathkeys,
+														 root->sort_pathkeys,
 														limit_tuples, false);
 			if (result_plan == NULL)
 				elog(ERROR, "could not find sort pathkeys in result target list");
-			current_pathkeys = sort_pathkeys;
+			current_pathkeys = root->sort_pathkeys;
 			mark_sort_locus(result_plan);
 		}
 
@@ -2270,7 +2083,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			!parse->limitCount && !parse->limitOffset)
 		{
 			result_plan = (Plan *) make_motion_gather(root, result_plan, -1,
-													  sort_pathkeys);
+													  root->sort_pathkeys);
 		}
 	}
 
@@ -3256,7 +3069,7 @@ make_subplanTargetList(PlannerInfo *root,
  * make_subplanTargetList.	We have to forget the column indexes found
  * by that routine and re-locate the grouping vars in the real sub_tlist.
  */
-static void
+void
 locate_grouping_columns(PlannerInfo *root,
 						List *tlist,
 						List *sub_tlist,
