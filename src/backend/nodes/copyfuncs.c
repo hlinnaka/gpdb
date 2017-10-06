@@ -1430,7 +1430,6 @@ _copyAggref(Aggref *from)
 	COPY_SCALAR_FIELD(aggvariadic);
 	COPY_SCALAR_FIELD(aggkind);
 	COPY_SCALAR_FIELD(aggstage);
-	COPY_SCALAR_FIELD(aggpartialid);
 	COPY_SCALAR_FIELD(agglevelsup);
 	COPY_LOCATION_FIELD(location);
 

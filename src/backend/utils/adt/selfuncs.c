@@ -2798,6 +2798,22 @@ estimate_num_groups(PlannerInfo *root, List *groupExprs, double input_rows)
 		 */
 		varshere = pull_var_clause(groupexpr, true);
 
+		{
+			ListCell *lc;
+			List *new_varshere = NIL;
+
+			foreach(lc, varshere)
+			{
+				if (IsA(lfirst(lc), PlaceHolderVar))
+				{
+					new_varshere = list_concat(new_varshere,
+											   pull_var_clause(lfirst(lc), true));
+				}
+				else
+					new_varshere = lappend(new_varshere, lfirst(lc));
+			}
+			varshere = new_varshere;
+		}
 		/*
 		 * If we find any variable-free GROUP BY item, then either it is a
 		 * constant (and we can ignore it) or it contains a volatile function;

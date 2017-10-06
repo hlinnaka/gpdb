@@ -266,7 +266,6 @@ typedef struct Aggref
 	char		aggkind;		/* aggregate kind (see pg_aggregate.h) */
 	Index		agglevelsup;	/* > 0 if agg belongs to outer query */
 	AggStage	aggstage;		/* MPP: 2-stage? If so, which stage */
-	int			aggpartialid;
 	int			location;		/* token location, or -1 if unknown */
 } Aggref;
 

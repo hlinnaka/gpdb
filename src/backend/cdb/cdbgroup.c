@@ -305,10 +305,10 @@ cdb_grouping_planner(PlannerInfo *root,
 		goto one_stage;
 
 	/*
-	 * If there's a DISTINCT agg but no GROUP BY, then we can perform a
+	 * If there's a DISTINCT agg, but no GROUP BY, then we can perform a
 	 * two-stage agg, if the data distribution matches the DISTINCT.
 	 */
-	if (analysis.agg_distinct_pathkeys)
+	if (analysis.has_distinct_aggs)
 	{
 		if (group_pathkeys)
 		{
