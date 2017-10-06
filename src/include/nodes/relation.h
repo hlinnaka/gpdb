@@ -110,7 +110,7 @@ typedef struct PlannerGlobal
 	
 	Index		lastPHId;		/* highest PlaceHolderVar ID assigned */
 
-	int			lastPartialAggrefId;
+	Index		lastPartialAggId;	/* highest split agg ID assigned */
 
 	bool		transientPlan;	/* redo plan when TransactionXmin changes? */
 	bool		oneoffPlan;		/* redo plan on every execution? */

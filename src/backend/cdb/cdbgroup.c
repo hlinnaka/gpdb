@@ -305,10 +305,10 @@ cdb_grouping_planner(PlannerInfo *root,
 		goto one_stage;
 
 	/*
-	 * If there's a DISTINCT agg but no GROUP BY, then we can perform a
+	 * If there's a DISTINCT agg, but no GROUP BY, then we can perform a
 	 * two-stage agg, if the data distribution matches the DISTINCT.
 	 */
-	if (analysis.agg_distinct_pathkeys)
+	if (analysis.has_distinct_aggs)
 	{
 		if (group_pathkeys)
 		{
@@ -820,7 +820,7 @@ replace_stage_aggrefs_mutator(Node *node, make_partial_agg_targetlist_context *c
 			{
 				TargetEntry *tle;
 
-				partialAggrefId = ++context->root->glob->lastPartialAggrefId;
+				partialAggrefId = ++context->root->glob->lastPartialAggId;
 				tle = makeTargetEntry((Expr *) partial_aggref,
 								  list_length(context->partial_tlist) + 1,
 								  pstrdup("partial agg"),
