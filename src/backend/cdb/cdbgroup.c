@@ -30,7 +30,6 @@
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
-#include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
 #include "optimizer/planner.h"
 #include "optimizer/planpartition.h"
@@ -68,7 +67,6 @@ typedef struct
 {
 	PlannerInfo *root;
 	List	   *partial_tlist;
-	List	   *partial_phids;
 
 	bool		found_aggrefs;
 } make_partial_agg_targetlist_context;
@@ -638,7 +636,6 @@ make_two_stage_aggref_targetlists(PlannerInfo *root,
 
 	cxt.root = root;
 	cxt.partial_tlist = NIL;
-	cxt.partial_phids = NIL;
 	cxt.found_aggrefs = false;
 
 	foreach(lc, orig_tlist)
@@ -666,7 +663,6 @@ make_two_stage_aggref_targetlists(PlannerInfo *root,
 											  tle->resname,
 											  tle->resjunk);
 				cxt.partial_tlist = lappend(cxt.partial_tlist, partial_tle);
-				cxt.partial_phids = lappend_int(cxt.partial_phids, -1);
 			}
 		}
 
@@ -723,7 +719,6 @@ make_two_stage_aggref_targetlists(PlannerInfo *root,
 									  NULL,
 									  tle->resjunk);
 				cxt.partial_tlist = lappend(cxt.partial_tlist, tle);
-				cxt.partial_phids = lappend_int(cxt.partial_phids, -1);
 
 				/* Also pass these through the final agg */
 
@@ -764,14 +759,12 @@ replace_stage_aggrefs_mutator(Node *node, make_partial_agg_targetlist_context *c
 		if (orig_aggref->agglevelsup == 0)
 		{
 			Aggref	   *partial_aggref;
-			PlaceHolderVar *partial_aggref_phv;
 			Aggref	   *final_aggref;
 			Oid			transtype;
 			Oid			inputTypes[FUNC_MAX_ARGS];
 			int			nargs;
-			int			phid = -1;
-			ListCell   *lc_tle;
-			ListCell   *lc_phid;
+			int			partialAggrefId;
+			ListCell   *lc;
 
 			/* Get type information for the Aggref */
 			transtype = lookup_agg_transtype(orig_aggref);
@@ -802,51 +795,39 @@ replace_stage_aggrefs_mutator(Node *node, make_partial_agg_targetlist_context *c
 
 			partial_aggref->aggstage = AGGSTAGE_PARTIAL;
 
-			/* Add it to the lower level's target list, if it doesn't exist yet. */
-			/*
-			 * Wrap the final aggregate in a placeholder, so that when the window
-			 * function planner scans the target list for Vars, it will ignore any
-			 * Vars inside the partial Aggref. Those vars are not needed to evaluate
-			 * the window functions, as we have already evaluated the Agg that
-			 * depended on them. We don't pass through the argument Vars, so you
-			 * would get an error at set_plan_references() if they were present in
-			 * the upper node's target list.
-			 */
-			phid = -1;
-			forboth(lc_tle, context->partial_tlist, lc_phid, context->partial_phids)
-			{
-				TargetEntry *tle = (TargetEntry *) lfirst(lc_tle);
+			partialAggrefId = -1;
 
-				if (equal(tle->expr, partial_aggref))
+			/*
+			 * Add it to the lower level's target list, if it doesn't exist yet.
+			 */
+			foreach (lc, context->partial_tlist)
+			{
+				TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+				if (IsA(tle->expr, Aggref))
 				{
-					/* Found it! Reuse the old placeholder id */
-					phid = lfirst_int(lc_phid);
-					break;
+					Aggref *a = (Aggref *) tle->expr;
+
+					partial_aggref->aggpartialid = a->aggpartialid;
+					if (equal(partial_aggref, a))
+					{
+						partialAggrefId = a->aggpartialid;
+						break;
+					}
 				}
 			}
-			if (phid == -1)
+			if (partialAggrefId == -1)
 			{
-				/* Not found. create a new targetlist entry and placeholder ID */
-				TargetEntry *tle = makeTargetEntry((Expr *) partial_aggref,
-												   list_length(context->partial_tlist) + 1,
-												   pstrdup("partial agg"),
-												   false);
-				partial_aggref_phv = make_placeholder_expr(context->root,
-														   (Expr *) partial_aggref,
-														   NULL);
-				context->partial_tlist = lappend(context->partial_tlist, tle);
-				context->partial_phids = lappend_int(context->partial_phids,
-													 partial_aggref_phv->phid);
-			}
-			else
-			{
-				partial_aggref_phv = makeNode(PlaceHolderVar);
+				TargetEntry *tle;
 
-				partial_aggref_phv->phexpr = (Expr *) partial_aggref;
-				partial_aggref_phv->phrels = NULL;
-				partial_aggref_phv->phid = phid;
-				partial_aggref_phv->phlevelsup = 0;
+				partialAggrefId = ++context->root->glob->lastPartialAggrefId;
+				tle = makeTargetEntry((Expr *) partial_aggref,
+								  list_length(context->partial_tlist) + 1,
+								  pstrdup("partial agg"),
+								  false);
+				context->partial_tlist = lappend(context->partial_tlist, tle);
 			}
+			partial_aggref->aggpartialid = partialAggrefId;
 
 			/* Now construct a new Aggref for the final aggregate */
 			final_aggref = makeNode(Aggref);
@@ -861,12 +842,9 @@ replace_stage_aggrefs_mutator(Node *node, make_partial_agg_targetlist_context *c
 			 * aggregate, but the inner Aggref will be replaced with a Var
 			 * that refers to the node below, by set_plan_references()
 			 */
-			final_aggref->args = list_make1(makeTargetEntry((Expr *) partial_aggref_phv,
-															1,
-															pstrdup("partial agg result"),
-															false));
-			final_aggref->aggorder = NULL;
-			final_aggref->aggdistinct = NULL;
+			final_aggref->args = NIL;
+			final_aggref->aggorder = NIL;
+			final_aggref->aggdistinct = NIL;
 			final_aggref->aggfilter = NULL;		/* filtering is done in the partial stage */
 			final_aggref->aggstar = false;
 			final_aggref->aggvariadic = false;
@@ -875,6 +853,7 @@ replace_stage_aggrefs_mutator(Node *node, make_partial_agg_targetlist_context *c
 			final_aggref->location = orig_aggref->location;
 
 			final_aggref->aggstage = AGGSTAGE_FINAL;
+			final_aggref->aggpartialid = partialAggrefId;
 
 			context->found_aggrefs = true;
 

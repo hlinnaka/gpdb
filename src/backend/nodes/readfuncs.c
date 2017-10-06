@@ -1226,6 +1226,7 @@ _readAggref(void)
 	READ_BOOL_FIELD(aggvariadic);
 	READ_CHAR_FIELD(aggkind);
 	READ_ENUM_FIELD(aggstage, AggStage);
+	READ_INT_FIELD(aggpartialid);
 	READ_UINT_FIELD(agglevelsup);
 	READ_LOCATION_FIELD(location);
 

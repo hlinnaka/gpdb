@@ -110,6 +110,8 @@ typedef struct PlannerGlobal
 	
 	Index		lastPHId;		/* highest PlaceHolderVar ID assigned */
 
+	int			lastPartialAggrefId;
+
 	bool		transientPlan;	/* redo plan when TransactionXmin changes? */
 	bool		oneoffPlan;		/* redo plan on every execution? */
 	bool		simplyUpdatable; /* can be used with CURRENT OF? */

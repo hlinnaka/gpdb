@@ -1885,6 +1885,7 @@ search_indexed_tlist_for_non_var(Node *node,
 		newvar->varoattno = 0;
 		return newvar;
 	}
+
 	return NULL;				/* no match */
 }
 
@@ -2224,6 +2225,51 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 		if (newvar)
 			return (Node *) newvar;
 	}
+
+	if (IsA(node, Aggref))
+	{
+		Aggref *top_aggref = (Aggref *) node;
+
+		if (top_aggref->aggstage == AGGSTAGE_INTERMEDIATE ||
+			top_aggref->aggstage == AGGSTAGE_FINAL)
+		{
+			ListCell *lc;
+
+			foreach(lc, context->subplan_itlist->tlist)
+			{
+				TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+				if (IsA(tle->expr, Aggref))
+				{
+					Aggref *partial_aggref = (Aggref *) tle->expr;
+
+					if (partial_aggref->aggstage == AGGSTAGE_PARTIAL ||
+						partial_aggref->aggstage == AGGSTAGE_INTERMEDIATE)
+					{
+						if (partial_aggref->aggpartialid == top_aggref->aggpartialid)
+						{
+							/* This matches. Replace the argument with  */
+							Var		   *newvar;
+
+							newvar = makeVar(OUTER,
+											 tle->resno,
+											 exprType((Node *) partial_aggref),
+											 exprTypmod((Node *) partial_aggref),
+											 0);
+							newvar->varnoold = 0;	/* wasn't ever a plain Var */
+							newvar->varoattno = 0;
+
+							top_aggref = copyObject(top_aggref);
+							top_aggref->args = list_make1(
+								makeTargetEntry((Expr *) newvar, 1, NULL, false));
+							return (Node *) top_aggref;
+						}
+					}
+				}
+			}
+		}
+	}
+
 	fix_expr_common(context->glob, node);
 	return expression_tree_mutator(node,
 								   fix_upper_expr_mutator,
