@@ -115,6 +115,7 @@ static Oid AddNewRelationType(const char *typeName,
 static void RelationRemoveInheritance(Oid relid);
 static void StoreRelCheck(Relation rel, char *ccname, Node *expr,
 						  bool is_local, int inhcount);
+static void StoreConstraints(Relation rel, List *cooked_constraints);
 static bool MergeWithExistingConstraint(Relation rel, char *ccname, Node *expr,
 										bool allow_merge, bool is_local);
 static Node *cookConstraint(ParseState *pstate,
@@ -450,7 +451,6 @@ heap_create(const char *relname,
  *		6) AddNewAttributeTuples() is called to register the
  *		   new relation's schema in pg_attribute.
  *
- * 		GPDB_84_MERGE_FIXME: StoreConstraints has been removed, this comment needs a re-write
  *		7) StoreConstraints is called ()		- vadim 08/22/97
  *
  *		8) the relations are closed and the new relation's oid
@@ -1409,6 +1409,7 @@ heap_create_with_catalog(const char *relname,
 						 Oid relid,
 						 Oid ownerid,
 						 TupleDesc tupdesc,
+						 List *cooked_constraints,
 						 Oid relam,
 						 char relkind,
 						 char relstorage,
@@ -1824,10 +1825,13 @@ heap_create_with_catalog(const char *relname,
 	}
 
 	/*
-	 * We used to store pre-cooked constraints and defaults here.
-	 * We now store them along with raw constraints and defaults to ensure that
-	 * 	we have oid of pg_constraint and pg_attrdef consistent across segments
+	 * Store any supplied constraints and defaults.
+	 *
+	 * NB: this may do a CommandCounterIncrement and rebuild the relcache
+	 * entry, so the relation must be valid and self-consistent at this point.
+	 * In particular, there are not yet constraints and defaults anywhere.
 	 */
+	StoreConstraints(new_rel_desc, cooked_constraints);
 
 	/*
 	 * If there's a special on-commit action, remember it
@@ -2713,6 +2717,54 @@ StoreRelCheck(Relation rel, char *ccname, Node *expr,
 
 	pfree(ccbin);
 	pfree(ccsrc);
+}
+
+/*
+ * Store defaults and constraints (passed as a list of CookedConstraint).
+ *
+ * NOTE: only pre-cooked expressions will be passed this way, which is to
+ * say expressions inherited from an existing relation.  Newly parsed
+ * expressions can be added later, by direct calls to StoreAttrDefault
+ * and StoreRelCheck (see AddRelationNewConstraints()).
+ */
+static void
+StoreConstraints(Relation rel, List *cooked_constraints)
+{
+	int			numchecks = 0;
+	ListCell   *lc;
+
+	if (!cooked_constraints)
+		return;					/* nothing to do */
+
+	/*
+	 * Deparsing of constraint expressions will fail unless the just-created
+	 * pg_attribute tuples for this relation are made visible.  So, bump the
+	 * command counter.  CAUTION: this will cause a relcache entry rebuild.
+	 */
+	CommandCounterIncrement();
+
+	foreach(lc, cooked_constraints)
+	{
+		CookedConstraint *con = (CookedConstraint *) lfirst(lc);
+
+		switch (con->contype)
+		{
+			case CONSTR_DEFAULT:
+				StoreAttrDefault(rel, con->attnum, con->expr);
+				break;
+			case CONSTR_CHECK:
+				StoreRelCheck(rel, con->name, con->expr,
+							  con->is_local, con->inhcount);
+				numchecks++;
+				break;
+			default:
+				elog(ERROR, "unrecognized constraint type: %d",
+					 (int) con->contype);
+		}
+	}
+
+	if (numchecks > 0)
+		SetRelationNumChecks(rel, numchecks);
 }
 
 /*

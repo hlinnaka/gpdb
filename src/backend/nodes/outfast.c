@@ -37,6 +37,7 @@
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
 #include "utils/datum.h"
+#include "catalog/heap.h"
 #include "cdb/cdbgang.h"
 #include "utils/workfile_mgr.h"
 #include "parser/parsetree.h"
@@ -1137,6 +1138,19 @@ _outTupleDescNode(StringInfo str, TupleDescNode *node)
 	WRITE_INT_FIELD(tuple->tdrefcount);
 }
 
+static void
+_outCookedConstraint(StringInfo str, CookedConstraint *node)
+{
+	WRITE_NODE_TYPE("COOKEDCONSTRAINT");
+
+	WRITE_ENUM_FIELD(contype,ConstrType);
+	WRITE_STRING_FIELD(name);
+	WRITE_INT_FIELD(attnum);
+	WRITE_NODE_FIELD(expr);
+	WRITE_BOOL_FIELD(is_local);
+	WRITE_INT_FIELD(inhcount);
+}
+
 /*
  * _outNode -
  *	  converts a Node into binary string and append it to 'str'
@@ -2011,6 +2025,10 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_PlaceHolderInfo:
 				_outPlaceHolderInfo(str, obj);
+				break;
+
+			case T_CookedConstraint:
+				_outCookedConstraint(str, obj);
 				break;
 
 			default:

@@ -525,6 +525,7 @@ typedef enum NodeTag
 	T_ExtProtocolData,          /* in access/extprotocol.h */
 	T_ExtProtocolValidatorData, /* in access/extprotocol.h */
 	T_SelectedParts,            /* in executor/nodePartitionSelector.h */
+	T_CookedConstraint,			/* in catalog/heap.h */
 	
     /* CDB: tags for random other stuff */
     T_CdbExplain_StatHdr = 950,             /* in cdb/cdbexplain.c */

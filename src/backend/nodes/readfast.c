@@ -35,6 +35,7 @@
 #include "nodes/readfuncs.h"
 #include "nodes/relation.h"
 #include "catalog/pg_class.h"
+#include "catalog/heap.h"
 #include "cdb/cdbgang.h"
 
 
@@ -2652,6 +2653,21 @@ _readPlaceHolderInfo(void)
 	READ_DONE();
 }
 
+static CookedConstraint *
+_readCookedConstraint(void)
+{
+	READ_LOCALS(CookedConstraint);
+
+	READ_ENUM_FIELD(contype,ConstrType);
+	READ_STRING_FIELD(name);
+	READ_INT_FIELD(attnum);
+	READ_NODE_FIELD(expr);
+	READ_BOOL_FIELD(is_local);
+	READ_INT_FIELD(inhcount);
+
+	READ_DONE();
+}
+
 
 static Node *
 _readValue(NodeTag nt)
@@ -3512,6 +3528,10 @@ readNodeBinary(void)
 				break;
 			case T_PlaceHolderInfo:
 				return_value = _readPlaceHolderInfo();
+				break;
+
+			case T_CookedConstraint:
+				return_value = _readCookedConstraint();
 				break;
 
 

@@ -25,6 +25,7 @@
 #include "postgres.h"
 
 #include "catalog/gp_policy.h"
+#include "catalog/heap.h"
 #include "miscadmin.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
@@ -4488,6 +4489,21 @@ _copyAlterTypeStmt(AlterTypeStmt *from)
 	return newnode;
 }
 
+static CookedConstraint *
+_copyCookedConstraint(CookedConstraint *from)
+{
+	CookedConstraint *newnode = makeNode(CookedConstraint);
+
+	COPY_SCALAR_FIELD(contype);
+	COPY_STRING_FIELD(name);
+	COPY_SCALAR_FIELD(attnum);
+	COPY_NODE_FIELD(expr);
+	COPY_SCALAR_FIELD(is_local);
+	COPY_SCALAR_FIELD(inhcount);
+
+	return newnode;
+}
+
 /* ****************************************************************
  *					pg_list.h copy functions
  * ****************************************************************
@@ -5425,6 +5441,10 @@ copyObject(void *from)
 			break;
 		case T_DenyLoginPoint:
 			retval = _copyDenyLoginPoint(from);
+			break;
+
+		case T_CookedConstraint:
+			retval = _copyCookedConstraint(from);
 			break;
 
 		default:

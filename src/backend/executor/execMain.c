@@ -4820,6 +4820,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  InvalidOid,
 											  GetUserId(),
 											  tupdesc,
+											  NIL,
 											  /* relam */ InvalidOid,
 											  relkind,
 											  relstorage,

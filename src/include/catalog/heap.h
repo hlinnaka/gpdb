@@ -32,12 +32,24 @@ typedef struct RawColumnDefault
 
 typedef struct CookedConstraint
 {
+	/*
+	 * In PostgreSQL, this struct is only during CREATE TABLE processing, but
+	 * in GPDB, we create these in the QD and dispatch pre-built
+	 * CookedConstraints to the QE nodes, in the CreateStmt. That's why we
+	 * need to have a node tag and copy/out/read function support for this
+	 * in GPDB.
+	 */
+	NodeTag		type;
 	ConstrType	contype;		/* CONSTR_DEFAULT or CONSTR_CHECK */
 	char	   *name;			/* name, or NULL if none */
 	AttrNumber	attnum;			/* which attr (only for DEFAULT) */
 	Node	   *expr;			/* transformed default or check expr */
 	bool		is_local;		/* constraint has local (non-inherited) def */
 	int			inhcount;		/* number of times constraint is inherited */
+	/*
+	 * Remember to update copy/out/read functions if new fields are added
+	 * here!
+	 */
 } CookedConstraint;
 
 extern Relation heap_create(const char *relname,
@@ -58,6 +70,7 @@ extern Oid heap_create_with_catalog(const char *relname,
 						 Oid relid,
 						 Oid ownerid,
 						 TupleDesc tupdesc,
+						 List *cooked_constraints,
 						 Oid relam,
 						 char relkind,
 						 char relstorage,

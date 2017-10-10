@@ -117,6 +117,7 @@ CreateAOAuxiliaryTable(
 											     InvalidOid,
 											     rel->rd_rel->relowner,
 											     tupledesc,
+												 NIL,
 											     /* relam */ InvalidOid,
 											     relkind,
 											     RELSTORAGE_HEAP,

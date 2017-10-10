@@ -10685,7 +10685,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			{
 				ConstraintInfo *constr = &(tbinfo->checkexprs[k]);
 
-				/* GPDB_84_MERGE_FIXME: related to the below */
 				if (constr->separate || constr->conislocal)
 					continue;
 
@@ -10701,9 +10700,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				appendPQExpBuffer(q, " ADD CONSTRAINT %s ",
 								  fmtId(constr->dobj.name));
 				appendPQExpBuffer(q, "%s;\n", constr->condef);
-				/*
-				 * GPDB_84_MERGE_FIXME - Double check that our usage of conislocal is correct.
-				 */
 				appendPQExpBuffer(q, "UPDATE pg_catalog.pg_constraint\n"
 								  "SET conislocal = false\n"
 								  "WHERE contype = 'c' AND conname = ");

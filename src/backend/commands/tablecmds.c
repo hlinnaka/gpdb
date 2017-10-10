@@ -434,6 +434,7 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 {
 	char		relname[NAMEDATALEN];
 	Oid			namespaceId;
+	List	   *schema;
 	Oid			relationId = InvalidOid;
 	Oid			tablespaceId;
 	Relation	rel;
@@ -450,9 +451,28 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	ItemPointerData	persistentTid;
 	int64			persistentSerialNum;
 
+	List	   *cooked_constraints;
+	List	   *newCookedDefaults = NIL;
 	bool		shouldDispatch = dispatch &&
 								 Gp_role == GP_ROLE_DISPATCH &&
                                  IsNormalProcessingMode();
+
+
+	/*
+	 * In QE mode, tableElts contain not only the normal ColumnDefs, but also
+	 * pre-made CookedConstraints. Separate them into different lists.
+	 */
+	schema = NIL;
+	cooked_constraints = NIL;
+	foreach(listptr, stmt->tableElts)
+	{
+		Node	   *node = lfirst(listptr);
+
+		if (IsA(node, CookedConstraint))
+			cooked_constraints = lappend(cooked_constraints, node);
+		else
+			schema = lappend(schema, node);
+	}
 
 	/*
 	 * Truncate relname to appropriate length (probably a waste of time, as
@@ -571,22 +591,27 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	/*
 	 * Look up inheritance ancestors and generate relation schema, including
 	 * inherited attributes. Update the offsets of the distribution attributes
-	 * in GpPolicy if necessary. Save result to stmt->tableElts and dispatch to
-	 * QEs.
+	 * in GpPolicy if necessary
 	 */
 	isPartitioned = stmt->partitionBy ? true : false;
 	if (Gp_role == GP_ROLE_DISPATCH || Gp_role == GP_ROLE_UTILITY)
-		stmt->tableElts = MergeAttributes(stmt->tableElts, stmt->inhRelations,
-							 	 	 	  stmt->relation->istemp, isPartitioned,
-							 	 	 	  &stmt->inhOids, &old_constraints,
-							 	 	 	  &stmt->parentOidCount, stmt->policy);
+	{
+		schema = MergeAttributes(schema, stmt->inhRelations,
+								 stmt->relation->istemp, isPartitioned,
+								 &stmt->inhOids, &old_constraints,
+								 &stmt->parentOidCount, stmt->policy);
+	}
+	else
+	{
+		old_constraints = NIL;
+	}
 
 	/*
 	 * Create a tuple descriptor from the relation schema.  Note that this
 	 * deals with column names, types, and NOT NULL constraints, but not
 	 * default values or CHECK constraints; we handle those below.
 	 */
-	descriptor = BuildDescForRelation(stmt->tableElts);
+	descriptor = BuildDescForRelation(schema);
 
 	localHasOids = interpretOidsOption(stmt->options);
 	descriptor->tdhasoid = (localHasOids || stmt->parentOidCount > 0);
@@ -607,40 +632,37 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	cookedDefaults = NIL;
 	attnum = 0;
 
-	if (Gp_role == GP_ROLE_DISPATCH || Gp_role == GP_ROLE_UTILITY)
+	foreach(listptr, schema)
 	{
-		foreach(listptr, stmt->tableElts)
+		ColumnDef  *colDef = lfirst(listptr);
+
+		attnum++;
+
+		if (colDef->raw_default != NULL)
 		{
-			ColumnDef  *colDef = lfirst(listptr);
+			RawColumnDefault *rawEnt;
 
-			attnum++;
+			Assert(colDef->cooked_default == NULL);
 
-			if (colDef->raw_default != NULL)
-			{
-				RawColumnDefault *rawEnt;
+			rawEnt = (RawColumnDefault *) palloc(sizeof(RawColumnDefault));
+			rawEnt->attnum = attnum;
+			rawEnt->raw_default = colDef->raw_default;
+			rawDefaults = lappend(rawDefaults, rawEnt);
+			descriptor->attrs[attnum - 1]->atthasdef = true;
+		}
+		else if (colDef->cooked_default != NULL)
+		{
+			CookedConstraint *cooked;
 
-				Assert(colDef->cooked_default == NULL);
-
-				rawEnt = (RawColumnDefault *) palloc(sizeof(RawColumnDefault));
-				rawEnt->attnum = attnum;
-				rawEnt->raw_default = colDef->raw_default;
-				rawDefaults = lappend(rawDefaults, rawEnt);
-				descriptor->attrs[attnum - 1]->atthasdef = true;
-			}
-			else if (colDef->cooked_default != NULL)
-			{
-				CookedConstraint *cooked;
-
-				cooked = (CookedConstraint *) palloc(sizeof(CookedConstraint));
-				cooked->contype = CONSTR_DEFAULT;
-				cooked->name = NULL;
-				cooked->attnum = attnum;
-				cooked->expr = stringToNode(colDef->cooked_default);
-				cooked->is_local = true;	/* not used for defaults */
-				cooked->inhcount = 0;		/* ditto */
-				cookedDefaults = lappend(cookedDefaults, cooked);
-				descriptor->attrs[attnum - 1]->atthasdef = true;
-			}
+			cooked = (CookedConstraint *) palloc(sizeof(CookedConstraint));
+			cooked->contype = CONSTR_DEFAULT;
+			cooked->name = NULL;
+			cooked->attnum = attnum;
+			cooked->expr = stringToNode(colDef->cooked_default);
+			cooked->is_local = true;	/* not used for defaults */
+			cooked->inhcount = 0;		/* ditto */
+			cookedDefaults = lappend(cookedDefaults, cooked);
+			descriptor->attrs[attnum - 1]->atthasdef = true;
 		}
 	}
 
@@ -695,6 +717,10 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 
 	bool valid_opts = (relstorage == RELSTORAGE_EXTERNAL);
 
+	/* In QE, we received pre-made CookedConstraints from the QD already. */
+	if (Gp_role != GP_ROLE_EXECUTE)
+		cooked_constraints = list_concat(cookedDefaults, old_constraints);
+
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
 	 * in for immediate handling --- since they don't need parsing, they
@@ -706,9 +732,8 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 										  InvalidOid,
 										  stmt->ownerid,
 										  descriptor,
+										  cooked_constraints,
 										  /* relam */ InvalidOid,
-										  /*list_concat(cookedDefaults,
-													  old_constraints),*/
 										  relkind,
 										  relstorage,
 										  tablespaceId==GLOBALTABLESPACE_OID,
@@ -766,11 +791,42 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	 * postponed to this final step of CREATE TABLE.
 	 */
 	if (rawDefaults || stmt->constraints)
-		AddRelationNewConstraints(rel, rawDefaults, stmt->constraints,
+		newCookedDefaults =
+			AddRelationNewConstraints(rel, rawDefaults, stmt->constraints,
 								  true, true);
 
 	if (stmt->attr_encodings)
 		AddRelationAttributeEncodings(rel, stmt->attr_encodings);
+
+	/*
+	 * Transfer any inherited CHECK constraints back to the statement, so
+	 * that they are dispatched to QE nodes along with the statement
+	 * itself. This way, the QE nodes don't need to repeat the processing
+	 * above, which reduces the risk that they would interpret the defaults
+	 * or constraints somehow differently.
+	 *
+	 * NOTE: We do this even if !shouldDispatch, because it means that the
+	 * caller will dispatch the statement later, not that we won't need to
+	 * dispatch at all.
+	 */
+	if (Gp_role == GP_ROLE_DISPATCH)
+	{
+		stmt->tableElts = schema;
+
+		foreach(listptr, cooked_constraints)
+		{
+			CookedConstraint *cooked = (CookedConstraint *) lfirst(listptr);
+
+			/*
+			 * In PostgreSQL, CookedConstraint is not a regular struct, not
+			 * "node", so MergeAttributes and friends that above created
+			 * the CookedConstraints have not set the node tag. Set it now.
+			 */
+			cooked->type = T_CookedConstraint;
+
+			stmt->tableElts = lappend(stmt->tableElts, cooked);
+		}
+	}
 
 	/* It is now safe to dispatch */
 	if (shouldDispatch)
@@ -781,6 +837,7 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 		 *
 		 * The OIDs are carried out-of-band.
 		 */
+
 		CdbDispatchUtilityStatement((Node *) stmt,
 									DF_CANCEL_ON_ERROR |
 									DF_NEED_TWO_PHASE |
