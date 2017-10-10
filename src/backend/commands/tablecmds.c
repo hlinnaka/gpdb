@@ -452,7 +452,6 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	int64			persistentSerialNum;
 
 	List	   *cooked_constraints;
-	List	   *newCookedDefaults = NIL;
 	bool		shouldDispatch = dispatch &&
 								 Gp_role == GP_ROLE_DISPATCH &&
                                  IsNormalProcessingMode();
@@ -473,6 +472,7 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 		else
 			schema = lappend(schema, node);
 	}
+	Assert(cooked_constraints == NIL || Gp_role == GP_ROLE_EXECUTE);
 
 	/*
 	 * Truncate relname to appropriate length (probably a waste of time, as
@@ -603,6 +603,10 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	}
 	else
 	{
+		/*
+		 * In QE mode, we already extracted all the constraints, inherited
+		 * or not, from tableElts at the beginning of the function.
+		 */
 		old_constraints = NIL;
 	}
 
@@ -666,6 +670,15 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 		}
 	}
 
+	/*
+	 * In executor mode, we received all the defaults and constraints
+	 * in pre-cooked form from the QD, so forget about the lists we
+	 * constructed just above, and use the old_constraints we received
+	 * from the QD.
+	 */
+	if (Gp_role != GP_ROLE_EXECUTE)
+		cooked_constraints = list_concat(cookedDefaults, old_constraints);
+
 	if (shouldDispatch)
 	{
 		Relation		pg_class_desc;
@@ -716,10 +729,6 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 					 errhint("Use OIDS=FALSE.")));
 
 	bool valid_opts = (relstorage == RELSTORAGE_EXTERNAL);
-
-	/* In QE, we received pre-made CookedConstraints from the QD already. */
-	if (Gp_role != GP_ROLE_EXECUTE)
-		cooked_constraints = list_concat(cookedDefaults, old_constraints);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed
@@ -790,10 +799,17 @@ DefineRelation(CreateStmt *stmt, char relkind, char relstorage, bool dispatch)
 	 * unless we have a pre-existing relation. So, the transformation has to be
 	 * postponed to this final step of CREATE TABLE.
 	 */
-	if (rawDefaults || stmt->constraints)
+	if (Gp_role != GP_ROLE_EXECUTE &&
+		(rawDefaults || stmt->constraints))
+	{
+		List	   *newCookedDefaults;
+
 		newCookedDefaults =
 			AddRelationNewConstraints(rel, rawDefaults, stmt->constraints,
 								  true, true);
+
+		cooked_constraints = list_concat(cooked_constraints, newCookedDefaults);
+	}
 
 	if (stmt->attr_encodings)
 		AddRelationAttributeEncodings(rel, stmt->attr_encodings);
