@@ -4105,7 +4105,65 @@ select schemaname, tablename from pg_tables where schemaname = 'public' and tabl
 (10 rows)
 
 drop table anotherit;
--- test table constraint inheritance
+--
+-- Test table constraint inheritance
+--
+-- with a named UNIQUE constraint
+create table it (i int) distributed by (i) partition by range(i) (start(1) end(3) every(1));
+NOTICE:  CREATE TABLE will create partition "it_1_prt_1" for table "it"
+NOTICE:  CREATE TABLE will create partition "it_1_prt_2" for table "it"
+select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
+ schemaname | tablename | indexname 
+------------+-----------+-----------
+(0 rows)
+
+alter table it add constraint it_unique_i unique (i);
+NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "it_i_key" for table "it"
+NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "it_1_prt_1_i_key" for table "it_1_prt_1"
+NOTICE:  ALTER TABLE / ADD UNIQUE will create implicit index "it_1_prt_2_i_key" for table "it_1_prt_2"
+select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
+ schemaname | tablename  |    indexname     
+------------+------------+------------------
+ public     | it         | it_i_key
+ public     | it_1_prt_1 | it_1_prt_1_i_key
+ public     | it_1_prt_2 | it_1_prt_2_i_key
+(3 rows)
+
+alter table it drop constraint it_unique_i;
+select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
+ schemaname | tablename | indexname 
+------------+-----------+-----------
+(0 rows)
+
+drop table it;
+-- with a PRIMARY KEY constraint, without giving it a name explicitly.
+create table it (i int) distributed by (i) partition by range(i) (start(1) end(3) every(1));
+NOTICE:  CREATE TABLE will create partition "it_1_prt_1" for table "it"
+NOTICE:  CREATE TABLE will create partition "it_1_prt_2" for table "it"
+select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
+ schemaname | tablename | indexname 
+------------+-----------+-----------
+(0 rows)
+
+alter table it add primary key(i);
+NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_pkey" for table "it"
+NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_1_prt_1_pkey" for table "it_1_prt_1"
+NOTICE:  ALTER TABLE / ADD PRIMARY KEY will create implicit index "it_1_prt_2_pkey" for table "it_1_prt_2"
+select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
+ schemaname | tablename  |    indexname    
+------------+------------+-----------------
+ public     | it         | it_pkey
+ public     | it_1_prt_1 | it_1_prt_1_pkey
+ public     | it_1_prt_2 | it_1_prt_2_pkey
+(3 rows)
+
+-- FIXME: dropping a primary key doesn't currently work correctly. It doesn't
+-- drop the key on the partitions, only the parent. See
+-- https://github.com/greenplum-db/gpdb/issues/3750
+--
+-- alter table it add primary key(i);
+-- select schemaname, tablename, indexname from pg_indexes where schemaname = 'public' and tablename like 'it%';
+drop table it;
 create table it (i int) distributed by (i) partition by range(i) (start(1) end(3) every(1));
 NOTICE:  CREATE TABLE will create partition "it_1_prt_1" for table "it"
 NOTICE:  CREATE TABLE will create partition "it_1_prt_2" for table "it"
