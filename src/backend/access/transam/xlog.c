@@ -10610,7 +10610,6 @@ rm_redo_error_callback(void *arg)
 	pfree(buf.data);
 }
 
-#if 0 /* GPDB doesn't have online backup */
 /*
  * BackupInProgress: check if online backup mode is active
  *
@@ -10659,7 +10658,6 @@ CancelBackup(void)
 						   BACKUP_LABEL_FILE, BACKUP_LABEL_OLD)));
 	}
 }
-#endif
 
 static char *
 XLogLocationToBuffer(char *buffer, XLogRecPtr *loc, bool longFormat)
