@@ -1563,7 +1563,6 @@ _readAppend(void)
 
 	READ_NODE_FIELD(appendplans);
 	READ_BOOL_FIELD(isTarget);
-	READ_BOOL_FIELD(isZapped);
 
 	READ_DONE();
 }

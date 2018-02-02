@@ -43,7 +43,6 @@ extern void add_slice_to_motion(Motion *m,
 		int numOutputSegs, int *outputSegIdx 
 		);
 
-extern Plan *zap_trivial_result(PlannerInfo *root, Plan *plan); 
 extern Plan *apply_shareinput_dag_to_tree(PlannerGlobal *glob, Plan *plan, List *rtable);
 extern void collect_shareinput_producers(PlannerGlobal *glob, Plan *plan, List *rtable);
 extern Plan *replace_shareinput_targetlists(PlannerGlobal *glob, Plan *plan, List *rtable);

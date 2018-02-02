@@ -3486,7 +3486,6 @@ CTranslatorDXLToPlStmt::TranslateDXLAppend
 	CDXLPhysicalAppend *pdxlopAppend = CDXLPhysicalAppend::Cast(append_dxlnode->GetOperator());
 
 	append->isTarget = pdxlopAppend->IsUsedInUpdDel();
-	append->isZapped = pdxlopAppend->IsZapped();
 
 	// translate operator costs
 	TranslatePlanCosts

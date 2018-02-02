@@ -242,9 +242,34 @@ INSERT INTO oneoffplantest VALUES (0), (0), (0);
 -- regardless of the number of tuples in the table.
 select volatilefunc(a) from oneoffplantest;
 
+--
+-- Test for a bug with "zapping" unnecessary Result nodes. We used to
+-- remove the Result node between an Append and a Gather, so that the
+-- sending and receiving side of the motion didn't agree on the shape
+-- of the tuple that was transferrred. We don't do such zapping anymore,
+-- but doesn't hurt to test.
+--
+CREATE TABLE zapfail
+(
+  partkey TEXT,
+  filler TEXT,
+  col_len INTEGER
+)
+PARTITION BY list (partkey)
+(
+  PARTITION foo VALUES ('foo'),
+  PARTITION bar VALUES ('bar')
+);
+
+insert into zapfail(col_len, partkey) values ('3', 'foo');
+
+select partkey from zapfail a where col_len = length(partkey);
+
+
 -- start_ignore
 drop table if exists bfv_planner_x;
 drop table if exists testbadsql;
 drop table if exists bfv_planner_foo;
 drop table if exists testmedian;
+drop table if exists zapfail;
 -- end_ignore

@@ -353,7 +353,6 @@ typedef struct Append
 	Plan		plan;
 	List	   *appendplans;
 	bool		isTarget;
-	bool 		isZapped;
 } Append;
 
 /*
