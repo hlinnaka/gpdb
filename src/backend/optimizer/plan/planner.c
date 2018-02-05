@@ -3340,7 +3340,7 @@ choose_hashed_distinct(PlannerInfo *root,
 	Path		sorted_p;
 
 	/* Prefer sorting when enable_hashagg is off */
-	if (!enable_hashagg)
+	if (!root->config->enable_hashagg)
 		return false;
 
 	/*

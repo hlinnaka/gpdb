@@ -521,9 +521,7 @@ PlannerConfig *DefaultPlannerConfig(void)
 	c1->enable_mergejoin = enable_mergejoin;
 	c1->enable_hashjoin = enable_hashjoin;
 	c1->gp_enable_hashjoin_size_heuristic = gp_enable_hashjoin_size_heuristic;
-	c1->gp_enable_fallback_plan = gp_enable_fallback_plan;
 	c1->gp_enable_predicate_propagation = gp_enable_predicate_propagation;
-	c1->mpp_trying_fallback_plan = false;
 	c1->constraint_exclusion = constraint_exclusion;
 
 	c1->gp_enable_multiphase_agg = gp_enable_multiphase_agg;

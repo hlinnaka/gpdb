@@ -765,12 +765,10 @@ select * from t, pt where tid = ptid;
     1 |   1 | hello1 | bar |   49 | hello49 | world | drop this |    1
 (18 rows)
 
-set enable_hashjoin=on;
-set enable_nestloop=off;
-set enable_mergejoin=off;
 --
 -- index scan
 --
+set enable_nestloop=on;
 set enable_seqscan=off;
 set enable_indexscan=on;
 set enable_bitmapscan=off;

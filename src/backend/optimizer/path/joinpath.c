@@ -113,10 +113,7 @@ add_paths_to_joinrel(PlannerInfo *root,
 	 * 1. Consider mergejoin paths where both relations must be explicitly
 	 * sorted.
 	 */
-	if ((root->config->enable_mergejoin ||
-        root->config->mpp_trying_fallback_plan ||
-		jointype == JOIN_FULL) &&
-		jointype != JOIN_LASJ_NOTIN)
+	if (jointype != JOIN_LASJ_NOTIN)
 	    sort_inner_and_outer(root, joinrel, outerrel, innerrel,
 						     restrictlist, mergeclause_list, jointype, sjinfo);
 
@@ -153,13 +150,10 @@ add_paths_to_joinrel(PlannerInfo *root,
 	 * outer paths.  There's no need to consider any but the
 	 * cheapest-total-cost inner path, however.
 	 */
-	if (root->config->enable_hashjoin
-			|| root->config->mpp_trying_fallback_plan)
-	{
+	if (root->config->enable_hashjoin)
 		hash_inner_and_outer(root, joinrel, outerrel, innerrel,
 							 restrictlist, jointype, sjinfo,
 							 mergeclause_list);
-	}
 }
 
 /*
@@ -430,10 +424,6 @@ match_unsorted_outer(PlannerInfo *root,
 			break;
 	}
 
-	if (!root->config->enable_nestloop
-			&& !root->config->mpp_trying_fallback_plan)
-		nestjoinOK = false;
-
 	/*
 	 * If we need to unique-ify the inner path, we will consider only the
 	 * cheapest inner.
@@ -610,10 +600,7 @@ match_unsorted_outer(PlannerInfo *root,
 		 * supports FULL JOIN, it's necessary to generate a clauseless
 		 * mergejoin path instead.
 		 */
-		if (mergeclauses == NIL
-				|| (!root->config->enable_mergejoin
-						&& !root->config->mpp_trying_fallback_plan)
-			)
+		if (mergeclauses == NIL)
 		{
 			if (jointype == JOIN_FULL)
 				 /* okay to try for mergejoin */ ;

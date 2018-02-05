@@ -2547,14 +2547,6 @@ create_mergejoin_path(PlannerInfo *root,
 		inner_path->pathkeys)
 		innersortkeys = NIL;
 
-    /* If user doesn't want sort, but this MJ requires a sort, fail. */
-    if (!root->config->enable_sort &&
-        !root->config->mpp_trying_fallback_plan)
-    {
-        if (outersortkeys || innersortkeys)
-            return NULL;
-    }
-
     pathnode = makeNode(MergePath);
 
 	/*
@@ -2686,8 +2678,7 @@ create_hashjoin_path(PlannerInfo *root,
 	 * input path.
 	 */
 	if (jointype == JOIN_INNER &&
-		root->config->gp_enable_hashjoin_size_heuristic &&
-		!root->config->mpp_trying_fallback_plan)
+		root->config->gp_enable_hashjoin_size_heuristic)
 	{
 		double		outersize;
 		double		innersize;
