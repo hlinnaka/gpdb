@@ -14264,8 +14264,6 @@ split_rows(Relation intoa, Relation intob, Relation temprel)
 	 * slot/tupdesc should look same between A and B, but here we don't
 	 * assume so just in case, to be safe.
 	 */
-	rria->ri_partSlot = MakeSingleTupleTableSlot(RelationGetDescr(intoa));
-	rrib->ri_partSlot = MakeSingleTupleTableSlot(RelationGetDescr(intob));
 	map_part_attrs(temprel, intoa, &rria->ri_partInsertMap, true);
 	map_part_attrs(temprel, intob, &rrib->ri_partInsertMap, true);
 	Assert(NULL != rria->ri_RelationDesc);
@@ -14480,8 +14478,6 @@ split_rows(Relation intoa, Relation intob, Relation temprel)
 
 	MemoryContextSwitchTo(oldCxt);
 	ExecDropSingleTupleTableSlot(slotT);
-	ExecDropSingleTupleTableSlot(rria->ri_partSlot);
-	ExecDropSingleTupleTableSlot(rrib->ri_partSlot);
 
 	/*
 	 * We created our target result tuple table slots upfront.
