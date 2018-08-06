@@ -5159,6 +5159,28 @@ set_coplan_strategies(PlannerInfo *root, MppGroupContext *ctx, DqaInfo *dqaArg, 
 	DqaCoplanType type_cheapest;
 	Cost		trial;
 
+	/*
+	 * We can use hashing for preliminary duplicate elimination, even if
+	 * there are ordered aggregates. This is therefore a more relaxed
+	 * check than in choose_hashed_grouping.
+	 */
+	if (ctx->use_hashed_grouping)
+		can_hash_group_key = true;
+	else
+	{
+		/*
+		 * These are all the "hard" conditions on when we can't do hash
+		 * aggregation. These should match the hard checks in
+		 * choose_hashed_grouping().
+		 */
+		can_hash_group_key =
+			root->config->enable_hashagg &&
+			ctx->agg_costs->hasNonCombine &&
+			ctx->agg_costs->hasNonSerial &&
+			ctx->agg_costs->numOrderedAggs > 0 &&
+			grouping_is_hashable(root->parse->groupClause);
+	}
+
 	/* Preliminary aggregation */
 	use_hashed_preliminary = (can_hash_group_key || ctx->numGroupCols == 0)
 		&& can_hash_dqa_arg;

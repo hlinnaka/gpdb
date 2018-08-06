@@ -120,7 +120,7 @@ static bool choose_hashed_distinct(PlannerInfo *root,
 					   List *sorted_pathkeys,
 					   double dNumDistinctRows);
 static List *make_subplanTargetList(PlannerInfo *root, List *tlist,
-					   AttrNumber **groupColIdx, Oid **groupOperators, bool *need_tlist_eval);
+					   AttrNumber **groupColIdx, bool *need_tlist_eval);
 static void locate_grouping_columns(PlannerInfo *root,
 						List *stlist,
 						List *sub_tlist,
@@ -1679,7 +1679,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		/* No set operations, do regular planning */
 		List	   *sub_tlist;
 		AttrNumber *groupColIdx = NULL;
-		Oid		   *groupOperators = NULL;
 		bool		need_tlist_eval = true;
 		standard_qp_extra qp_extra;
 		RelOptInfo *final_rel;
@@ -1734,7 +1733,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * tlist if grouping or aggregation is needed.
 		 */
 		sub_tlist = make_subplanTargetList(root, tlist,
-										   &groupColIdx, &groupOperators, &need_tlist_eval);
+										   &groupColIdx, &need_tlist_eval);
 
 		/*
 		 * Do aggregate preprocessing, if the query has any aggs.
@@ -1955,7 +1954,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 									   tuple_fraction, limit_tuples,
 									   path_rows, path_width,
 									   cheapest_path, sorted_path,
-									   numGroupCols,
 									   dNumGroups, &agg_costs);
 			/* Also convert # groups to long int --- but 'ware overflow! */
 			numGroups = (long) Min(dNumGroups, (double) LONG_MAX);
@@ -2160,7 +2158,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												false, /* streaming */
 												numGroupCols,
 												groupColIdx,
-												groupOperators,
+									extract_grouping_ops(parse->groupClause),
 												numGroups,
 												result_plan);
 
@@ -2209,7 +2207,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												false, /* streaming */
 												numGroupCols,
 												groupColIdx,
-												groupOperators,
+									extract_grouping_ops(parse->groupClause),
 												numGroups,
 												result_plan);
 
@@ -3783,11 +3781,10 @@ choose_hashed_grouping(PlannerInfo *root,
 					   double tuple_fraction, double limit_tuples,
 					   double path_rows, int path_width,
 					   Path *cheapest_path, Path *sorted_path,
-					   int numGroupOps,
 					   double dNumGroups, AggClauseCosts *agg_costs)
 {
 	Query	   *parse = root->parse;
-	int			numGroupCols;
+	int			numGroupCols = list_length(parse->groupClause);
 	bool		can_hash;
 	bool		can_sort;
 	Size		hashentrysize;
@@ -3858,9 +3855,7 @@ choose_hashed_grouping(PlannerInfo *root,
 							   hashentrysize,
 							   false,
 							   &hash_info))
-	{
 		return false;
-	}
 
 	/*
 	 * When we have both GROUP BY and DISTINCT, use the more-rigorous of
@@ -3891,7 +3886,6 @@ choose_hashed_grouping(PlannerInfo *root,
 	 * These path variables are dummies that just hold cost fields; we don't
 	 * make actual Paths for these steps.
 	 */
-	numGroupCols = list_length(root->parse->groupClause);
 	cost_agg(&hashed_p, root, AGG_HASHED, agg_costs,
 			 numGroupCols, dNumGroups,
 			 cheapest_path->startup_cost, cheapest_path->total_cost,
@@ -4167,7 +4161,6 @@ static List *
 make_subplanTargetList(PlannerInfo *root,
 					   List *tlist,
 					   AttrNumber **groupColIdx,
-					   Oid **groupOperators,
 					   bool *need_tlist_eval)
 {
 	Query	   *parse = root->parse;
@@ -4261,63 +4254,40 @@ make_subplanTargetList(PlannerInfo *root,
 		 * 1..N, but we don't want callers to assume that.
 		 */
 		AttrNumber *grpColIdx;
-		Oid		   *grpOperators;
-		List	   *grouptles;
-		List	   *sortops;
-		List	   *eqops;
-		ListCell   *lc_tle;
-		ListCell   *lc_eqop;
+		ListCell   *gl;
 
 		grpColIdx = (AttrNumber *) palloc(sizeof(AttrNumber) * numCols);
-		grpOperators = (Oid *) palloc(sizeof(Oid) * numCols);
-
 		*groupColIdx = grpColIdx;
-		*groupOperators = grpOperators;
 
-		get_sortgroupclauses_tles(parse->groupClause, tlist,
-								  &grouptles, &sortops, &eqops);
-		Assert(numCols == list_length(grouptles) &&
-			   numCols == list_length(sortops) &&
-			   numCols == list_length(eqops));
-		forboth(lc_tle, grouptles, lc_eqop, eqops)
+		foreach(gl, parse->groupClause)
 		{
-			Node	   *groupexpr;
-			TargetEntry *tle;
-			TargetEntry *sub_tle = NULL;
-			ListCell   *sl = NULL;
-
-			tle = (TargetEntry *) lfirst(lc_tle);
-			groupexpr = (Node *) tle->expr;
+			SortGroupClause *grpcl = (SortGroupClause *) lfirst(gl);
+			Node	   *groupexpr = get_sortgroupclause_expr(grpcl, tlist);
+			TargetEntry *te;
 
 			/*
-			 * Find or make a matching sub_tlist entry.
+			 * Find or make a matching sub_tlist entry.  If the groupexpr
+			 * isn't a Var, no point in searching.  (Note that the parser
+			 * won't make multiple groupClause entries for the same TLE.)
 			 */
-			foreach(sl, sub_tlist)
+			if (groupexpr && IsA(groupexpr, Var))
+				te = tlist_member(groupexpr, sub_tlist);
+			else
+				te = NULL;
+
+			if (!te)
 			{
-				sub_tle = (TargetEntry *) lfirst(sl);
-				if (equal(groupexpr, sub_tle->expr)
-					&& (sub_tle->ressortgroupref == 0))
-					break;
-			}
-			if (!sl)
-			{
-				sub_tle = makeTargetEntry((Expr *) groupexpr,
-										  list_length(sub_tlist) + 1,
-										  NULL,
-										  false);
-				sub_tlist = lappend(sub_tlist, sub_tle);
+				te = makeTargetEntry((Expr *) groupexpr,
+									 list_length(sub_tlist) + 1,
+									 NULL,
+									 false);
+				sub_tlist = lappend(sub_tlist, te);
 				*need_tlist_eval = true;		/* it's not flat anymore */
 			}
 
-			/* Set its group reference and save its resno */
-			sub_tle->ressortgroupref = tle->ressortgroupref;
-			grpColIdx[keyno] = sub_tle->resno;
-			grpOperators[keyno] = lfirst_oid(lc_eqop);
-			if (!OidIsValid(grpOperators[keyno]))           /* shouldn't happen */
-				elog(ERROR, "could not find equality operator for grouping column");
-			keyno++;
+			/* and save its resno */
+			grpColIdx[keyno++] = te->resno;
 		}
-		Assert(keyno == numCols);
 	}
 
 	return sub_tlist;

@@ -39,13 +39,10 @@ extern Plan *subquery_planner(PlannerGlobal *glob, Query *parse,
 				 PlannerConfig *config);
 
 extern bool choose_hashed_grouping(PlannerInfo *root,
-								   double tuple_fraction, double limit_tuples,
-								   double path_rows, int path_width,
-								   Path *cheapest_path,
-								   Path *sorted_path,
-								   int numGroupOps,
-								   double dNumGroups,
-								   AggClauseCosts *agg_costs);
+					   double tuple_fraction, double limit_tuples,
+					   double path_rows, int path_width,
+					   Path *cheapest_path, Path *sorted_path,
+					   double dNumGroups, AggClauseCosts *agg_costs);
 
 extern void add_tlist_costs_to_plan(PlannerInfo *root, Plan *plan,
 						List *tlist);
