@@ -2161,6 +2161,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 									extract_grouping_ops(parse->groupClause),
 												numGroups,
 												result_plan);
+				result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
 
 				/* Hashed aggregation produces randomly-ordered results */
 				current_pathkeys = NIL;
@@ -2210,6 +2211,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 									extract_grouping_ops(parse->groupClause),
 												numGroups,
 												result_plan);
+				result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
 
 				CdbPathLocus_MakeNull(&current_locus, __GP_POLICY_EVIL_NUMSEGMENTS);
 			}
