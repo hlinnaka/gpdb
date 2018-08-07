@@ -2235,12 +2235,12 @@ transformWindowDefinitions(ParseState *pstate,
 										  EXPR_KIND_WINDOW_ORDER,
 										  true /* fix unknowns */ ,
 										  true /* force SQL99 rules */ );
-		partitionClause = transformSortClause(pstate,
-											  windef->partitionClause,
-											  targetlist,
-											  EXPR_KIND_WINDOW_PARTITION,
-											  true /* fix unknowns */ ,
-											  true /* force SQL99 rules */ );
+		partitionClause = transformGroupClause(pstate,
+											   windef->partitionClause,
+											   targetlist,
+											   orderClause,
+											   EXPR_KIND_WINDOW_PARTITION,
+											   true /* force SQL99 rules */ );
 
 		/*
 		 * And prepare the new WindowClause.

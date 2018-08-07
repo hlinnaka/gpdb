@@ -14520,7 +14520,7 @@ opt_existing_window_name: ColId						{ $$ = $1; }
 			| /*EMPTY*/				%prec Op		{ $$ = NULL; }
 		;
 
-opt_partition_clause: PARTITION BY sortby_list { $$ = $3; }
+opt_partition_clause: PARTITION BY expr_list		{ $$ = $3; }
 			| /*EMPTY*/ { $$ = NIL; }
 		;
 
