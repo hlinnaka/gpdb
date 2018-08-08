@@ -57,6 +57,9 @@ exprType(const Node *expr)
 		case T_GroupingFunc:
 			type = INT4OID;
 			break;
+		case T_GroupId:
+			type = INT4OID;
+			break;
 		case T_WindowFunc:
 			type = ((const WindowFunc *) expr)->wintype;
 			break;
@@ -771,6 +774,9 @@ exprCollation(const Node *expr)
 		case T_GroupingFunc:
 			coll = InvalidOid;
 			break;
+		case T_GroupId:
+			coll = InvalidOid;
+			break;
 		case T_WindowFunc:
 			coll = ((const WindowFunc *) expr)->wincollid;
 			break;
@@ -1028,6 +1034,9 @@ exprSetCollation(Node *expr, Oid collation)
 		case T_GroupingFunc:
 			Assert(!OidIsValid(collation));
 			break;
+		case T_GroupId:
+			Assert(!OidIsValid(collation));
+			break;
 		case T_WindowFunc:
 			((WindowFunc *) expr)->wincollid = collation;
 			break;
@@ -1253,6 +1262,9 @@ exprLocation(const Node *expr)
 			break;
 		case T_GroupingFunc:
 			loc = ((const GroupingFunc *) expr)->location;
+			break;
+		case T_GroupId:
+			loc = ((const GroupId *) expr)->location;
 			break;
 		case T_WindowFunc:
 			/* function name should always be the first thing */
@@ -1738,6 +1750,8 @@ expression_tree_walker(Node *node,
 										   walker, context))
 					return true;
 			}
+			break;
+		case T_GroupId:
 			break;
 		case T_WindowFunc:
 			{
@@ -2386,6 +2400,16 @@ expression_tree_mutator(Node *node,
 				 */
 				newnode->refs = list_copy(grouping->refs);
 				newnode->cols = list_copy(grouping->cols);
+
+				return (Node *) newnode;
+			}
+			break;
+		case T_GroupId:
+			{
+				GroupId   *groupid = (GroupId *) node;
+				GroupId   *newnode;
+
+				FLATCOPY(newnode, groupid, GroupId);
 
 				return (Node *) newnode;
 			}
@@ -3149,6 +3173,8 @@ raw_expression_tree_walker(Node *node,
 			return walker(((RangeVar *) node)->alias, context);
 		case T_GroupingFunc:
 			return walker(((GroupingFunc *) node)->args, context);
+		case T_GroupId:
+			break;
 		case T_SubLink:
 			{
 				SubLink    *sublink = (SubLink *) node;

@@ -1669,6 +1669,10 @@ FigureColnameInternal(Node *node, char **name)
 			/* make GROUPING() act like a regular function */
 			*name = "grouping";
 			return 2;
+		case T_GroupId:
+			/* make GROUP_ID() act like a regular function */
+			*name = "group_id";
+			return 2;
 		case T_SubLink:
 			switch (((SubLink *) node)->subLinkType)
 			{

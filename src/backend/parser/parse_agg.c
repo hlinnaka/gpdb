@@ -273,6 +273,25 @@ transformGroupingFunc(ParseState *pstate, GroupingFunc *p)
 }
 
 /*
+ * transformGroupingFunc
+ *		Transform a GROUPING expression
+ *
+ * GROUP_ID() behaves very like an aggregate.  Processing of levels and nesting
+ * is done as for aggregates.  We set p_hasAggs for these expressions too.
+ */
+Node *
+transformGroupId(ParseState *pstate, GroupId *p)
+{
+	GroupId	   *result = makeNode(GroupId);
+
+	result->location = p->location;
+
+	check_agglevels_and_constraints(pstate, (Node *) result);
+
+	return (Node *) result;
+}
+
+/*
  * Aggregate functions and grouping operations (which are combined in the spec
  * as <set function specification>) are very similar with regard to level and
  * nesting restrictions (though we allow a lot more things than the spec does).
@@ -300,6 +319,14 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 		filter = agg->aggfilter;
 		location = agg->location;
 		p_levelsup = &agg->agglevelsup;
+	}
+	else if (IsA(expr, GroupId))
+	{
+		GroupId *grp = (GroupId *) expr;
+
+		args = NIL;
+		location = grp->location;
+		p_levelsup = &grp->agglevelsup;
 	}
 	else
 	{
@@ -671,6 +698,21 @@ check_agg_arguments_walker(Node *node,
 	if (IsA(node, GroupingFunc))
 	{
 		int			agglevelsup = ((GroupingFunc *) node)->agglevelsup;
+
+		/* convert levelsup to frame of reference of original query */
+		agglevelsup -= context->sublevels_up;
+		/* ignore local aggs of subqueries */
+		if (agglevelsup >= 0)
+		{
+			if (context->min_agglevel < 0 ||
+				context->min_agglevel > agglevelsup)
+				context->min_agglevel = agglevelsup;
+		}
+		/* Continue and descend into subtree */
+	}
+	if (IsA(node, GroupId))
+	{
+		int			agglevelsup = ((GroupId *) node)->agglevelsup;
 
 		/* convert levelsup to frame of reference of original query */
 		agglevelsup -= context->sublevels_up;
@@ -1247,6 +1289,16 @@ check_ungrouped_columns_walker(Node *node,
 		GroupingFunc *grp = (GroupingFunc *) node;
 
 		/* handled GroupingFunc separately, no need to recheck at this level */
+
+		if ((int) grp->agglevelsup >= context->sublevels_up)
+			return false;
+	}
+
+	if (IsA(node, GroupId))
+	{
+		GroupId	   *grp = (GroupId *) node;
+
+		/* handled GroupId separately, no need to recheck at this level */
 
 		if ((int) grp->agglevelsup >= context->sublevels_up)
 			return false;

@@ -1187,6 +1187,7 @@ prepare_projection_slot(AggState *aggstate, TupleTableSlot *slot, int currentSet
 		Bitmapset *grouped_cols = aggstate->phase->grouped_cols[currentSet];
 
 		aggstate->grouped_cols = grouped_cols;
+		aggstate->group_id = aggstate->phase->group_id[currentSet];
 
 		if (TupIsNull(slot))
 		{
@@ -2189,6 +2190,19 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 
 		phasedata->aggnode = aggnode;
 		phasedata->sortnode = sortnode;
+
+		/* Compute group_ids */
+		{
+			int			setno;
+
+			phasedata->group_id = palloc0(numGroupingSets * sizeof(int));
+
+			for (setno = 1; setno < num_sets; setno++)
+			{
+				if (bms_equal(phasedata->grouped_cols[setno], phasedata->grouped_cols[setno - 1]))
+					phasedata->group_id[setno] = phasedata->group_id[setno - 1] + 1;
+			}
+		}
 	}
 
 	/*

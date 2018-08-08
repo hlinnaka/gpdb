@@ -190,6 +190,9 @@ static Datum ExecEvalCurrentOfExpr(ExprState *exprstate, ExprContext *econtext,
 static Datum ExecEvalGroupingFuncExpr(GroupingFuncExprState *gstate,
 						ExprContext *econtext,
 						bool *isNull, ExprDoneCond *isDone);
+static Datum ExecEvalGroupIdExpr(GroupIdExprState *gstate,
+						ExprContext *econtext,
+						bool *isNull, ExprDoneCond *isDone);
 
 static Datum ExecEvalPartSelectedExpr(PartSelectedExprState *exprstate,
 						ExprContext *econtext,
@@ -3460,6 +3463,27 @@ ExecEvalGroupingFuncExpr(GroupingFuncExprState *gstate,
 	return (Datum) result;
 }
 
+/*
+ * ExecEvalGroupIdExpr
+ *
+ * Evaluate a GROUP_ID expression. It's been precalculated by ExecInitAgg.
+ */
+static Datum
+ExecEvalGroupIdExpr(GroupIdExprState *gstate,
+					ExprContext *econtext,
+					bool *isNull,
+					ExprDoneCond *isDone)
+{
+	int			group_id = gstate->aggstate->group_id;
+
+	if (isDone)
+		*isDone = ExprSingleResult;
+
+	*isNull = false;
+
+	return Int32GetDatum(group_id);
+}
+
 /* ----------------------------------------------------------------
  *		ExecEvalArray - ARRAY[] expressions
  * ----------------------------------------------------------------
@@ -5395,6 +5419,19 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 				state = (ExprState *) grp_state;
 				state->evalfunc = (ExprStateEvalFunc) ExecEvalGroupingFuncExpr;
+			}
+			break;
+		case T_GroupId:
+			{
+				GroupIdExprState *grp_state = makeNode(GroupIdExprState);
+
+				if (!parent || !IsA(parent, AggState) || !IsA(parent->plan, Agg))
+					elog(ERROR, "parent of GROUP_ID is not Agg node");
+
+				grp_state->aggstate = (AggState *) parent;
+
+				state = (ExprState *) grp_state;
+				state->evalfunc = (ExprStateEvalFunc) ExecEvalGroupIdExpr;
 			}
 			break;
 		case T_WindowFunc:

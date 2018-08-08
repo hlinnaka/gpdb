@@ -908,6 +908,17 @@ typedef struct GroupingFuncExprState
 } GroupingFuncExprState;
 
 /* ----------------
+ *		GroupIdExprState node
+ *
+ * ----------------
+ */
+typedef struct GroupIdExprState
+{
+	ExprState	xprstate;
+	struct AggState *aggstate;
+} GroupIdExprState;
+
+/* ----------------
  *		WindowFuncExprState node
  * ----------------
  */
@@ -2636,6 +2647,7 @@ typedef struct AggState
 	int			projected_set;	/* The last projected grouping set */
 	int			current_set;	/* The current grouping set being evaluated */
 	Bitmapset  *grouped_cols;	/* grouped cols in current projection */
+	int			group_id;		/* GROUP_ID in current projection */
 	List	   *all_grouped_cols; /* list of all grouped cols in DESC order */
 	/* These fields are for grouping set phase data */
 	int			maxsets;		/* The max number of sets in any phase */

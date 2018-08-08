@@ -1430,6 +1430,15 @@ _outGroupingFunc(StringInfo str, const GroupingFunc *node)
 }
 
 static void
+_outGroupId(StringInfo str, const GroupId *node)
+{
+	WRITE_NODE_TYPE("GROUPID");
+
+	WRITE_INT_FIELD(agglevelsup);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
 _outWindowFunc(StringInfo str, const WindowFunc *node)
 {
 	WRITE_NODE_TYPE("WINDOWFUNC");
@@ -4884,6 +4893,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_GroupingFunc:
 				_outGroupingFunc(str, obj);
+				break;
+			case T_GroupId:
+				_outGroupId(str, obj);
 				break;
 			case T_WindowFunc:
 				_outWindowFunc(str, obj);

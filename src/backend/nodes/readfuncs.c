@@ -1409,6 +1409,20 @@ _readGroupingFunc(void)
 }
 
 /*
+ * _readGroupId
+ */
+static GroupId *
+_readGroupId(void)
+{
+	READ_LOCALS(GroupId);
+
+	READ_INT_FIELD(agglevelsup);
+	READ_LOCATION_FIELD(location);
+
+	READ_DONE();
+}
+
+/*
  * _readWindowFunc
  */
 static WindowFunc *
@@ -2985,6 +2999,8 @@ parseNodeString(void)
 		return_value = _readAggref();
 	else if (MATCH("GROUPINGFUNC", 12))
 		return_value = _readGroupingFunc();
+	else if (MATCH("GROUPID", 7))
+		return_value = _readGroupId();
 	else if (MATCH("WINDOWFUNC", 10))
 		return_value = _readWindowFunc();
 	else if (MATCH("ARRAYREF", 8))

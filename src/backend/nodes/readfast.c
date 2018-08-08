@@ -3267,6 +3267,9 @@ readNodeBinary(void)
 			case T_GroupingFunc:
 				return_value = _readGroupingFunc();
 				break;
+			case T_GroupId:
+				return_value = _readGroupId();
+				break;
 			case T_WindowFunc:
 				return_value = _readWindowFunc();
 				break;

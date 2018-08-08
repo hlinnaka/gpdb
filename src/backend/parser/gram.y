@@ -717,6 +717,8 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 
 	FULLSCAN
 
+	GROUP_ID
+
 	HASH HOST
 
 	IGNORE_P INCLUSIVE
@@ -13950,6 +13952,12 @@ c_expr:		columnref								{ $$ = $1; }
 				  g->location = @1;
 				  $$ = (Node *)g;
 			  }
+			| GROUP_ID '(' ')'
+			  {
+				  GroupId *g = makeNode(GroupId);
+				  g->location = @1;
+				  $$ = (Node *)g;
+			  }
 		;
 
 scatter_clause:
@@ -16195,6 +16203,7 @@ col_name_keyword:
 			| FLOAT_P
 			| GREATEST
 			| GROUPING
+			| GROUP_ID
 			| INOUT
 			| INT_P
 			| INTEGER
