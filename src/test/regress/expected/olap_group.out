@@ -2016,7 +2016,9 @@ select cn,vn,sum(qty) from sale group by grouping sets((cn),(vn));
 --end_equiv
 -- GROUPING function -- 
 select grouping(cn,vn,pn) from sale;
-ERROR:  column "sale"."cn" is not in GROUP BY
+ERROR:  arguments to GROUPING must be grouping expressions of the associated query level
+LINE 1: select grouping(cn,vn,pn) from sale;
+                        ^
 select cn,vn,pn,grouping(cn,vn,pn) from sale group by cn,vn,pn;
  cn | vn | pn  | grouping 
 ----+----+-----+----------
@@ -2858,9 +2860,13 @@ select cn,sum(distinct qty) from sale group by grouping sets (cube(prc,cn));
 --end_equiv
 -- Ungrouped attributes in GROUPING function --
 select grouping(cn,vn,pn) from sale group by cn; --error
-ERROR:  column "sale"."vn" is not in GROUP BY
+ERROR:  arguments to GROUPING must be grouping expressions of the associated query level
+LINE 1: select grouping(cn,vn,pn) from sale group by cn;
+                           ^
 select grouping(cn,vn,pn) from sale group by rollup(cn); --error
-ERROR:  column "sale"."vn" is not in GROUP BY
+ERROR:  arguments to GROUPING must be grouping expressions of the associated query level
+LINE 1: select grouping(cn,vn,pn) from sale group by rollup(cn);
+                           ^
 -- Using in View --
 create view cube_view as select cn,vn,grouping(vn,cn) from sale group by cube(cn,vn);
 \d+ cube_view;
@@ -2869,13 +2875,13 @@ create view cube_view as select cn,vn,grouping(vn,cn) from sale group by cube(cn
 ----------+---------+-----------+---------+-------------
  cn       | integer |           | plain   | 
  vn       | integer |           | plain   | 
- grouping | bigint  |           | plain   | 
+ grouping | integer |           | plain   | 
 View definition:
  SELECT sale.cn,
     sale.vn,
     grouping(sale.vn, sale.cn) AS "grouping"
    FROM sale
-  GROUP BY CUBE (sale.cn, sale.vn);
+  GROUP BY CUBE(sale.cn, sale.vn);
 
 create view rollup_view as select cn,vn,pn,grouping(cn,vn,pn) from sale group by rollup(cn),vn,pn;
 \d+ rollup_view;
@@ -2885,14 +2891,14 @@ create view rollup_view as select cn,vn,pn,grouping(cn,vn,pn) from sale group by
  cn       | integer |           | plain   | 
  vn       | integer |           | plain   | 
  pn       | integer |           | plain   | 
- grouping | bigint  |           | plain   | 
+ grouping | integer |           | plain   | 
 View definition:
  SELECT sale.cn,
     sale.vn,
     sale.pn,
     grouping(sale.cn, sale.vn, sale.pn) AS "grouping"
    FROM sale
-  GROUP BY sale.vn, sale.pn, ROLLUP (sale.cn);
+  GROUP BY ROLLUP(sale.cn), sale.vn, sale.pn;
 
 create view gs_view as select cn,vn,grouping(vn,cn) from sale group by grouping sets ((vn), (cn), (), (cn,vn));
 \d+ gs_view;
@@ -2901,13 +2907,13 @@ create view gs_view as select cn,vn,grouping(vn,cn) from sale group by grouping 
 ----------+---------+-----------+---------+-------------
  cn       | integer |           | plain   | 
  vn       | integer |           | plain   | 
- grouping | bigint  |           | plain   | 
+ grouping | integer |           | plain   | 
 View definition:
  SELECT sale.cn,
     sale.vn,
     grouping(sale.vn, sale.cn) AS "grouping"
    FROM sale
-  GROUP BY GROUPING SETS ((sale.vn), (sale.cn), (), ((sale.cn), (sale.vn)));
+  GROUP BY GROUPING SETS ((sale.vn), (sale.cn), (), (sale.cn, sale.vn));
 
 -- GROUP_ID function --
 select pn, sum(qty), group_id() from sale group by rollup(pn);
@@ -4026,9 +4032,13 @@ select cn,sum(qty) from sale group by grouping sets(cn);
 
 --end_equiv
 select cn,sum(qty),grouping((cn,vn),vn) from sale group by rollup(cn,vn);
-ERROR:  row type can not be used inside a grouping function.
+ERROR:  arguments to GROUPING must be grouping expressions of the associated query level
+LINE 1: select cn,sum(qty),grouping((cn,vn),vn) from sale group by r...
+                                    ^
 select sum(qty),grouping(cn+pn) from sale group by cn+vn,vn;
-ERROR:  expression in a grouping fuction does not appear in GROUP BY.
+ERROR:  arguments to GROUPING must be grouping expressions of the associated query level
+LINE 1: select sum(qty),grouping(cn+pn) from sale group by cn+vn,vn;
+                                 ^
 select sum(qty),grouping(cn+vn) from sale group by rollup(cn+vn,vn);
  sum  | grouping 
 ------+----------

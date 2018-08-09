@@ -2374,24 +2374,18 @@ NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 'i' as
 HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
 insert into qp_misc_jiras.tbl7553_test values(1,2);
 explain select i as a, i as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a));
-                                                             QUERY PLAN                                                             
-------------------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice2; segments: 3)  (cost=10000008731.75..10000008759.25 rows=2750 width=20)
-   ->  HashAggregate  (cost=10000008731.75..10000008759.25 rows=917 width=20)
-         Group Key: "rollup".a, "rollup".a_1, "rollup"."grouping", "rollup"."group_id"
-         ->  Subquery Scan on "rollup"  (cost=10000008018.50..10000008724.25 rows=250 width=20)
-               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=10000008018.50..10000008716.75 rows=250 width=20)
-                     Hash Key: rollup_1.a, rollup_1.a_1, (Grouping), group_id()
-                     ->  GroupAggregate  (cost=10000008018.50..10000008701.75 rows=250 width=20)
-                           Group Key: rollup_1.a, rollup_1."grouping", rollup_1."group_id"
-                           ->  Subquery Scan on rollup_1  (cost=10000008018.50..10000008684.25 rows=334 width=20)
-                                 ->  GroupAggregate  (cost=10000008018.50..10000008674.25 rows=334 width=20)
-                                       Group Key: tbl7553_test.i, tbl7553_test.i
-                                       ->  Sort  (cost=10000008018.50..10000008233.75 rows=28700 width=4)
-                                             Sort Key: tbl7553_test.i, tbl7553_test.i
-                                             ->  Seq Scan on tbl7553_test  (cost=10000000000.00..10000000961.00 rows=28700 width=4)
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ GroupAggregate  (cost=10000008018.50..10000008684.25 rows=2000 width=8)
+   Group Key: i, i
+   Group Key: i
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=10000008018.50..10000008233.75 rows=86100 width=4)
+         Merge Key: i, i
+         ->  Sort  (cost=10000008018.50..10000008233.75 rows=28700 width=4)
+               Sort Key: i, i
+               ->  Seq Scan on tbl7553_test  (cost=10000000000.00..10000000961.00 rows=28700 width=4)
  Optimizer: legacy query optimizer
-(15 rows)
+(9 rows)
 
 select i as a, i as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a)); 
  a | b 
@@ -2401,25 +2395,18 @@ select i as a, i as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a
 (2 rows)
 
 explain select j as a, j as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a)); 
-                                                                       QUERY PLAN                                                                       
---------------------------------------------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice2; segments: 3)  (cost=116.12..139.79 rows=2367 width=8)
-   ->  HashAggregate  (cost=116.12..139.79 rows=789 width=8)
-         Group By: partial_aggregation.a, partial_aggregation.a, partial_aggregation."grouping", partial_aggregation."group_id"
-         ->  Subquery Scan on partial_aggregation  (cost=51.58..109.67 rows=215 width=20)
-               ->  Redistribute Motion 3:3  (slice1; segments: 3)  (cost=51.58..103.22 rows=215 width=20)
-                     Hash Key: "rollup".a, "rollup".a
-                     ->  GroupAggregate  (cost=51.58..90.32 rows=215 width=20)
-                           Group By: "rollup".a, "rollup"."grouping", "rollup"."group_id"
-                           ->  Subquery Scan on "rollup"  (cost=51.58..75.26 rows=287 width=20)
-                                 ->  GroupAggregate  (cost=51.58..66.65 rows=287 width=20)
-                                       Group By: tbl7553_test.j, tbl7553_test.j
-                                       ->  Sort  (cost=51.58..53.74 rows=287 width=4)
-                                             Sort Key: tbl7553_test.j, tbl7553_test.j
-                                             ->  Seq Scan on tbl7553_test  (cost=0.00..9.61 rows=287 width=4)
- Settings:  enable_indexscan=off; enable_nestloop=on; enable_seqscan=off; gp_enable_agg_distinct=off; gp_enable_agg_distinct_pruning=off; optimizer=off
- Optimizer status: legacy query optimizer
-(16 rows)
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ GroupAggregate  (cost=10000008018.50..10000008684.25 rows=2000 width=8)
+   Group Key: j, j
+   Group Key: j
+   ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=10000008018.50..10000008233.75 rows=86100 width=4)
+         Merge Key: j, j
+         ->  Sort  (cost=10000008018.50..10000008233.75 rows=28700 width=4)
+               Sort Key: j, j
+               ->  Seq Scan on tbl7553_test  (cost=10000000000.00..10000000961.00 rows=28700 width=4)
+ Optimizer: legacy query optimizer
+(9 rows)
 
 select j as a, j as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a)); 
  a | b 

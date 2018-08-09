@@ -68,12 +68,14 @@
 typedef struct
 {
 	List *subtlist; /* target list for subquery */
-	List *subgroupClause; /* group clause for subquery */
+	List *sub_groupClause; /* group clause for subquery */
+	List *sub_groupingSets; /* grouping sets for subquery */
 	List *windowClause; /* window clause for outer query*/
 
 	/* Scratch area for init_grouped_window context and map_sgr_mutator.
 	 */
-	Index *sgr_map;
+	Index  *sgr_map;
+	int		sgr_map_size;
 
 	/* Scratch area for grouped_window_mutator and var_for_gw_expr.
 	 */
@@ -960,6 +962,7 @@ transformGroupedWindows(ParseState *pstate, Query *qry)
 
 	subq->returningList = NIL;
 	subq->groupClause = qry->groupClause; /* before windowing */
+	subq->groupingSets = qry->groupingSets; /* before windowing */
 	subq->havingQual = qry->havingQual; /* before windowing */
 	subq->windowClause = NIL; /* by construction */
 	subq->distinctClause = NIL; /* after windowing */
@@ -1015,6 +1018,7 @@ transformGroupedWindows(ParseState *pstate, Query *qry)
 	/* qry->targetList -- to be mutated from Q to Q' below */
 
 	qry->groupClause = NIL; /* by construction */
+	qry->groupingSets = NIL; /* by construction */
 	qry->havingQual = NULL; /* by construction */
 
 	/* Mutate the Q target list and windowClauses for use in Q' and, at the
@@ -1028,7 +1032,8 @@ transformGroupedWindows(ParseState *pstate, Query *qry)
 	/* New subquery fields
 	 */
 	subq->targetList = ctx.subtlist;
-	subq->groupClause = ctx.subgroupClause;
+	subq->groupClause = ctx.sub_groupClause;
+	subq->groupingSets = ctx.sub_groupingSets;
 
 	/* We always need an eref, but we shouldn't really need a filled in alias.
 	 * However, view deparse (or at least the fix for MPP-2189) wants one.
@@ -1088,7 +1093,8 @@ init_grouped_window_context(grouped_window_ctx *ctx, Query *qry)
 	maxsgr = maxSortGroupRef(grp_tles, true);
 
 	ctx->subtlist = NIL;
-	ctx->subgroupClause = NIL;
+	ctx->sub_groupClause = NIL;
+	ctx->sub_groupingSets = NIL;
 
 	/* Set up scratch space.
 	 */
@@ -1098,6 +1104,7 @@ init_grouped_window_context(grouped_window_ctx *ctx, Query *qry)
 	/* Map input = outer query sortgroupref values to subquery values while building the
 	 * subquery target list prefix. */
 	ctx->sgr_map = palloc0((maxsgr+1)*sizeof(ctx->sgr_map[0]));
+	ctx->sgr_map_size = maxsgr + 1;
 	foreach (lc, grp_tles)
 	{
 	    TargetEntry *tle;
@@ -1118,8 +1125,9 @@ init_grouped_window_context(grouped_window_ctx *ctx, Query *qry)
 	ctx->call_depth = 0;
 	ctx->tle = NULL;
 
-	/* Revise grouping into ctx->subgroupClause */
-	ctx->subgroupClause = (List*)map_sgr_mutator((Node*)qry->groupClause, ctx);
+	/* Revise grouping into ctx->sub_groupClause */
+	ctx->sub_groupClause = (List *) map_sgr_mutator((Node *) qry->groupClause, ctx);
+	ctx->sub_groupingSets = (List *) map_sgr_mutator((Node *) qry->groupingSets, ctx);
 }
 
 
@@ -1128,7 +1136,8 @@ static void
 discard_grouped_window_context(grouped_window_ctx *ctx)
 {
     ctx->subtlist = NIL;
-    ctx->subgroupClause = NIL;
+    ctx->sub_groupClause = NIL;
+    ctx->sub_groupingSets = NIL;
     ctx->tle = NULL;
 	if (ctx->sgr_map)
 		pfree(ctx->sgr_map);
@@ -1216,6 +1225,24 @@ map_sgr_mutator(Node *node, void *context)
 		}
 		return (Node*)new_lst;
 	}
+	else if (IsA(node, IntList))
+	{
+		ListCell *lc;
+		List *new_lst = NIL;
+
+		foreach ( lc, (List *) node)
+		{
+			int			sortgroupref = lfirst_int(lc);
+
+			if (sortgroupref < 0 || sortgroupref >= ctx->sgr_map_size)
+				elog(ERROR, "sortgroupref %d out of bounds", sortgroupref);
+
+			sortgroupref = ctx->sgr_map[sortgroupref];
+
+			new_lst = lappend_int(new_lst, sortgroupref);
+		}
+		return (Node *) new_lst;
+	}
 	else if (IsA(node, SortGroupClause))
 	{
 		SortGroupClause *g = (SortGroupClause *) node;
@@ -1224,8 +1251,20 @@ map_sgr_mutator(Node *node, void *context)
 		new_g->tleSortGroupRef = ctx->sgr_map[g->tleSortGroupRef];
 		return (Node*)new_g;
 	}
+	else if (IsA(node, GroupingSet))
+	{
+		GroupingSet *gset = (GroupingSet *) node;
+		GroupingSet *newgset = (GroupingSet *) node;
 
-	return NULL; /* Never happens */
+		newgset = makeNode(GroupingSet);
+		newgset->kind = gset->kind;
+		newgset->content = (List *) map_sgr_mutator((Node *) gset->content, context);
+		newgset->location = gset->location;
+
+		return (Node *) newgset;
+	}
+	else
+		elog(ERROR, "unexpected node type %d", nodeTag(node));
 }
 
 
@@ -1306,10 +1345,22 @@ static Node* grouped_window_mutator(Node *node, void *context)
 		ctx->tle = NULL;
 		result = (Node*)new_tle;
 	}
-	else if (IsA(node, Aggref))
+	else if (IsA(node, Aggref) ||
+			 IsA(node, GroupingFunc))
 	{
 		/* Aggregation expression */
 		result = (Node*) var_for_gw_expr(ctx, node, true);
+	}
+	else if (IsA(node, GroupingFunc))
+	{
+		GroupingFunc *gfunc = (GroupingFunc *) node;
+		GroupingFunc *newgfunc;
+
+		newgfunc = (GroupingFunc *) copyObject((Node *) gfunc);
+
+		newgfunc->refs = (List *) map_sgr_mutator((Node *) newgfunc->refs, ctx);
+
+		result = (Node *) var_for_gw_expr(ctx, (Node *) newgfunc, true);
 	}
 	else if (IsA(node, Var))
 	{
@@ -1586,10 +1637,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	/* make FOR UPDATE/FOR SHARE info available to addRangeTableEntry */
 	pstate->p_locking_clause = stmt->lockingClause;
 
-	/*
-	 * Put WINDOW clause data into pstate so that window references know
-	 * about them.
-	 */
+	/* make WINDOW info available for window functions, too */
 	pstate->p_windowdefs = stmt->windowClause;
 
 	/* process the FROM clause */
@@ -1632,6 +1680,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 
 	qry->groupClause = transformGroupClause(pstate,
 											stmt->groupClause,
+											&qry->groupingSets,
 											&qry->targetList,
 											qry->sortClause,
 											EXPR_KIND_GROUP_BY,
@@ -1658,7 +1707,8 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	else if (linitial(stmt->distinctClause) == NULL)
 	{
 		/* We had SELECT DISTINCT */
-		if (!pstate->p_hasAggs && !pstate->p_hasWindowFuncs && qry->groupClause == NIL &&
+		if (!pstate->p_hasAggs && !pstate->p_hasWindowFuncs &&
+			qry->groupClause == NIL && qry->groupingSets == NIL &&
 			qry->targetList != NIL)
 		{
 			/*
@@ -1708,7 +1758,7 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
 	qry->hasFuncsWithExecRestrictions = pstate->p_hasFuncsWithExecRestrictions;
 	qry->hasAggs = pstate->p_hasAggs;
-	if (pstate->p_hasAggs || qry->groupClause || qry->havingQual)
+	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
 		parseCheckAggregates(pstate, qry);
 
 	if (pstate->p_hasTblValueExpr)
@@ -2188,7 +2238,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->hasWindowFuncs = pstate->p_hasWindowFuncs;
 	qry->hasFuncsWithExecRestrictions = pstate->p_hasFuncsWithExecRestrictions;
 	qry->hasAggs = pstate->p_hasAggs;
-	if (pstate->p_hasAggs || qry->groupClause || qry->havingQual)
+	if (pstate->p_hasAggs || qry->groupClause || qry->groupingSets || qry->havingQual)
 		parseCheckAggregates(pstate, qry);
 
 	if (pstate->p_hasTblValueExpr)

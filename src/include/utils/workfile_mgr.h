@@ -128,8 +128,9 @@ typedef struct QueryspaceDesc
 } QueryspaceDesc;
 
 /* Workfile Set operations */
+struct PlanState;
 workfile_set *workfile_mgr_create_set(enum ExecWorkFileType type, bool can_be_reused,
-		PlanState *ps);
+		struct PlanState *ps);
 void workfile_mgr_close_set(workfile_set *work_set);
 void workfile_mgr_cleanup(void);
 Size workfile_mgr_shmem_size(void);

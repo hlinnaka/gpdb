@@ -108,7 +108,7 @@ test: namespace
 # ----------
 # Another group of parallel tests
 # ----------
-test: privileges security_label collate lock replica_identity
+test: privileges security_label collate lock replica_identity groupingsets
 
 # GPDB_93_MERGE_FIXME: Materialized views have not been "MPP-ified", and don't
 # currently work. Disable test, until it's fixed. (If they still don't work when

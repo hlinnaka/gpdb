@@ -23,9 +23,9 @@
 
 typedef struct TuplesortPos_mk TuplesortPos_mk;
 typedef struct Tuplesortstate_mk Tuplesortstate_mk;
+struct ScanState;
 
-
-extern Tuplesortstate_mk *tuplesort_begin_heap_mk(ScanState * ss,
+extern Tuplesortstate_mk *tuplesort_begin_heap_mk(struct ScanState * ss,
 					 TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations,
@@ -41,14 +41,14 @@ extern Tuplesortstate_mk *tuplesort_begin_index_mk(Relation heapRel,
 					  bool enforceUnique,
 					  int workMem, bool randomAccess);
 
-extern Tuplesortstate_mk *tuplesort_begin_datum_mk(ScanState * ss,
+extern Tuplesortstate_mk *tuplesort_begin_datum_mk(struct ScanState * ss,
 					  Oid datumType,
 					  Oid sortOperator, Oid sortCollation,
 					  bool nullsFirstFlag,
 					  int workMem, bool randomAccess);
 
 extern Tuplesortstate_mk *tuplesort_begin_heap_file_readerwriter_mk(
-		ScanState * ss,
+		struct ScanState * ss,
 		const char* rwfile_prefix, bool isWriter,
 		TupleDesc tupDesc,
 		int nkeys, AttrNumber *attNums,

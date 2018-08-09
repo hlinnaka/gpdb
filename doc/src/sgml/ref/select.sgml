@@ -84,14 +84,16 @@ where <replaceable class="parameter">window_specification</replaceable> can be:
                 [ WITH ORDINALITY ] [ [ AS ] <replaceable class="parameter">alias</replaceable> [ ( <replaceable class="parameter">column_alias</replaceable> [, ...] ) ] ]
     <replaceable class="parameter">from_item</replaceable> [ NATURAL ] <replaceable class="parameter">join_type</replaceable> <replaceable class="parameter">from_item</replaceable> [ ON <replaceable class="parameter">join_condition</replaceable> | USING ( <replaceable class="parameter">join_column</replaceable> [, ...] ) ]
 
-where <replaceable class="parameter">group_elem</replaceable> can be one of:
-    <replaceable class="parameter">expression</replaceable> [, ...] ]
-    ROLLUP ( <replaceable class="parameter">expression</replaceable> [, ...] ] )
-    CUBE ( <replaceable class="parameter">expression</replaceable> [, ...] ] )
-    GROUPING SETS ( <replaceable class="parameter">group_elem</replaceable> [, ...] ] )
-    ( )
+<phrase>and <replaceable class="parameter">grouping_element</replaceable> can be one of:</phrase>
 
-and <replaceable class="parameter">with_query</replaceable> is:
+    ( )
+    <replaceable class="parameter">expression</replaceable>
+    ( <replaceable class="parameter">expression</replaceable> [, ...] )
+    ROLLUP ( { <replaceable class="parameter">expression</replaceable> | ( <replaceable class="parameter">expression</replaceable> [, ...] ) } [, ...] )
+    CUBE ( { <replaceable class="parameter">expression</replaceable> | ( <replaceable class="parameter">expression</replaceable> [, ...] ) } [, ...] )
+    GROUPING SETS ( <replaceable class="parameter">grouping_element</replaceable> [, ...] )
+
+<phrase>and <replaceable class="parameter">with_query</replaceable> is:</phrase>
 
     <replaceable class="parameter">with_query_name</replaceable> [ ( <replaceable class="parameter">column_name</replaceable> [, ...] ) ] AS ( <replaceable class="parameter">select</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
 
@@ -650,20 +652,32 @@ WHERE <replaceable class="parameter">condition</replaceable>
    <para>
     The optional <literal>GROUP BY</literal> clause has the general form
 <synopsis>
-GROUP BY <replaceable class="parameter">expression</replaceable> [, ...]
+GROUP BY <replaceable class="parameter">grouping_element</replaceable> [, ...]
 </synopsis>
    </para>
 
    <para>
     <literal>GROUP BY</literal> will condense into a single row all
     selected rows that share the same values for the grouped
-    expressions.  <replaceable
-    class="parameter">expression</replaceable> can be an input column
-    name, or the name or ordinal number of an output column
-    (<command>SELECT</command> list item), or an arbitrary
+    expressions.  An <replaceable
+    class="parameter">expression</replaceable> used inside a
+    <replaceable class="parameter">grouping_element</replaceable>
+    can be an input column name, or the name or ordinal number of an
+    output column (<command>SELECT</command> list item), or an arbitrary
     expression formed from input-column values.  In case of ambiguity,
     a <literal>GROUP BY</literal> name will be interpreted as an
     input-column name rather than an output column name.
+   </para>
+
+   <para>
+    If any of <literal>GROUPING SETS</>, <literal>ROLLUP</> or
+    <literal>CUBE</> are present as grouping elements, then the
+    <literal>GROUP BY</> clause as a whole defines some number of
+    independent <replaceable>grouping sets</>.  The effect of this is
+    equivalent to constructing a <literal>UNION ALL</> between
+    subqueries with the individual grouping sets as their
+    <literal>GROUP BY</> clauses.  For further details on the handling
+    of grouping sets see <xref linkend="queries-grouping-sets">.
    </para>
 
    <para>

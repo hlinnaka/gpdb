@@ -233,6 +233,21 @@ _equalAggref(const Aggref *a, const Aggref *b)
 }
 
 static bool
+_equalGroupingFunc(const GroupingFunc *a, const GroupingFunc *b)
+{
+	COMPARE_NODE_FIELD(args);
+
+	/*
+	 * We must not compare the refs or cols field
+	 */
+
+	COMPARE_SCALAR_FIELD(agglevelsup);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
 _equalWindowFunc(const WindowFunc *a, const WindowFunc *b)
 {
 	COMPARE_SCALAR_FIELD(winfnoid);
@@ -911,6 +926,7 @@ _equalQuery(const Query *a, const Query *b)
 	COMPARE_NODE_FIELD(withCheckOptions);
 	COMPARE_NODE_FIELD(returningList);
 	COMPARE_NODE_FIELD(groupClause);
+	COMPARE_NODE_FIELD(groupingSets);
 	COMPARE_NODE_FIELD(havingQual);
 	COMPARE_NODE_FIELD(windowClause);
 	COMPARE_NODE_FIELD(distinctClause);
@@ -2604,6 +2620,16 @@ _equalSortGroupClause(const SortGroupClause *a, const SortGroupClause *b)
 }
 
 static bool
+_equalGroupingSet(const GroupingSet *a, const GroupingSet *b)
+{
+	COMPARE_SCALAR_FIELD(kind);
+	COMPARE_NODE_FIELD(content);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
 _equalWindowClause(const WindowClause *a, const WindowClause *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2844,6 +2870,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_Aggref:
 			retval = _equalAggref(a, b);
+			break;
+		case T_GroupingFunc:
+			retval = _equalGroupingFunc(a, b);
 			break;
 		case T_WindowFunc:
 			retval = _equalWindowFunc(a, b);
@@ -3430,6 +3459,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_SortGroupClause:
 			retval = _equalSortGroupClause(a, b);
+			break;
+		case T_GroupingSet:
+			retval = _equalGroupingSet(a, b);
 			break;
 		case T_WindowClause:
 			retval = _equalWindowClause(a, b);

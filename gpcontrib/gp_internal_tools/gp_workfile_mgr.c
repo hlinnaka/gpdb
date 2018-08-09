@@ -198,7 +198,7 @@ gp_workfile_mgr_cache_entries(PG_FUNCTION_ARGS)
 static CacheEntry *
 next_entry_to_list(Cache *cache, int32 *crtIndex)
 {
-	CacheHdr *cacheHdr = cache->cacheHdr;
+	SharedCacheHdr *cacheHdr = cache->cacheHdr;
 	CacheEntry *crtEntry = NULL;
 
 	for ( ;  (*crtIndex) < cacheHdr->nEntries ; (*crtIndex)++)

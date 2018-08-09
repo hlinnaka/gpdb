@@ -153,14 +153,16 @@ test__destroy_agg_hash_table__check_for_leaks(void **state)
 	agg->aggstrategy = AGG_HASHED;
 	aggState.ss.ps.plan = agg;
 
-	aggState.aggcontext =
+	aggState.aggcontexts = palloc0(sizeof(ExprContext *));
+
+	aggState.aggcontexts[0] =
 		AllocSetContextCreate(TopMemoryContext,
 							  "AggContext",
 							  ALLOCSET_DEFAULT_MINSIZE,
 							  ALLOCSET_DEFAULT_INITSIZE,
 							  ALLOCSET_DEFAULT_MAXSIZE);
 
-	ht->entry_cxt = AllocSetContextCreate(aggState.aggcontext,
+	ht->entry_cxt = AllocSetContextCreate(aggState.aggcontexts[0],
 			 "HashAggTableContext",
 			 ALLOCSET_DEFAULT_MINSIZE,
 			 ALLOCSET_DEFAULT_INITSIZE,

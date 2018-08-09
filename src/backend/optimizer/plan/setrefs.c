@@ -221,10 +221,6 @@ static void set_plan_references_input_asserts(PlannerGlobal *glob, Plan *plan, L
 
 	}
 
-	// GPDB_94_MERGE_FIXME: This GPDB-added assertion stopped working after cherry-picking upstream
-	// commit 46c508fbcf9
-#if 0
-
 	/* Ensure that all params that the plan refers to has a corresponding subplan */
 	allParams = extract_nodes(glob, (Node *) plan, T_Param);
 
@@ -1532,6 +1528,7 @@ copyVar(Var *var)
  * We must look up operator opcode info for OpExpr and related nodes,
  * add OIDs from regclass Const nodes into root->glob->relationOids, and
  * add catalog TIDs for user-defined functions into root->glob->invalItems.
+ * We also fill in column index lists for GROUPING() expressions.
  *
  * We assume it's okay to update opcode info in-place.  So this could possibly
  * scribble on the planner's input data structures, but it's OK.
@@ -1614,6 +1611,31 @@ fix_expr_common(PlannerInfo *root, Node *node)
                    var->varno <= list_length(root->glob->finalrtable));
         }
     }
+	else if (IsA(node, GroupingFunc))
+	{
+		GroupingFunc *g = (GroupingFunc *) node;
+		AttrNumber *grouping_map = root->grouping_map;
+
+		/* If there are no grouping sets, we don't need this. */
+
+		Assert(grouping_map || g->cols == NIL);
+
+		if (grouping_map)
+		{
+			ListCell   *lc;
+			List	   *cols = NIL;
+
+			foreach(lc, g->refs)
+			{
+				cols = lappend_int(cols, grouping_map[lfirst_int(lc)]);
+			}
+
+			Assert(!g->cols || equal(cols, g->cols));
+
+			if (!g->cols)
+				g->cols = cols;
+		}
+	}
 }
 
 /*
@@ -2576,6 +2598,7 @@ set_returning_clause_references(PlannerInfo *root,
 
 	return rlist;
 }
+
 
 /*****************************************************************************
  *					OPERATOR REGPROC LOOKUP

@@ -18,6 +18,7 @@
 #include "executor/tuptable.h"
 #include "nodes/execnodes.h"
 #include "nodes/primnodes.h"
+#include "utils/tuplesort.h"
 
 extern AggState *ExecInitAgg(Agg *node, EState *estate, int eflags);
 extern struct TupleTableSlot *ExecAgg(AggState *node);
@@ -160,9 +161,11 @@ typedef struct AggStatePerAggData
 	 * then at completion of the input tuple group, we scan the sorted values,
 	 * eliminate duplicates if needed, and run the transition function on the
 	 * rest.
+	 *
+ 	 * We need a separate tuplesort for each grouping set.
 	 */
 
-	void *sortstate;	/* sort object, if DISTINCT or ORDER BY */
+	Tuplesortstate **sortstates;	/* sort objects, if DISTINCT or ORDER BY */
 
 	/*
 	 * This field is a pre-initialized FunctionCallInfo struct used for
@@ -205,14 +208,35 @@ typedef struct AggStatePerGroupData
 	 */
 } AggStatePerGroupData;
 
+/*
+ * AggStatePerPhaseData - per-grouping-set-phase state
+ *
+ * Grouping sets are divided into "phases", where a single phase can be
+ * processed in one pass over the input. If there is more than one phase, then
+ * at the end of input from the current phase, state is reset and another pass
+ * taken over the data which has been re-sorted in the mean time.
+ *
+ * Accordingly, each phase specifies a list of grouping sets and group clause
+ * information, plus each phase after the first also has a sort order.
+ */
+typedef struct AggStatePerPhaseData
+{
+	int			numsets;		/* number of grouping sets (or 0) */
+	int		   *gset_lengths;	/* lengths of grouping sets */
+	Bitmapset **grouped_cols;   /* column groupings for rollup */
+	FmgrInfo   *eqfunctions;	/* per-grouping-field equality fns */
+	Agg		   *aggnode;		/* Agg node for phase data */
+	Sort	   *sortnode;		/* Sort node for input ordering for phase */
+} AggStatePerPhaseData;
+
 extern void 
 initialize_aggregates(AggState *aggstate,
 					  AggStatePerAgg peragg,
 					  AggStatePerGroup pergroup,
-					  MemoryManagerContainer *mem_manager);
+					  int numReset);
 extern void 
-advance_aggregates(AggState *aggstate, AggStatePerGroup pergroup,
-				   MemoryManagerContainer *mem_manager);
+advance_aggregates(AggState *aggstate, AggStatePerGroup pergroup);
+TupleTableSlot *fetch_input_tuple(AggState *aggstate);
 
 extern Oid resolve_polymorphic_transtype(Oid aggtranstype, Oid aggfnoid,
 										 Oid *inputTypes);

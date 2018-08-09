@@ -453,7 +453,8 @@ _outAgg(StringInfo str, Agg *node)
 	WRITE_OID_ARRAY(grpOperators, node->numCols);
 
 	WRITE_LONG_FIELD(numGroups);
-
+	WRITE_NODE_FIELD(groupingSets);
+	WRITE_NODE_FIELD(chain);
 	WRITE_BOOL_FIELD(streaming);
 }
 
@@ -1501,6 +1502,9 @@ _outNode(StringInfo str, void *obj)
 			case T_Aggref:
 				_outAggref(str, obj);
 				break;
+			case T_GroupingFunc:
+				_outGroupingFunc(str, obj);
+				break;
 			case T_WindowFunc:
 				_outWindowFunc(str, obj);
 				break;
@@ -1990,6 +1994,9 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_SortGroupClause:
 				_outSortGroupClause(str, obj);
+				break;
+			case T_GroupingSet:
+				_outGroupingSet(str, obj);
 				break;
 			case T_WindowClause:
 				_outWindowClause(str, obj);

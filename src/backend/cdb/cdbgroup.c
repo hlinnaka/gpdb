@@ -1094,6 +1094,7 @@ make_one_stage_agg_plan(PlannerInfo *root,
 										numGroupCols,
 										groupColIdx,
 										groupOperators,
+										NIL, /* groupingSets */
 										numGroups,
 										result_plan);
 		/* Hashed aggregation produces randomly-ordered results */
@@ -1140,6 +1141,7 @@ make_one_stage_agg_plan(PlannerInfo *root,
 										numGroupCols,
 										groupColIdx,
 										groupOperators,
+										NIL, /* groupingSets */
 										numGroups,
 										result_plan);
 	}
@@ -1371,6 +1373,7 @@ make_two_stage_agg_plan(PlannerInfo *root,
 									numGroupCols,
 									groupColIdx,
 									groupOperators,
+									NIL, /* groupingSets */
 									numGroups,
 									result_plan);
 	/* May lose useful locus and sort. Unlikely, but could do better. */
@@ -1718,7 +1721,7 @@ planDqaJoinOrder(PlannerInfo *root, MppGroupContext *ctx,
 
 		args[i].distinctExpr = distinctExpr;	/* no copy */
 		args[i].base_index = dtle->resno;
-		args[i].num_rows = estimate_num_groups(root, x, input_rows);
+		args[i].num_rows = estimate_num_groups(root, x, input_rows, NULL);
 		args[i].can_hash = hash_safe_type(exprType(distinctExpr));
 
 		list_free(x);
@@ -1939,6 +1942,7 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 									ctx->numGroupCols + 1,
 									inputGroupColIdx,
 									inputGroupOperators,
+									NIL, /* groupingSets */
 									numGroups,
 									result_plan);
 
@@ -4280,6 +4284,7 @@ add_second_stage_agg(PlannerInfo *root,
 								 numGroupCols,
 								 prelimGroupColIdx,
 								 prelimGroupOperators,
+								 NIL, /* groupingSets */
 								 lNumGroups,
 								 result_plan);
 
@@ -4563,6 +4568,7 @@ cost_1phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 					 ctx->sub_tlist, (List *) root->parse->havingQual,
 					 AGG_HASHED, false,
 					 ctx->numGroupCols,
+					 NIL, /* groupingSets */
 					 numGroups,
 					 ctx->agg_costs);
 	}
@@ -4573,7 +4579,11 @@ cost_1phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 			/* PlainAgg */
 			add_agg_cost(NULL, &input_dummy,
 						 ctx->sub_tlist, (List *) root->parse->havingQual,
-						 AGG_PLAIN, false, 0, 1, ctx->agg_costs);
+						 AGG_PLAIN, false,
+						 0,
+						 NIL, /* groupingSets */
+						 1,
+						 ctx->agg_costs);
 		}
 		else
 		{
@@ -4586,6 +4596,7 @@ cost_1phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 						 ctx->sub_tlist, (List *) root->parse->havingQual,
 						 AGG_SORTED, false,
 						 ctx->numGroupCols,
+						 NIL, /* groupingSets */
 						 numGroups,
 						 ctx->agg_costs);
 		}
@@ -4673,6 +4684,7 @@ cost_2phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 					 NIL, NIL,	/* Don't know preliminary tlist, qual IS NIL */
 					 AGG_HASHED, root->config->gp_hashagg_streambottom,
 					 ctx->numGroupCols,
+					 NIL, /* groupingSets */
 					 numGroups,
 					 ctx->agg_costs);
 
@@ -4691,6 +4703,7 @@ cost_2phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 									 * NIL */
 						 AGG_PLAIN, false,
 						 0,
+						 NIL, /* groupingSets */
 						 1,
 						 ctx->agg_costs);
 		}
@@ -4706,6 +4719,7 @@ cost_2phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 									 * NIL */
 						 AGG_SORTED, false,
 						 ctx->numGroupCols,
+						 NIL, /* groupingSets */
 						 numGroups,
 						 ctx->agg_costs);
 		}
@@ -4767,6 +4781,7 @@ cost_2phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 					 NIL, NIL,	/* Don't know tlist or qual */
 					 AGG_HASHED, false,
 					 ctx->numGroupCols,
+					 NIL, /* groupingSets */
 					 numGroups,
 					 ctx->agg_costs);
 	}
@@ -4779,6 +4794,7 @@ cost_2phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 						 NIL, NIL,	/* Don't know tlist or qual */
 						 AGG_PLAIN, false,
 						 0,
+						 NIL, /* groupingSets */
 						 1,
 						 ctx->agg_costs);
 		}
@@ -4790,6 +4806,7 @@ cost_2phase_aggregation(PlannerInfo *root, MppGroupContext *ctx, AggPlanInfo *in
 						 NIL, NIL,	/* Don't know tlist or qual */
 						 AGG_SORTED, false,
 						 ctx->numGroupCols,
+						 NIL, /* groupingSets */
 						 numGroups,
 						 ctx->agg_costs);
 		}
@@ -5298,6 +5315,7 @@ incremental_agg_cost(double rows, int width, AggStrategy strategy,
 				 NULL, NULL,
 				 strategy, false,
 				 numGroupCols,
+				 NIL, /* groupingSets */
 				 numGroups, aggcosts);
 
 	return dummy.total_cost;

@@ -1537,6 +1537,7 @@ is_simple_subquery(PlannerInfo *root, Query *subquery, RangeTblEntry *rte,
 	if (subquery->hasAggs ||
 		subquery->hasWindowFuncs ||
 		subquery->groupClause ||
+		subquery->groupingSets ||
 		subquery->havingQual ||
 		subquery->windowClause ||
 		subquery->sortClause ||

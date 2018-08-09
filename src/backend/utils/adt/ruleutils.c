@@ -44,6 +44,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/tlist.h"
 #include "parser/keywords.h"
+#include "parser/parse_node.h"
 #include "parser/parse_agg.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
@@ -109,6 +110,8 @@ typedef struct
 	int			wrapColumn;		/* max line length, or -1 for no limit */
 	int			indentLevel;	/* current indent level for prettyprint */
 	bool		varprefix;		/* TRUE to print prefixes on Vars */
+	ParseExprKind special_exprkind;	/* set only for exprkinds needing */
+									/* special handling */
 } deparse_context;
 
 /*
@@ -367,9 +370,11 @@ static void get_target_list(List *targetList, deparse_context *context,
 static void get_setop_query(Node *setOp, Query *query,
 				deparse_context *context,
 				TupleDesc resultDesc);
-static Node *get_rule_sortgroupclause(SortGroupClause *srt, List *tlist,
+static Node *get_rule_sortgroupclause(Index ref, List *tlist,
 						 bool force_colno,
 						 deparse_context *context);
+static void get_rule_groupingset(GroupingSet *gset, List *targetlist,
+								 bool omit_parens, deparse_context *context);
 static void get_rule_orderby(List *orderList, List *targetList,
 				 bool force_colno, deparse_context *context);
 static void get_rule_windowspec(WindowClause *wc, List *targetList,
@@ -416,8 +421,9 @@ static void printSubscripts(ArrayRef *aref, deparse_context *context);
 static char *get_relation_name(Oid relid);
 static char *generate_relation_name(Oid relid, List *namespaces);
 static char *generate_function_name(Oid funcid, int nargs,
-					   List *argnames, Oid *argtypes,
-					   bool has_variadic, bool *use_variadic_p);
+							List *argnames, Oid *argtypes,
+							bool has_variadic, bool *use_variadic_p,
+							ParseExprKind special_exprkind);
 static char *generate_operator_name(Oid operid, Oid arg1, Oid arg2);
 static text *string_to_text(char *str);
 static char *flatten_reloptions(Oid relid);
@@ -879,6 +885,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 		context.prettyFlags = pretty ? PRETTYFLAG_PAREN | PRETTYFLAG_INDENT : PRETTYFLAG_INDENT;
 		context.wrapColumn = WRAP_COLUMN_DEFAULT;
 		context.indentLevel = PRETTYINDENT_STD;
+		context.special_exprkind = EXPR_KIND_NONE;
 
 		get_rule_expr(qual, &context, false);
 
@@ -888,7 +895,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	appendStringInfo(&buf, "EXECUTE PROCEDURE %s(",
 					 generate_function_name(trigrec->tgfoid, 0,
 											NIL, NULL,
-											false, NULL));
+											false, NULL, EXPR_KIND_NONE));
 
 	if (trigrec->tgnargs > 0)
 	{
@@ -2497,6 +2504,7 @@ deparse_expression_pretty(Node *expr, List *dpcontext,
 	context.prettyFlags = prettyFlags;
 	context.wrapColumn = WRAP_COLUMN_DEFAULT;
 	context.indentLevel = startIndent;
+	context.special_exprkind = EXPR_KIND_NONE;
 
 	get_rule_expr(expr, &context, showimplicit);
 
@@ -4093,6 +4101,7 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 		context.prettyFlags = prettyFlags;
 		context.wrapColumn = WRAP_COLUMN_DEFAULT;
 		context.indentLevel = PRETTYINDENT_STD;
+		context.special_exprkind = EXPR_KIND_NONE;
 
 		set_deparse_for_query(&dpns, query, NIL);
 
@@ -4253,6 +4262,7 @@ get_query_def(Query *query, StringInfo buf, List *parentnamespace,
 	context.prettyFlags = prettyFlags;
 	context.wrapColumn = wrapColumn;
 	context.indentLevel = startIndent;
+	context.special_exprkind = EXPR_KIND_NONE;
 
 	set_deparse_for_query(&dpns, query, parentnamespace);
 
@@ -4624,7 +4634,7 @@ get_basic_select_query(Query *query, deparse_context *context,
 				SortGroupClause *srt = (SortGroupClause *) lfirst(l);
 
 				appendStringInfoString(buf, sep);
-				get_rule_sortgroupclause(srt, query->targetList,
+				get_rule_sortgroupclause(srt->tleSortGroupRef, query->targetList,
 										 false, context);
 				sep = ", ";
 			}
@@ -4649,20 +4659,43 @@ get_basic_select_query(Query *query, deparse_context *context,
 	}
 
 	/* Add the GROUP BY clause if given */
-	if (query->groupClause != NULL)
+	if (query->groupClause != NULL || query->groupingSets != NULL)
 	{
+		ParseExprKind	save_exprkind;
+
 		appendContextKeyword(context, " GROUP BY ",
 							 -PRETTYINDENT_STD, PRETTYINDENT_STD, 1);
-		sep = "";
-		foreach(l, query->groupClause)
-		{
-			SortGroupClause *grp = (SortGroupClause *) lfirst(l);
 
-			appendStringInfoString(buf, sep);
-			get_rule_sortgroupclause(grp, query->targetList,
-									 false, context);
-			sep = ", ";
+		save_exprkind = context->special_exprkind;
+		context->special_exprkind = EXPR_KIND_GROUP_BY;
+
+		if (query->groupingSets == NIL)
+		{
+			sep = "";
+			foreach(l, query->groupClause)
+			{
+				SortGroupClause *grp = (SortGroupClause *) lfirst(l);
+
+				appendStringInfoString(buf, sep);
+				get_rule_sortgroupclause(grp->tleSortGroupRef, query->targetList,
+										 false, context);
+				sep = ", ";
+			}
 		}
+		else
+		{
+			sep = "";
+			foreach(l, query->groupingSets)
+			{
+				GroupingSet *grp = lfirst(l);
+
+				appendStringInfoString(buf, sep);
+				get_rule_groupingset(grp, query->targetList, true, context);
+				sep = ", ";
+			}
+		}
+
+		context->special_exprkind = save_exprkind;
 	}
 
 	/* Add the HAVING clause if given */
@@ -4751,7 +4784,7 @@ get_target_list(List *targetList, deparse_context *context,
 		 * different from a whole-row Var).  We need to call get_variable
 		 * directly so that we can tell it to do the right thing.
 		 */
-		if (tle->expr && IsA(tle->expr, Var))
+		if (tle->expr && (IsA(tle->expr, Var)))
 		{
 			attname = get_variable((Var *) tle->expr, 0, true, context);
 		}
@@ -4970,14 +5003,14 @@ get_setop_query(Node *setOp, Query *query, deparse_context *context,
  * Also returns the expression tree, so caller need not find it again.
  */
 static Node *
-get_rule_sortgroupclause(SortGroupClause *srt, List *tlist, bool force_colno,
+get_rule_sortgroupclause(Index ref, List *tlist, bool force_colno,
 						 deparse_context *context)
 {
 	StringInfo	buf = context->buf;
 	TargetEntry *tle;
 	Node	   *expr;
 
-	tle = get_sortgroupclause_tle(srt, tlist);
+	tle = get_sortgroupref_tle(ref, tlist);
 	expr = (Node *) tle->expr;
 
 	/*
@@ -4985,8 +5018,9 @@ get_rule_sortgroupclause(SortGroupClause *srt, List *tlist, bool force_colno,
 	 * expression is a constant, force it to be dumped with an explicit cast
 	 * as decoration --- this is because a simple integer constant is
 	 * ambiguous (and will be misinterpreted by findTargetlistEntry()) if we
-	 * dump it without any decoration.  Otherwise, just dump the expression
-	 * normally.
+	 * dump it without any decoration.  If it's anything more complex than a
+	 * simple Var, then force extra parens around it, to ensure it can't be
+	 * misinterpreted as a cube() or rollup() construct.
 	 */
 	if (force_colno)
 	{
@@ -4995,10 +5029,90 @@ get_rule_sortgroupclause(SortGroupClause *srt, List *tlist, bool force_colno,
 	}
 	else if (expr && IsA(expr, Const))
 		get_const_expr((Const *) expr, context, 1);
-	else
+	else if (!expr || IsA(expr, Var))
 		get_rule_expr(expr, context, true);
+	else
+	{
+		/*
+		 * We must force parens for function-like expressions even if
+		 * PRETTY_PAREN is off, since those are the ones in danger of
+		 * misparsing. For other expressions we need to force them only if
+		 * PRETTY_PAREN is on, since otherwise the expression will output them
+		 * itself. (We can't skip the parens.)
+		 */
+		bool		need_paren = (PRETTY_PAREN(context)
+								  || IsA(expr, FuncExpr)
+								  ||IsA(expr, Aggref)
+								  ||IsA(expr, WindowFunc));
+
+		if (need_paren)
+			appendStringInfoChar(context->buf, '(');
+		get_rule_expr(expr, context, true);
+		if (need_paren)
+			appendStringInfoChar(context->buf, ')');
+	}
 
 	return expr;
+}
+
+/*
+ * Display a GroupingSet
+ */
+static void
+get_rule_groupingset(GroupingSet *gset, List *targetlist,
+					 bool omit_parens, deparse_context *context)
+{
+	ListCell   *l;
+	StringInfo	buf = context->buf;
+	bool		omit_child_parens = true;
+	char	   *sep = "";
+
+	switch (gset->kind)
+	{
+		case GROUPING_SET_EMPTY:
+			appendStringInfoString(buf, "()");
+			return;
+
+		case GROUPING_SET_SIMPLE:
+			{
+				if (!omit_parens || list_length(gset->content) != 1)
+					appendStringInfoChar(buf, '(');
+
+				foreach(l, gset->content)
+				{
+					Index		ref = lfirst_int(l);
+
+					appendStringInfoString(buf, sep);
+					get_rule_sortgroupclause(ref, targetlist,
+											 false, context);
+					sep = ", ";
+				}
+
+				if (!omit_parens || list_length(gset->content) != 1)
+					appendStringInfoChar(buf, ')');
+			}
+			return;
+
+		case GROUPING_SET_ROLLUP:
+			appendStringInfoString(buf, "ROLLUP(");
+			break;
+		case GROUPING_SET_CUBE:
+			appendStringInfoString(buf, "CUBE(");
+			break;
+		case GROUPING_SET_SETS:
+			appendStringInfoString(buf, "GROUPING SETS (");
+			omit_child_parens = false;
+			break;
+	}
+
+	foreach(l, gset->content)
+	{
+		appendStringInfoString(buf, sep);
+		get_rule_groupingset(lfirst(l), targetlist, omit_child_parens, context);
+		sep = ", ";
+	}
+
+	appendStringInfoChar(buf, ')');
 }
 
 /*
@@ -5021,7 +5135,7 @@ get_rule_orderby(List *orderList, List *targetList,
 		TypeCacheEntry *typentry;
 
 		appendStringInfoString(buf, sep);
-		sortexpr = get_rule_sortgroupclause(srt, targetList,
+		sortexpr = get_rule_sortgroupclause(srt->tleSortGroupRef, targetList,
 											force_colno, context);
 		sortcoltype = exprType(sortexpr);
 		/* See whether operator is default < or > for datatype */
@@ -5087,7 +5201,7 @@ get_rule_windowspec(WindowClause *wc, List *targetList,
 			SortGroupClause *grp = (SortGroupClause *) lfirst(l);
 
 			appendStringInfoString(buf, sep);
-			get_rule_sortgroupclause(grp, targetList,
+			get_rule_sortgroupclause(grp->tleSortGroupRef, targetList,
 									 false, context);
 			sep = ", ";
 		}
@@ -6728,6 +6842,16 @@ get_rule_expr(Node *node, deparse_context *context,
 			get_agg_expr((Aggref *) node, context);
 			break;
 
+		case T_GroupingFunc:
+			{
+				GroupingFunc *gexpr = (GroupingFunc *) node;
+
+				appendStringInfoString(buf, "GROUPING(");
+				get_rule_expr((Node *) gexpr->args, context, true);
+				appendStringInfoChar(buf, ')');
+			}
+			break;
+
 		case T_WindowFunc:
 			get_windowfunc_expr((WindowFunc *) node, context);
 			break;
@@ -7816,7 +7940,8 @@ get_func_expr(FuncExpr *expr, deparse_context *context,
 					 generate_function_name(funcoid, nargs,
 											argnames, argtypes,
 											expr->funcvariadic,
-											&use_variadic));
+											&use_variadic,
+											context->special_exprkind));
 	nargs = 0;
 	foreach(l, expr->args)
 	{
@@ -7921,9 +8046,9 @@ get_agg_expr(Aggref *aggref, deparse_context *context)
 					 generate_function_name(fnoid, nargs,
 											NIL, argtypes,
 											aggref->aggvariadic,
-											&use_variadic),
-					 (aggref->aggdistinct != NIL) ? "DISTINCT " : "");
-
+											&use_variadic,
+											context->special_exprkind),
+					 aggref->aggdistinct ? "DISTINCT " : "");
 	if (AGGKIND_IS_ORDERED_SET(aggref->aggkind))
 	{
 		/*
@@ -8011,7 +8136,8 @@ get_windowfunc_expr(WindowFunc *wfunc, deparse_context *context)
 	appendStringInfo(buf, "%s(%s",
 					 generate_function_name(wfunc->winfnoid, nargs,
 											argnames, argtypes,
-											false, NULL),
+											false, NULL,
+											context->special_exprkind),
 					 wfunc->windistinct ? "DISTINCT " : "");
 	/* winstar can be set only in zero-argument aggregates */
 	if (wfunc->winstar)
@@ -9244,7 +9370,8 @@ generate_relation_name(Oid relid, List *namespaces)
  */
 static char *
 generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
-					   bool has_variadic, bool *use_variadic_p)
+					   bool has_variadic, bool *use_variadic_p,
+					   ParseExprKind special_exprkind)
 {
 	char	   *result;
 	HeapTuple	proctup;
@@ -9259,12 +9386,23 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 	int			p_nvargs;
 	Oid			p_vatype;
 	Oid		   *p_true_typeids;
+	bool		force_qualify = false;
 
 	proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 	if (!HeapTupleIsValid(proctup))
 		elog(ERROR, "cache lookup failed for function %u", funcid);
 	procform = (Form_pg_proc) GETSTRUCT(proctup);
 	proname = NameStr(procform->proname);
+
+	/*
+	 * Due to parser hacks to avoid needing to reserve CUBE, we need to force
+	 * qualification in some special cases.
+	 */
+	if (special_exprkind == EXPR_KIND_GROUP_BY)
+	{
+		if (strcmp(proname, "cube") == 0 || strcmp(proname, "rollup") == 0)
+			force_qualify = true;
+	}
 
 	/*
 	 * Determine whether VARIADIC should be printed.  We must do this first
@@ -9292,14 +9430,23 @@ generate_function_name(Oid funcid, int nargs, List *argnames, Oid *argtypes,
 	/*
 	 * The idea here is to schema-qualify only if the parser would fail to
 	 * resolve the correct function given the unqualified func name with the
-	 * specified argtypes and VARIADIC flag.
+	 * specified argtypes and VARIADIC flag.  But if we already decided to
+	 * force qualification, then we can skip the lookup and pretend we didn't
+	 * find it.
 	 */
-	p_result = func_get_detail(list_make1(makeString(proname)),
-							   NIL, argnames, nargs, argtypes,
-							   !use_variadic, true,
-							   &p_funcid, &p_rettype,
-							   &p_retset, &p_nvargs, &p_vatype,
-							   &p_true_typeids, NULL);
+	if (!force_qualify)
+		p_result = func_get_detail(list_make1(makeString(proname)),
+								   NIL, argnames, nargs, argtypes,
+								   !use_variadic, true,
+								   &p_funcid, &p_rettype,
+								   &p_retset, &p_nvargs, &p_vatype,
+								   &p_true_typeids, NULL);
+	else
+	{
+		p_result = FUNCDETAIL_NOTFOUND;
+		p_funcid = InvalidOid;
+	}
+
 	if ((p_result == FUNCDETAIL_NORMAL ||
 		 p_result == FUNCDETAIL_AGGREGATE ||
 		 p_result == FUNCDETAIL_WINDOWFUNC) &&
@@ -9836,6 +9983,7 @@ partition_rule_def_worker(PartitionRule *rule, Node *start,
 	c.buf = &str;
 	c.prettyFlags = prettyFlags;
 	c.indentLevel = PRETTYINDENT_STD;
+	c.special_exprkind = EXPR_KIND_NONE;
 
 	if (rule->parisdefault)
 	{
@@ -10336,12 +10484,14 @@ pg_get_partition_template_def_worker(Oid relid, int prettyFlags,
 	headc.buf = &head;
 	headc.prettyFlags = prettyFlags;
 	headc.indentLevel = 0;
+	headc.special_exprkind = EXPR_KIND_NONE;
 
 	/* body: partition definition associated with template */
 	initStringInfo(&body);
 	bodyc.buf = &body;
 	bodyc.prettyFlags = prettyFlags;
 	bodyc.indentLevel = 0;
+	bodyc.special_exprkind = EXPR_KIND_NONE;
 
 	/* altr: the real "head" string (first part of ALTER TABLE statement) */
 	initStringInfo(&altr);
@@ -10352,6 +10502,7 @@ pg_get_partition_template_def_worker(Oid relid, int prettyFlags,
 	partidc.buf = &partidsid;
 	partidc.prettyFlags = prettyFlags;
 	partidc.indentLevel = 0;
+	partidc.special_exprkind = EXPR_KIND_NONE;
 
 
 	/* build the initial ALTER TABLE prefix.  Append the next level of
@@ -10504,11 +10655,13 @@ pg_get_partition_def_worker(Oid relid, int prettyFlags, int bLeafTablename)
 	headc.buf = &head;
 	headc.prettyFlags = prettyFlags;
 	headc.indentLevel = 0;
+	headc.special_exprkind = EXPR_KIND_NONE;
 
 	initStringInfo(&body);
 	bodyc.buf = &body;
 	bodyc.prettyFlags = prettyFlags;
 	bodyc.indentLevel = 0;
+	bodyc.special_exprkind = EXPR_KIND_NONE;
 
 	get_partition_recursive(pn, &headc, &bodyc, &leveldone, bLeafTablename);
 

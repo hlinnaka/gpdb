@@ -164,11 +164,11 @@ Cache_InitSharedMem(CacheCtl *cacheCtl, Cache *cache)
 	Assert(NULL != cache);
 
 	Size entrySize = CACHE_ENTRY_HEADER_SIZE + MAXALIGN(cacheCtl->entrySize);
-	Size cacheTotalSize = MAXALIGN(sizeof(CacheHdr)) + cacheCtl->maxSize * entrySize;
+	Size cacheTotalSize = MAXALIGN(sizeof(SharedCacheHdr)) + cacheCtl->maxSize * entrySize;
 	bool attach = false;
 
 	/* Allocate or attach to existing cache header */
-	cache->cacheHdr = (CacheHdr *) ShmemInitStruct(cache->cacheName, cacheTotalSize, &attach);
+	cache->cacheHdr = (SharedCacheHdr *) ShmemInitStruct(cache->cacheName, cacheTotalSize, &attach);
 
 	if (!attach)
 	{
@@ -178,7 +178,7 @@ Cache_InitSharedMem(CacheCtl *cacheCtl, Cache *cache)
 		 * Identify the HEAD.
 		 */
 
-		cache->cacheHdr->entryArray = (void *) (((char *) cache->cacheHdr) + MAXALIGN(sizeof(CacheHdr)));
+		cache->cacheHdr->entryArray = (void *) (((char *) cache->cacheHdr) + MAXALIGN(sizeof(SharedCacheHdr)));
 		cache->cacheHdr->nEntries = cacheCtl->maxSize;
 		cache->cacheHdr->keySize = cacheCtl->keySize;
 		cache->cacheHdr->keyOffset = cacheCtl->keyOffset;
@@ -217,7 +217,7 @@ Cache_SharedMemSize(uint32 nEntries, uint32 entryPayloadSize)
 	size = add_size(size, hash_estimate_size(nEntries, sizeof(CacheAnchor)));
 
 	/* Size of cache shared control header */
-	size = add_size(size, MAXALIGN(sizeof(CacheHdr)));
+	size = add_size(size, MAXALIGN(sizeof(SharedCacheHdr)));
 
 	Size entrySize = add_size(CACHE_ENTRY_HEADER_SIZE, MAXALIGN(entryPayloadSize));
 	size = add_size(size, mul_size(nEntries, entrySize));
@@ -500,7 +500,7 @@ Cache_ReleaseAcquired(Cache *cache, CacheEntry *entry, bool unregisterCleanup)
 static CacheEntry *
 Cache_GetFreeElement(Cache *cache)
 {
-	CacheHdr *cacheHdr = cache->cacheHdr;
+	SharedCacheHdr *cacheHdr = cache->cacheHdr;
 
 	/* Must lock to touch freeList */
 	SpinLockAcquire(&cacheHdr->spinlock);
@@ -537,7 +537,7 @@ Cache_AddToFreelist(Cache *cache, CacheEntry *entry)
 	CACHE_ASSERT_WIPED(entry);
 	Assert(entry->state == CACHE_ENTRY_FREE);
 
-	CacheHdr *cacheHdr = cache->cacheHdr;
+	SharedCacheHdr *cacheHdr = cache->cacheHdr;
 
 	/* Must lock to touch freeList */
 	SpinLockAcquire(&cacheHdr->spinlock);
@@ -905,7 +905,7 @@ Cache_EntryDecRef(Cache *cache, CacheEntry *entry)
  * Gets an entry in the preallocated cache entry array by index.
  */
 CacheEntry *
-Cache_GetEntryByIndex(CacheHdr *cacheHdr, int32 idx)
+Cache_GetEntryByIndex(SharedCacheHdr *cacheHdr, int32 idx)
 {
 	Assert(NULL != cacheHdr);
 	Assert(idx < cacheHdr->nEntries);

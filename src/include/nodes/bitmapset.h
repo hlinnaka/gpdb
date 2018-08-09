@@ -97,8 +97,9 @@ extern int  bms_first_from(const Bitmapset *a, int x);
          (_member) >= 0;                        \
          (_member) = bms_first_from((_set), (_member)+1))
 
-/* return first member and delete it from the set */
+/* support for iterating through the integer elements of a set: */
 extern int	bms_first_member(Bitmapset *a);
+extern int	bms_next_member(const Bitmapset *a, int prevbit);
 
 /* support for hashtables using Bitmapsets as keys: */
 extern uint32 bms_hash_value(const Bitmapset *a);

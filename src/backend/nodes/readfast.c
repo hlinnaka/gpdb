@@ -1995,6 +1995,8 @@ _readAgg(void)
 	READ_INT_ARRAY(grpColIdx, local_node->numCols, AttrNumber);
 	READ_OID_ARRAY(grpOperators, local_node->numCols);
 	READ_LONG_FIELD(numGroups);
+	READ_NODE_FIELD(groupingSets);
+	READ_NODE_FIELD(chain);
 	READ_BOOL_FIELD(streaming);
 
 	READ_DONE();
@@ -3262,6 +3264,9 @@ readNodeBinary(void)
 			case T_Aggref:
 				return_value = _readAggref();
 				break;
+			case T_GroupingFunc:
+				return_value = _readGroupingFunc();
+				break;
 			case T_WindowFunc:
 				return_value = _readWindowFunc();
 				break;
@@ -3681,6 +3686,9 @@ readNodeBinary(void)
 				break;
 			case T_PartListNullTestExpr:
 				return_value = _readPartListNullTestExpr();
+				break;
+			case T_GroupingSet:
+				return_value = _readGroupingSet();
 				break;
 			case T_WindowClause:
 				return_value = _readWindowClause();

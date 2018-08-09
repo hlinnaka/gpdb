@@ -114,6 +114,7 @@ extern Agg *make_agg(PlannerInfo *root, List *tlist, List *qual,
 		 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 		 bool streaming,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
+		 List *groupingSets,
 		 long numGroups,
 		 Plan *lefttree);
 
@@ -178,6 +179,7 @@ extern Plan *add_agg_cost(PlannerInfo *root, Plan *plan,
 		 AggStrategy aggstrategy, 
 		 bool streaming, 
 		 int numGroupCols,
+		 List *groupingSets,
 		 long numGroups,
 		 const AggClauseCosts *aggcosts);
 extern Plan *plan_pushdown_tlist(PlannerInfo *root, Plan *plan, List *tlist);      /*CDB*/

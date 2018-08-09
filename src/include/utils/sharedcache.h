@@ -173,7 +173,7 @@ typedef struct Cache_StatsRec
 /*
  * Cache header structure stored in shared memory
  */
-typedef struct CacheHdr
+typedef struct SharedCacheHdr
 {
 	/* Lock to touch nentries or freeList */
 	slock_t		spinlock;
@@ -203,7 +203,7 @@ typedef struct CacheHdr
 	/* Statistics about the cache */
 	Cache_Stats cacheStats;
 
-} CacheHdr;
+} SharedCacheHdr;
 
 /*
  * The Cache descriptor stored in the client memory
@@ -211,7 +211,7 @@ typedef struct CacheHdr
 typedef struct Cache
 {
 	/* Shared control information */
-	CacheHdr *cacheHdr;
+	SharedCacheHdr *cacheHdr;
 
 	/* Hashtable used as directory for anchor elements */
 	SyncHT *syncHashtable;
@@ -271,7 +271,7 @@ void Cache_SurrenderClientEntries(Cache *cache);
 /* Internal cache utility functions */
 void Cache_UnlinkEntry(Cache *cache, CacheAnchor *anchor, CacheEntry *entry);
 void Cache_AddToFreelist(Cache *cache, CacheEntry *entry);
-CacheEntry *Cache_GetEntryByIndex(CacheHdr *cacheHdr, int32 idx);
+CacheEntry *Cache_GetEntryByIndex(SharedCacheHdr *cacheHdr, int32 idx);
 void Cache_LockEntry(Cache *cache, CacheEntry *entry);
 void Cache_UnlockEntry(Cache *cache, CacheEntry *entry);
 

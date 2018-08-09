@@ -94,7 +94,6 @@
 
 #include "utils/tuplesort_gp.h"
 
-
 /* Tuplesortstate is an opaque type whose details are not known outside
  * tuplesort.c.
  */
@@ -126,8 +125,9 @@ typedef struct Tuplesortstate Tuplesortstate;
  * The "index_hash" API is similar to index_btree, but the tuples are
  * actually sorted by their hash codes not the raw data.
  */
+struct ScanState;
 
-extern Tuplesortstate *tuplesort_begin_heap(ScanState *ss, TupleDesc tupDesc,
+extern Tuplesortstate *tuplesort_begin_heap(struct ScanState *ss, TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations,
 					 bool *nullsFirstFlags,
@@ -143,7 +143,7 @@ extern Tuplesortstate *tuplesort_begin_index_hash(Relation heapRel,
 						   Relation indexRel,
 						   uint32 hash_mask,
 						   int workMem, bool randomAccess);
-extern Tuplesortstate *tuplesort_begin_datum(ScanState *ss, Oid datumType,
+extern Tuplesortstate *tuplesort_begin_datum(struct ScanState *ss, Oid datumType,
 					  Oid sortOperator, Oid sortCollation,
 					  bool nullsFirstFlag,
 					  int workMem, bool randomAccess);
@@ -264,7 +264,7 @@ struct switcheroo_Tuplesortstate
 typedef struct switcheroo_Tuplesortstate switcheroo_Tuplesortstate;
 
 static inline switcheroo_Tuplesortstate *
-switcheroo_tuplesort_begin_heap(ScanState *ss, TupleDesc tupDesc,
+switcheroo_tuplesort_begin_heap(struct ScanState *ss, TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations,
 					 bool *nullsFirstFlags,
@@ -358,7 +358,7 @@ switcheroo_tuplesort_begin_index_hash(Relation heapRel,
 }
 
 static inline switcheroo_Tuplesortstate *
-switcheroo_tuplesort_begin_datum(ScanState *ss,
+switcheroo_tuplesort_begin_datum(struct ScanState *ss,
 								 Oid datumType, Oid sortOperator, Oid sortCollation,
 								 bool nullsFirstFlag,
 								 int workMem, bool randomAccess)
@@ -520,7 +520,7 @@ switcheroo_tuplesort_restorepos(switcheroo_Tuplesortstate *state)
 
 static inline switcheroo_Tuplesortstate *
 switcheroo_tuplesort_begin_heap_file_readerwriter(
-		ScanState * ss,
+		struct ScanState * ss,
 		const char* rwfile_prefix, bool isWriter,
 		TupleDesc tupDesc,
 		int nkeys, AttrNumber *attNums,

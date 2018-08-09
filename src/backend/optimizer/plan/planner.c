@@ -18,13 +18,16 @@
 #include "postgres.h"
 
 #include <limits.h>
+#include <math.h>
 
 #include "access/htup_details.h"
 #include "executor/executor.h"
 #include "executor/execHHashagg.h"
 #include "executor/nodeAgg.h"
 #include "miscadmin.h"
+#include "lib/bipartite_match.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
 #ifdef OPTIMIZER_DEBUG
 #include "nodes/print.h"
 #endif
@@ -44,6 +47,7 @@
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
+#include "parser/parse_agg.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/rel.h"
 #include "utils/selfuncs.h"
@@ -87,6 +91,7 @@ typedef struct
 {
 	List	   *tlist;			/* preprocessed query targetlist */
 	List	   *activeWindows;	/* active windows, if any */
+	List	   *groupClause;	/* overrides parse->groupClause */
 } standard_qp_extra;
 
 /*
@@ -110,7 +115,9 @@ static double preprocess_limit(PlannerInfo *root,
 				 double tuple_fraction,
 				 int64 *offset_est, int64 *count_est);
 static bool limit_needed(Query *parse);
-static void preprocess_groupclause(PlannerInfo *root);
+static List *preprocess_groupclause(PlannerInfo *root, List *force);
+static List *extract_rollup_sets(List *groupingSets);
+static List *reorder_grouping_sets(List *groupingSets, List *sortclause);
 static void standard_qp_callback(PlannerInfo *root, void *extra);
 static bool choose_hashed_distinct(PlannerInfo *root,
 					   double tuple_fraction, double limit_tuples,
@@ -141,12 +148,21 @@ static void get_column_info_for_window(PlannerInfo *root, WindowClause *wc,
 						   AttrNumber **ordColIdx,
 						   Oid **ordOperators);
 static int	common_prefix_cmp(const void *a, const void *b);
+static Plan *build_grouping_chain(PlannerInfo *root,
+						  Query	   *parse,
+						  List	   *tlist,
+						  bool		need_sort_for_grouping,
+						  List	   *rollup_groupclauses,
+						  List	   *rollup_lists,
+						  AttrNumber *groupColIdx,
+						  AggClauseCosts *agg_costs,
+						  long		numGroups,
+						  Plan	   *result_plan);
 
 static Plan *pushdown_preliminary_limit(Plan *plan, Node *limitCount, int64 count_est, Node *limitOffset, int64 offset_est);
 
 static Plan *getAnySubplan(Plan *node);
 static bool isSimplyUpdatableQuery(Query *query);
-
 
 /*****************************************************************************
  *
@@ -568,6 +584,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->append_rel_list = NIL;
 	root->rowMarks = NIL;
 	root->hasInheritedTarget = false;
+	root->grouping_map = NULL;
 	root->upd_del_replicated_table = 0;
 
 	Assert(config);
@@ -807,12 +824,13 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 
 		if (contain_agg_clause(havingclause) ||
 			contain_volatile_functions(havingclause) ||
-			contain_subplans(havingclause))
+			contain_subplans(havingclause) ||
+			parse->groupingSets)
 		{
 			/* keep it in HAVING */
 			newHaving = lappend(newHaving, havingclause);
 		}
-		else if (parse->groupClause)
+		else if (parse->groupClause && !parse->groupingSets)
 		{
 			/* move it to WHERE */
 			parse->jointree->quals = (Node *)
@@ -1579,7 +1597,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	Plan	   *result_plan;
 	List	   *current_pathkeys = NIL;
 	CdbPathLocus current_locus;
-	Path	   *best_path = NULL;
 	double		dNumGroups = 0;
 	bool		use_hashed_distinct = false;
 	bool		tested_hashed_distinct = false;
@@ -1680,10 +1697,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		List	   *sub_tlist;
 		AttrNumber *groupColIdx = NULL;
 		bool		need_tlist_eval = true;
-		standard_qp_extra qp_extra;
-		RelOptInfo *final_rel;
-		Path	   *cheapest_path;
-		Path	   *sorted_path;
 		long		numGroups = 0;
 		AggClauseCosts agg_costs;
 		int			numGroupCols;
@@ -1692,15 +1705,90 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		bool		use_hashed_grouping = false;
 		WindowFuncLists *wflists = NULL;
 		List	   *activeWindows = NIL;
+		int			maxref = 0;
+		int		   *tleref_to_colnum_map;
+		List	   *rollup_lists = NIL;
+		List	   *rollup_groupclauses = NIL;
+		standard_qp_extra qp_extra;
+		RelOptInfo *final_rel;
+		Path	   *cheapest_path;
+		Path	   *sorted_path;
+		Path	   *best_path;
 
 		MemSet(&agg_costs, 0, sizeof(AggClauseCosts));
 
 		/* A recursive query should always have setOperations */
 		Assert(!root->hasRecursion);
 
-		/* Preprocess GROUP BY clause, if any */
+		/* Preprocess Grouping set, if any */
+		if (parse->groupingSets)
+			parse->groupingSets = expand_grouping_sets(parse->groupingSets, -1);
+
 		if (parse->groupClause)
-			preprocess_groupclause(root);
+		{
+			ListCell   *lc;
+
+			foreach(lc, parse->groupClause)
+			{
+				SortGroupClause *gc = lfirst(lc);
+
+				if (gc->tleSortGroupRef > maxref)
+					maxref = gc->tleSortGroupRef;
+			}
+		}
+
+		tleref_to_colnum_map = palloc((maxref + 1) * sizeof(int));
+
+		if (parse->groupingSets)
+		{
+			ListCell   *lc;
+			ListCell   *lc2;
+			ListCell   *lc_set;
+			List	   *sets = extract_rollup_sets(parse->groupingSets);
+
+			foreach(lc_set, sets)
+			{
+				List   *current_sets = reorder_grouping_sets(lfirst(lc_set),
+													(list_length(sets) == 1
+													 ? parse->sortClause
+													 : NIL));
+				List   *groupclause = preprocess_groupclause(root, linitial(current_sets));
+				int		ref = 0;
+
+				/*
+				 * Now that we've pinned down an order for the groupClause for
+				 * this list of grouping sets, we need to remap the entries in
+				 * the grouping sets from sortgrouprefs to plain indices
+				 * (0-based) into the groupClause for this collection of
+				 * grouping sets.
+				 */
+
+				foreach(lc, groupclause)
+				{
+					SortGroupClause *gc = lfirst(lc);
+					tleref_to_colnum_map[gc->tleSortGroupRef] = ref++;
+				}
+
+				foreach(lc, current_sets)
+				{
+					foreach(lc2, (List *) lfirst(lc))
+					{
+						lfirst_int(lc2) = tleref_to_colnum_map[lfirst_int(lc2)];
+					}
+				}
+
+				rollup_lists = lcons(current_sets, rollup_lists);
+				rollup_groupclauses = lcons(groupclause, rollup_groupclauses);
+			}
+		}
+		else
+		{
+			/* Preprocess GROUP BY clause, if any */
+			if (parse->groupClause)
+				parse->groupClause = preprocess_groupclause(root, NIL);
+			rollup_groupclauses = list_make1(parse->groupClause);
+		}
+
 		numGroupCols = list_length(parse->groupClause);
 
 		/* Preprocess targetlist */
@@ -1772,6 +1860,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * grouping/aggregation operations.
 		 */
 		if (parse->groupClause ||
+			parse->groupingSets ||
 			parse->distinctClause ||
 			parse->hasAggs ||
 			parse->hasWindowFuncs ||
@@ -1783,6 +1872,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		/* Set up data needed by standard_qp_callback */
 		qp_extra.tlist = tlist;
 		qp_extra.activeWindows = activeWindows;
+		qp_extra.groupClause = llast(rollup_groupclauses);
 
 		/*
 		 * Generate the best unsorted and presorted paths for this Query (but
@@ -1794,9 +1884,11 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								  standard_qp_callback, &qp_extra);
 
 		/*
-		 * Extract rowcount and width estimates for use below.
+		 * Extract rowcount and width estimates for use below.  If final_rel
+		 * has been proven dummy, its rows estimate will be zero; clamp it to
+		 * one to avoid zero-divide in subsequent calculations.
 		 */
-		path_rows = final_rel->rows;
+		path_rows = clamp_row_est(final_rel->rows);
 		path_width = final_rel->width;
 
 		/*
@@ -1815,9 +1907,39 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			List	   *groupExprs;
 
-			groupExprs = get_sortgrouplist_exprs(parse->groupClause,
-												 parse->targetList);
-			dNumGroups = estimate_num_groups(root, groupExprs, path_rows);
+			if (parse->groupingSets)
+			{
+				ListCell   *lc,
+						   *lc2;
+
+				dNumGroups = 0;
+
+				forboth(lc, rollup_groupclauses, lc2, rollup_lists)
+				{
+					ListCell   *lc3;
+
+					groupExprs = get_sortgrouplist_exprs(lfirst(lc),
+														 parse->targetList);
+
+					foreach(lc3, lfirst(lc2))
+					{
+						List	   *gset = lfirst(lc3);
+
+						dNumGroups += estimate_num_groups(root,
+														  groupExprs,
+														  path_rows,
+														  &gset);
+					}
+				}
+			}
+			else
+			{
+				groupExprs = get_sortgrouplist_exprs(parse->groupClause,
+													 parse->targetList);
+
+				dNumGroups = estimate_num_groups(root, groupExprs, path_rows,
+												 NULL);
+			}
 
 			/*
 			 * In GROUP BY mode, an absolute LIMIT is relative to the number
@@ -1827,6 +1949,13 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			 */
 			if (tuple_fraction >= 1.0)
 				tuple_fraction /= dNumGroups;
+
+			/*
+			 * If there's more than one grouping set, we'll have to sort the
+			 * entire input.
+			 */
+			if (list_length(rollup_lists) > 1)
+				tuple_fraction = 0.0;
 
 			/*
 			 * If both GROUP BY and ORDER BY are specified, we will need two
@@ -1843,14 +1972,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 									   root->group_pathkeys))
 				tuple_fraction = 0.0;
 		}
-		else if (parse->hasAggs || root->hasHavingQual)
+		else if (parse->hasAggs || root->hasHavingQual || parse->groupingSets)
 		{
 			/*
 			 * Ungrouped aggregate will certainly want to read all the tuples,
-			 * and it will deliver a single result row (so leave dNumGroups
-			 * set to 1).
+			 * and it will deliver a single result row per grouping set (or 1
+			 * if no grouping sets were explicitly given, in which case leave
+			 * dNumGroups as-is)
 			 */
 			tuple_fraction = 0.0;
+			if (parse->groupingSets)
+				dNumGroups = list_length(parse->groupingSets);
 		}
 		else if (parse->distinctClause)
 		{
@@ -1865,7 +1997,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 			distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
 													parse->targetList);
-			dNumGroups = estimate_num_groups(root, distinctExprs, path_rows);
+			dNumGroups = estimate_num_groups(root, distinctExprs, path_rows, NULL);
 
 			/*
 			 * Adjust tuple_fraction the same way as for GROUP BY, too.
@@ -1948,13 +2080,23 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			/*
 			 * If grouping, decide whether to use sorted or hashed grouping.
+			 * If grouping sets are present, we can currently do only sorted
+			 * grouping.
 			 */
-			use_hashed_grouping =
-				choose_hashed_grouping(root,
-									   tuple_fraction, limit_tuples,
-									   path_rows, path_width,
-									   cheapest_path, sorted_path,
-									   dNumGroups, &agg_costs);
+			if (parse->groupingSets)
+			{
+				use_hashed_grouping = false;
+			}
+			else
+			{
+				use_hashed_grouping =
+					choose_hashed_grouping(root,
+										   tuple_fraction, limit_tuples,
+										   path_rows, path_width,
+										   cheapest_path, sorted_path,
+										   dNumGroups, &agg_costs);
+			}
+
 			/* Also convert # groups to long int --- but 'ware overflow! */
 			numGroups = (long) Min(dNumGroups, (double) LONG_MAX);
 		}
@@ -2009,15 +2151,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			mark_plan_entry(result_plan);
 		}
 
-		/*
-		 * CDB:  For now, we either - construct a general parallel plan, - let
-		 * the sequential planner handle the situation, or - construct a
-		 * sequential plan using the min-max index optimization.
+		/*---
+		 * CDB:  For now, we either:
+		 * - construct a general parallel plan,
+		 * - let the sequential planner handle the situation, or
+		 * - construct a sequential plan using the mix-max index optimization.
 		 *
 		 * Eventually we should add a parallel version of the min-max
 		 * optimization.  For now, it's either-or.
+		 *---
 		 */
-		if (Gp_role == GP_ROLE_DISPATCH && result_plan == NULL)
+		if (Gp_role == GP_ROLE_DISPATCH && result_plan == NULL && !parse->groupingSets)
 		{
 			bool		querynode_changed = false;
 			bool		pass_subtlist = agg_costs.numOrderedAggs > 0;
@@ -2095,7 +2239,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 			/* Detect if we'll need an explicit sort for grouping */
 			if (parse->groupClause && !use_hashed_grouping &&
-			  !pathkeys_contained_in(root->group_pathkeys, current_pathkeys))
+				!pathkeys_contained_in(root->group_pathkeys, current_pathkeys))
 			{
 				need_sort_for_grouping = true;
 
@@ -2142,6 +2286,27 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			Assert(result_plan->flow);
 
 			/*
+			 * groupColIdx is now cast in stone, so record a mapping from
+			 * tleSortGroupRef to column index. setrefs.c needs this to
+			 * finalize GROUPING() operations.
+			 */
+
+			if (parse->groupingSets)
+			{
+				AttrNumber *grouping_map = palloc0(sizeof(AttrNumber) * (maxref + 1));
+				ListCell   *lc;
+				int			i = 0;
+
+				foreach(lc, parse->groupClause)
+				{
+					SortGroupClause *gc = lfirst(lc);
+					grouping_map[gc->tleSortGroupRef] = groupColIdx[i++];
+				}
+
+				root->grouping_map = grouping_map;
+			}
+
+			/*
 			 * Insert AGG or GROUP node if needed, plus an explicit sort step
 			 * if necessary.
 			 *
@@ -2158,7 +2323,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												false, /* streaming */
 												numGroupCols,
 												groupColIdx,
-									extract_grouping_ops(parse->groupClause),
+												extract_grouping_ops(parse->groupClause),
+												NIL,
 												numGroups,
 												result_plan);
 				result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
@@ -2169,56 +2335,46 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			}
 			else if (parse->hasAggs || parse->groupClause)
 			{
-				/* Plain aggregate plan --- sort if needed */
-				AggStrategy aggstrategy;
-
-				if (parse->groupClause)
-				{
-					if (need_sort_for_grouping)
-					{
-						result_plan = (Plan *)
-							make_sort_from_groupcols(root,
-													 parse->groupClause,
-													 groupColIdx,
-													 result_plan);
-						current_pathkeys = root->group_pathkeys;
-
-						/* Decorate the Sort node with a Flow node. */
-						mark_sort_locus(result_plan);
-					}
-					aggstrategy = AGG_SORTED;
-
-					/*
-					 * The AGG node will not change the sort ordering of its
-					 * groups, so current_pathkeys describes the result too.
-					 */
-				}
-				else
-				{
-					aggstrategy = AGG_PLAIN;
-					/* Result will be only one row anyway; no sort order */
-					current_pathkeys = NIL;
-				}
-
-				result_plan = (Plan *) make_agg(root,
-												tlist,
-												(List *) parse->havingQual,
-												aggstrategy,
-												&agg_costs,
-												false, /* streaming */
-												numGroupCols,
-												groupColIdx,
-									extract_grouping_ops(parse->groupClause),
-												numGroups,
-												result_plan);
-				result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
-
-				CdbPathLocus_MakeNull(&current_locus, __GP_POLICY_EVIL_NUMSEGMENTS);
-			}
-			else if (root->hasHavingQual)
-			{
 				/*
-				 * No aggregates, and no GROUP BY, but we have a HAVING qual.
+				 * Output is in sorted order by group_pathkeys if, and only if,
+				 * there is a single rollup operation on a non-empty list of
+				 * grouping expressions.
+				 */
+				if (list_length(rollup_groupclauses) == 1
+					&& list_length(linitial(rollup_groupclauses)) > 0)
+					current_pathkeys = root->group_pathkeys;
+				else
+					current_pathkeys = NIL;
+
+				result_plan = build_grouping_chain(root,
+												   parse,
+												   tlist,
+												   need_sort_for_grouping,
+												   rollup_groupclauses,
+												   rollup_lists,
+												   groupColIdx,
+												   &agg_costs,
+												   numGroups,
+												   result_plan);
+				current_locus = cdbpathlocus_from_flow(result_plan->flow);
+
+				/*
+				 * these are destroyed by build_grouping_chain, so make sure we
+				 * don't try and touch them again
+				 */
+				rollup_groupclauses = NIL;
+				rollup_lists = NIL;
+			}
+			else if (root->hasHavingQual || parse->groupingSets)
+			{
+				int		nrows = list_length(parse->groupingSets);
+
+				/*
+				 * No aggregates, and no GROUP BY, but we have a HAVING qual or
+				 * grouping sets (which by elimination of cases above must
+				 * consist solely of empty grouping sets, since otherwise
+				 * groupClause will be non-empty).
+				 *
 				 * This is a degenerate case in which we are supposed to emit
 				 * either 0 or 1 row depending on whether HAVING succeeds.
 				 * Furthermore, there cannot be any variables in either HAVING
@@ -2235,10 +2391,24 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												   tlist,
 												   parse->havingQual,
 												   NULL);
-				/* Result will be only one row anyway; no sort order */
 				current_pathkeys = NIL;
 				mark_plan_general(result_plan, GP_POLICY_ALL_NUMSEGMENTS);
 				CdbPathLocus_MakeNull(&current_locus, __GP_POLICY_EVIL_NUMSEGMENTS);
+
+				/*
+				 * Doesn't seem worthwhile writing code to cons up a
+				 * generate_series or a values scan to emit multiple rows.
+				 * Instead just clone the result in an Append.
+				 */
+				if (nrows > 1)
+				{
+					List   *plans = list_make1(result_plan);
+
+					while (--nrows > 0)
+						plans = lappend(plans, copyObject(result_plan));
+
+					result_plan = (Plan *) make_append(plans, tlist);
+				}
 			}
 		}						/* end of non-minmax-aggregate case */
 
@@ -2555,7 +2725,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * result was already mostly unique).  If not, use the number of
 		 * distinct-groups calculated previously.
 		 */
-		if (parse->groupClause || root->hasHavingQual || parse->hasAggs)
+		if (parse->groupClause || parse->groupingSets || root->hasHavingQual || parse->hasAggs)
 			dNumDistinctRows = result_plan->plan_rows;
 		else
 			dNumDistinctRows = dNumGroups;
@@ -2606,7 +2776,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
 												result_plan->targetlist);
 		numDistinct = estimate_num_groups(root, distinctExprs,
-										  result_plan->plan_rows);
+										  result_plan->plan_rows,
+										  NULL);
 
 		if (Gp_role == GP_ROLE_DISPATCH && CdbPathLocus_IsPartitioned(current_locus))
 		{
@@ -2713,8 +2884,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								 extract_grouping_cols(parse->distinctClause,
 													result_plan->targetlist),
 								 extract_grouping_ops(parse->distinctClause),
+											NIL,
 											numDistinctRows,
 											result_plan);
+			result_plan->flow = pull_up_Flow(result_plan, result_plan->lefttree);
 			/* Hashed aggregation produces randomly-ordered results */
 			current_pathkeys = NIL;
 		}
@@ -2966,6 +3139,220 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 #ifdef USE_ASSERT_CHECKING
 	grouping_planner_output_asserts(root, result_plan);
 #endif
+
+	return result_plan;
+}
+
+
+/*
+ * Given a groupclause for a collection of grouping sets, produce the
+ * corresponding groupColIdx.
+ *
+ * root->grouping_map maps the tleSortGroupRef to the actual column position in
+ * the input tuple. So we get the ref from the entries in the groupclause and
+ * look them up there.
+ */
+static AttrNumber *
+remap_groupColIdx(PlannerInfo *root, List *groupClause)
+{
+	AttrNumber *grouping_map = root->grouping_map;
+	AttrNumber *new_grpColIdx;
+	ListCell   *lc;
+	int			i;
+
+	Assert(grouping_map);
+
+	new_grpColIdx = palloc0(sizeof(AttrNumber) * list_length(groupClause));
+
+	i = 0;
+	foreach(lc, groupClause)
+	{
+		SortGroupClause *clause = lfirst(lc);
+		new_grpColIdx[i++] = grouping_map[clause->tleSortGroupRef];
+	}
+
+	return new_grpColIdx;
+}
+
+/*
+ * Build Agg and Sort nodes to implement sorted grouping with one or more
+ * grouping sets. (A plain GROUP BY or just the presence of aggregates counts
+ * for this purpose as a single grouping set; the calling code is responsible
+ * for providing a non-empty rollup_groupclauses list for such cases, though
+ * rollup_lists may be null.)
+ *
+ * The last entry in rollup_groupclauses (which is the one the input is sorted
+ * on, if at all) is the one used for the returned Agg node. Any additional
+ * rollups are attached, with corresponding sort info, to subsidiary Agg and
+ * Sort nodes attached to the side of the real Agg node; these nodes don't
+ * participate in the plan directly, but they are both a convenient way to
+ * represent the required data and a convenient way to account for the costs
+ * of execution.
+ *
+ * rollup_groupclauses and rollup_lists are destroyed by this function.
+ */
+static Plan *
+build_grouping_chain(PlannerInfo *root,
+					 Query	   *parse,
+					 List	   *tlist,
+					 bool		need_sort_for_grouping,
+					 List	   *rollup_groupclauses,
+					 List	   *rollup_lists,
+					 AttrNumber *groupColIdx,
+					 AggClauseCosts *agg_costs,
+					 long		numGroups,
+					 Plan	   *result_plan)
+{
+	AttrNumber *top_grpColIdx = groupColIdx;
+	List	   *chain = NIL;
+
+	/*
+	 * Prepare the grpColIdx for the real Agg node first, because we may need
+	 * it for sorting
+	 */
+	if (list_length(rollup_groupclauses) > 1)
+	{
+		Assert(rollup_lists && llast(rollup_lists));
+
+		top_grpColIdx =
+			remap_groupColIdx(root, llast(rollup_groupclauses));
+	}
+
+	/*
+	 * If we need a Sort operation on the input, generate that.
+	 */
+	if (need_sort_for_grouping)
+	{
+		Sort	   *sort;
+
+		sort = make_sort_from_groupcols(root,
+										llast(rollup_groupclauses),
+										top_grpColIdx,
+										result_plan);
+		sort->plan.flow = pull_up_Flow((Plan *) sort, result_plan);
+
+		if (sort->plan.flow->flotype != FLOW_SINGLETON)
+			result_plan = (Plan *) make_sorted_union_motion(root,
+															(Plan *) sort,
+															sort->numCols,
+															sort->sortColIdx,
+															sort->sortOperators,
+															sort->collations,
+															sort->nullsFirst,
+															false,
+															sort->plan.flow->numsegments);
+		else
+			result_plan = (Plan *) sort;
+	}
+	else if (result_plan->flow->flotype != FLOW_SINGLETON)
+		result_plan = (Plan *) make_motion_gather(root, result_plan, NIL);
+
+	/*
+	 * Generate the side nodes that describe the other sort and group
+	 * operations besides the top one.
+	 */
+	while (list_length(rollup_groupclauses) > 1)
+	{
+		List	   *groupClause = linitial(rollup_groupclauses);
+		List	   *gsets = linitial(rollup_lists);
+		AttrNumber *new_grpColIdx;
+		Plan	   *sort_plan;
+		Plan	   *agg_plan;
+
+		Assert(groupClause);
+		Assert(gsets);
+
+		new_grpColIdx = remap_groupColIdx(root, groupClause);
+
+		sort_plan = (Plan *)
+			make_sort_from_groupcols(root,
+									 groupClause,
+									 new_grpColIdx,
+									 result_plan);
+		sort_plan->flow = pull_up_Flow(sort_plan, getAnySubplan(sort_plan));
+
+		/*
+		 * sort_plan includes the cost of result_plan over again, which is not
+		 * what we want (since it's not actually running that plan). So correct
+		 * the cost figures.
+		 */
+
+		sort_plan->startup_cost -= result_plan->total_cost;
+		sort_plan->total_cost -= result_plan->total_cost;
+
+		agg_plan = (Plan *) make_agg(root,
+									 tlist,
+									 (List *) parse->havingQual,
+									 AGG_SORTED,
+									 agg_costs,
+									 false, /* streaming */
+									 list_length(linitial(gsets)),
+									 new_grpColIdx,
+									 extract_grouping_ops(groupClause),
+									 gsets,
+									 numGroups,
+									 sort_plan);
+		agg_plan->flow = pull_up_Flow(agg_plan, agg_plan->lefttree);
+
+		sort_plan->lefttree = NULL;
+
+		chain = lappend(chain, agg_plan);
+
+		if (rollup_lists)
+			rollup_lists = list_delete_first(rollup_lists);
+
+		rollup_groupclauses = list_delete_first(rollup_groupclauses);
+	}
+
+	/*
+	 * Now make the final Agg node
+	 */
+	{
+		List	   *groupClause = linitial(rollup_groupclauses);
+		List	   *gsets = rollup_lists ? linitial(rollup_lists) : NIL;
+		int			numGroupCols;
+		ListCell   *lc;
+
+		if (gsets)
+			numGroupCols = list_length(linitial(gsets));
+		else
+			numGroupCols = list_length(parse->groupClause);
+
+		result_plan = (Plan *) make_agg(root,
+										tlist,
+										(List *) parse->havingQual,
+										(numGroupCols > 0) ? AGG_SORTED : AGG_PLAIN,
+										agg_costs,
+										false, /* streaming */
+										numGroupCols,
+										top_grpColIdx,
+										extract_grouping_ops(groupClause),
+										gsets,
+										numGroups,
+										result_plan);
+
+		result_plan->flow = pull_up_Flow(result_plan, getAnySubplan(result_plan));
+		((Agg *) result_plan)->chain = chain;
+
+		/*
+		 * Add the additional costs. But only the total costs count, since the
+		 * additional sorts aren't run on startup.
+		 */
+		foreach(lc, chain)
+		{
+			Plan   *subplan = lfirst(lc);
+
+			result_plan->total_cost += subplan->total_cost;
+
+			/*
+			 * Nuke stuff we don't need to avoid bloating debug output.
+			 */
+
+			subplan->targetlist = NIL;
+			subplan->qual = NIL;
+			subplan->lefttree->targetlist = NIL;
+		}
+	}
 
 	return result_plan;
 }
@@ -3619,19 +4006,38 @@ limit_needed(Query *parse)
  *
  * Note: we need no comparable processing of the distinctClause because
  * the parser already enforced that that matches ORDER BY.
+ *
+ * For grouping sets, the order of items is instead forced to agree with that
+ * of the grouping set (and items not in the grouping set are skipped). The
+ * work of sorting the order of grouping set elements to match the ORDER BY if
+ * possible is done elsewhere.
  */
-static void
-preprocess_groupclause(PlannerInfo *root)
+static List *
+preprocess_groupclause(PlannerInfo *root, List *force)
 {
 	Query	   *parse = root->parse;
-	List	   *new_groupclause;
+	List	   *new_groupclause = NIL;
 	bool		partial_match;
 	ListCell   *sl;
 	ListCell   *gl;
 
+	/* For grouping sets, we need to force the ordering */
+	if (force)
+	{
+		foreach(sl, force)
+		{
+			Index ref = lfirst_int(sl);
+			SortGroupClause *cl = get_sortgroupref_clause(ref, parse->groupClause);
+
+			new_groupclause = lappend(new_groupclause, cl);
+		}
+
+		return new_groupclause;
+	}
+
 	/* If no ORDER BY, nothing useful to do here */
 	if (parse->sortClause == NIL)
-		return;
+		return parse->groupClause;
 
 	/*
 	 * Scan the ORDER BY clause and construct a list of matching GROUP BY
@@ -3639,7 +4045,6 @@ preprocess_groupclause(PlannerInfo *root)
 	 *
 	 * This code assumes that the sortClause contains no duplicate items.
 	 */
-	new_groupclause = NIL;
 	foreach(sl, parse->sortClause)
 	{
 		SortGroupClause *sc = (SortGroupClause *) lfirst(sl);
@@ -3663,7 +4068,7 @@ preprocess_groupclause(PlannerInfo *root)
 
 	/* If no match at all, no point in reordering GROUP BY */
 	if (new_groupclause == NIL)
-		return;
+		return parse->groupClause;
 
 	/*
 	 * Add any remaining GROUP BY items to the new list, but only if we were
@@ -3680,15 +4085,291 @@ preprocess_groupclause(PlannerInfo *root)
 		if (list_member_ptr(new_groupclause, gc))
 			continue;			/* it matched an ORDER BY item */
 		if (partial_match)
-			return;				/* give up, no common sort possible */
+			return parse->groupClause;	/* give up, no common sort possible */
 		if (!OidIsValid(gc->sortop))
-			return;				/* give up, GROUP BY can't be sorted */
+			return parse->groupClause;	/* give up, GROUP BY can't be sorted */
 		new_groupclause = lappend(new_groupclause, gc);
 	}
 
 	/* Success --- install the rearranged GROUP BY list */
 	Assert(list_length(parse->groupClause) == list_length(new_groupclause));
-	parse->groupClause = new_groupclause;
+	return new_groupclause;
+}
+
+/*
+ * Extract lists of grouping sets that can be implemented using a single
+ * rollup-type aggregate pass each. Returns a list of lists of grouping sets.
+ *
+ * Input must be sorted with smallest sets first. Result has each sublist
+ * sorted with smallest sets first.
+ *
+ * We want to produce the absolute minimum possible number of lists here to
+ * avoid excess sorts. Fortunately, there is an algorithm for this; the problem
+ * of finding the minimal partition of a partially-ordered set into chains
+ * (which is what we need, taking the list of grouping sets as a poset ordered
+ * by set inclusion) can be mapped to the problem of finding the maximum
+ * cardinality matching on a bipartite graph, which is solvable in polynomial
+ * time with a worst case of no worse than O(n^2.5) and usually much
+ * better. Since our N is at most 4096, we don't need to consider fallbacks to
+ * heuristic or approximate methods.  (Planning time for a 12-d cube is under
+ * half a second on my modest system even with optimization off and assertions
+ * on.)
+ */
+static List *
+extract_rollup_sets(List *groupingSets)
+{
+	int			num_sets_raw = list_length(groupingSets);
+	int			num_empty = 0;
+	int			num_sets = 0;		/* distinct sets */
+	int			num_chains = 0;
+	List	   *result = NIL;
+	List	  **results;
+	List	  **orig_sets;
+	Bitmapset **set_masks;
+	int		   *chains;
+	short	  **adjacency;
+	short	   *adjacency_buf;
+	BipartiteMatchState *state;
+	int			i;
+	int			j;
+	int			j_size;
+	ListCell   *lc1 = list_head(groupingSets);
+	ListCell   *lc;
+
+	/*
+	 * Start by stripping out empty sets.  The algorithm doesn't require this,
+	 * but the planner currently needs all empty sets to be returned in the
+	 * first list, so we strip them here and add them back after.
+	 */
+	while (lc1 && lfirst(lc1) == NIL)
+	{
+		++num_empty;
+		lc1 = lnext(lc1);
+	}
+
+	/* bail out now if it turns out that all we had were empty sets. */
+	if (!lc1)
+		return list_make1(groupingSets);
+
+	/*
+	 * We don't strictly need to remove duplicate sets here, but if we
+	 * don't, they tend to become scattered through the result, which is
+	 * a bit confusing (and irritating if we ever decide to optimize them
+	 * out). So we remove them here and add them back after.
+	 *
+	 * For each non-duplicate set, we fill in the following:
+	 *
+	 * orig_sets[i] = list of the original set lists
+	 * set_masks[i] = bitmapset for testing inclusion
+	 * adjacency[i] = array [n, v1, v2, ... vn] of adjacency indices
+	 *
+	 * chains[i] will be the result group this set is assigned to.
+	 *
+	 * We index all of these from 1 rather than 0 because it is convenient
+	 * to leave 0 free for the NIL node in the graph algorithm.
+	 */
+	orig_sets = palloc0((num_sets_raw + 1) * sizeof(List*));
+	set_masks = palloc0((num_sets_raw + 1) * sizeof(Bitmapset *));
+	adjacency = palloc0((num_sets_raw + 1) * sizeof(short *));
+	adjacency_buf = palloc((num_sets_raw + 1) * sizeof(short));
+
+	j_size = 0;
+	j = 0;
+	i = 1;
+
+	for_each_cell(lc, lc1)
+	{
+		List	   *candidate = lfirst(lc);
+		Bitmapset  *candidate_set = NULL;
+		ListCell   *lc2;
+		int			dup_of = 0;
+
+		foreach(lc2, candidate)
+		{
+			candidate_set = bms_add_member(candidate_set, lfirst_int(lc2));
+		}
+
+		/* we can only be a dup if we're the same length as a previous set */
+		if (j_size == list_length(candidate))
+		{
+			int		k;
+			for (k = j; k < i; ++k)
+			{
+				if (bms_equal(set_masks[k], candidate_set))
+				{
+					dup_of = k;
+					break;
+				}
+			}
+		}
+		else if (j_size < list_length(candidate))
+		{
+			j_size = list_length(candidate);
+			j = i;
+		}
+
+		if (dup_of > 0)
+		{
+			orig_sets[dup_of] = lappend(orig_sets[dup_of], candidate);
+			bms_free(candidate_set);
+		}
+		else
+		{
+			int		k;
+			int		n_adj = 0;
+
+			orig_sets[i] = list_make1(candidate);
+			set_masks[i] = candidate_set;
+
+			/* fill in adjacency list; no need to compare equal-size sets */
+
+			for (k = j - 1; k > 0; --k)
+			{
+				if (bms_is_subset(set_masks[k], candidate_set))
+					adjacency_buf[++n_adj] = k;
+			}
+
+			if (n_adj > 0)
+			{
+				adjacency_buf[0] = n_adj;
+				adjacency[i] = palloc((n_adj + 1) * sizeof(short));
+				memcpy(adjacency[i], adjacency_buf, (n_adj + 1) * sizeof(short));
+			}
+			else
+				adjacency[i] = NULL;
+
+			++i;
+		}
+	}
+
+	num_sets = i - 1;
+
+	/*
+	 * Apply the graph matching algorithm to do the work.
+	 */
+	state = BipartiteMatch(num_sets, num_sets, adjacency);
+
+	/*
+	 * Now, the state->pair* fields have the info we need to assign sets to
+	 * chains. Two sets (u,v) belong to the same chain if pair_uv[u] = v or
+	 * pair_vu[v] = u (both will be true, but we check both so that we can do
+	 * it in one pass)
+	 */
+	chains = palloc0((num_sets + 1) * sizeof(int));
+
+	for (i = 1; i <= num_sets; ++i)
+	{
+		int u = state->pair_vu[i];
+		int v = state->pair_uv[i];
+
+		if (u > 0 && u < i)
+			chains[i] = chains[u];
+		else if (v > 0 && v < i)
+			chains[i] = chains[v];
+		else
+			chains[i] = ++num_chains;
+	}
+
+	/* build result lists. */
+	results = palloc0((num_chains + 1) * sizeof(List*));
+
+	for (i = 1; i <= num_sets; ++i)
+	{
+		int c = chains[i];
+
+		Assert(c > 0);
+
+		results[c] = list_concat(results[c], orig_sets[i]);
+	}
+
+	/* push any empty sets back on the first list. */
+	while (num_empty-- > 0)
+		results[1] = lcons(NIL, results[1]);
+
+	/* make result list */
+	for (i = 1; i <= num_chains; ++i)
+		result = lappend(result, results[i]);
+
+	/*
+	 * Free all the things.
+	 *
+	 * (This is over-fussy for small sets but for large sets we could have
+	 * tied up a nontrivial amount of memory.)
+	 */
+	BipartiteMatchFree(state);
+	pfree(results);
+	pfree(chains);
+	for (i = 1; i <= num_sets; ++i)
+		if (adjacency[i])
+			pfree(adjacency[i]);
+	pfree(adjacency);
+	pfree(adjacency_buf);
+	pfree(orig_sets);
+	for (i = 1; i <= num_sets; ++i)
+		bms_free(set_masks[i]);
+	pfree(set_masks);
+
+	return result;
+}
+
+/*
+ * Reorder the elements of a list of grouping sets such that they have correct
+ * prefix relationships.
+ *
+ * The input must be ordered with smallest sets first; the result is returned
+ * with largest sets first.
+ *
+ * If we're passed in a sortclause, we follow its order of columns to the
+ * extent possible, to minimize the chance that we add unnecessary sorts.
+ * (We're trying here to ensure that GROUPING SETS ((a,b,c),(c)) ORDER BY c,b,a
+ * gets implemented in one pass.)
+ */
+static List *
+reorder_grouping_sets(List *groupingsets, List *sortclause)
+{
+	ListCell   *lc;
+	ListCell   *lc2;
+	List	   *previous = NIL;
+	List	   *result = NIL;
+
+	foreach(lc, groupingsets)
+	{
+		List   *candidate = lfirst(lc);
+		List   *new_elems = list_difference_int(candidate, previous);
+
+		if (list_length(new_elems) > 0)
+		{
+			while (list_length(sortclause) > list_length(previous))
+			{
+				SortGroupClause *sc = list_nth(sortclause, list_length(previous));
+				int			ref = sc->tleSortGroupRef;
+
+				if (list_member_int(new_elems, ref))
+				{
+					previous = lappend_int(previous, ref);
+					new_elems = list_delete_int(new_elems, ref);
+				}
+				else
+				{
+					/* diverged from the sortclause; give up on it */
+					sortclause = NIL;
+					break;
+				}
+			}
+
+			foreach(lc2, new_elems)
+			{
+				previous = lappend_int(previous, lfirst_int(lc2));
+			}
+		}
+
+		result = lcons(list_copy(previous), result);
+		list_free(new_elems);
+	}
+
+	list_free(previous);
+
+	return result;
 }
 
 /*
@@ -3707,11 +4388,11 @@ standard_qp_callback(PlannerInfo *root, void *extra)
 	 * sortClause is certainly sort-able, but GROUP BY and DISTINCT might not
 	 * be, in which case we just leave their pathkeys empty.
 	 */
-	if (parse->groupClause &&
-		grouping_is_sortable(parse->groupClause))
+	if (qp_extra->groupClause &&
+		grouping_is_sortable(qp_extra->groupClause))
 		root->group_pathkeys =
 			make_pathkeys_for_sortclauses(root,
-										  parse->groupClause,
+										  qp_extra->groupClause,
 										  tlist);
 	else
 		root->group_pathkeys = NIL;
@@ -4176,7 +4857,7 @@ make_subplanTargetList(PlannerInfo *root,
 	 * If we're not grouping or aggregating, there's nothing to do here;
 	 * query_planner should receive the unmodified target list.
 	 */
-	if (!parse->hasAggs && !parse->groupClause && !root->hasHavingQual &&
+	if (!parse->hasAggs && !parse->groupClause && !parse->groupingSets && !root->hasHavingQual &&
 		!parse->hasWindowFuncs)
 	{
 		*need_tlist_eval = true;
@@ -4271,9 +4952,16 @@ make_subplanTargetList(PlannerInfo *root,
 			 * Find or make a matching sub_tlist entry.  If the groupexpr
 			 * isn't a Var, no point in searching.  (Note that the parser
 			 * won't make multiple groupClause entries for the same TLE.)
+			 *
+			 * FIXME: ISTM that the parser can indeed make multiple groupClause
+			 * entries for the TLE.
 			 */
 			if (groupexpr && IsA(groupexpr, Var))
+			{
 				te = tlist_member(groupexpr, sub_tlist);
+				if (te->ressortgroupref != 0)
+					te = NULL;
+			}
 			else
 				te = NULL;
 
@@ -4286,6 +4974,10 @@ make_subplanTargetList(PlannerInfo *root,
 				sub_tlist = lappend(sub_tlist, te);
 				*need_tlist_eval = true;		/* it's not flat anymore */
 			}
+
+
+			/* Set its group reference */
+			te->ressortgroupref = grpcl->tleSortGroupRef;
 
 			/* and save its resno */
 			grpColIdx[keyno++] = te->resno;

@@ -27,6 +27,7 @@
 
 #include "access/hash.h"
 #include "miscadmin.h"
+#include "nodes/execnodes.h"
 #include "utils/tuplesort.h"
 
 

@@ -1198,6 +1198,7 @@ create_unique_plan(PlannerInfo *root, UniquePath *best_path)
 								 numGroupCols,
 								 groupColIdx,
 								 groupOperators,
+								 NIL,
 								 numGroups,
 								 subplan);
 	}
@@ -5812,6 +5813,7 @@ make_agg(PlannerInfo *root, List *tlist, List *qual,
 		 AggStrategy aggstrategy, const AggClauseCosts *aggcosts,
 		 bool streaming,
 		 int numGroupCols, AttrNumber *grpColIdx, Oid *grpOperators,
+		 List *groupingSets,
 		 long numGroups,
 		 Plan *lefttree)
 {
@@ -5822,16 +5824,21 @@ make_agg(PlannerInfo *root, List *tlist, List *qual,
 	node->numCols = numGroupCols;
 	node->grpColIdx = grpColIdx;
 	node->grpOperators = grpOperators;
+	node->groupingSets = groupingSets;
 	node->numGroups = numGroups;
 	node->streaming = streaming;
 
 	copy_plan_costsize(plan, lefttree); /* only care about copying size */
 
 	add_agg_cost(root, plan, tlist, qual, aggstrategy, streaming,
-				 numGroupCols, numGroups, aggcosts);
+				 numGroupCols,
+				 groupingSets,
+				 numGroups,
+				 aggcosts);
 
 	plan->qual = qual;
 	plan->targetlist = tlist;
+
 	plan->lefttree = lefttree;
 	plan->righttree = NULL;
 
@@ -5853,6 +5860,7 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 			 AggStrategy aggstrategy,
 			 bool streaming,
 			 int numGroupCols,
+			 List *groupingSets,
 			 long numGroups,
 			 const AggClauseCosts *aggcosts)
 {
@@ -5924,7 +5932,7 @@ add_agg_cost(PlannerInfo *root, Plan *plan,
 	 * group otherwise.
 	 */
 	if (aggstrategy == AGG_PLAIN)
-		plan->plan_rows = 1;
+		plan->plan_rows = groupingSets ? list_length(groupingSets) : 1;
 	else
 		plan->plan_rows = numGroups;
 
