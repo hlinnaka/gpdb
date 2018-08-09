@@ -157,7 +157,9 @@ static Plan *build_grouping_chain(PlannerInfo *root,
 						  AttrNumber *groupColIdx,
 						  AggClauseCosts *agg_costs,
 						  long		numGroups,
-						  Plan	   *result_plan);
+						  Plan	   *result_plan,
+						  CdbPathLocus *current_locus,
+						  List *current_pathkeys);
 
 static Plan *pushdown_preliminary_limit(Plan *plan, Node *limitCount, int64 count_est, Node *limitOffset, int64 offset_est);
 
@@ -2304,6 +2306,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				}
 
 				root->grouping_map = grouping_map;
+				root->grouping_map_size = maxref + 1;
 			}
 
 			/*
@@ -2355,8 +2358,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												   groupColIdx,
 												   &agg_costs,
 												   numGroups,
-												   result_plan);
-				current_locus = cdbpathlocus_from_flow(result_plan->flow);
+												   result_plan,
+												   &current_locus,
+												   current_pathkeys);
+				current_pathkeys = NIL;
 
 				/*
 				 * these are destroyed by build_grouping_chain, so make sure we
@@ -3201,10 +3206,14 @@ build_grouping_chain(PlannerInfo *root,
 					 AttrNumber *groupColIdx,
 					 AggClauseCosts *agg_costs,
 					 long		numGroups,
-					 Plan	   *result_plan)
+					 Plan	   *result_plan,
+					 CdbPathLocus *current_locus,
+					 List *current_pathkeys)
 {
 	AttrNumber *top_grpColIdx = groupColIdx;
 	List	   *chain = NIL;
+	List	   *hash_exprs = NIL;
+	bool		need_redistribute;
 
 	/*
 	 * Prepare the grpColIdx for the real Agg node first, because we may need
@@ -3214,19 +3223,87 @@ build_grouping_chain(PlannerInfo *root,
 		top_grpColIdx = remap_groupColIdx(root, llast(rollup_groupclauses));
 
 	/*
+	 * Figure out the desired data distribution to perform the grouping.
+	 *
+	 * In case of a simple GROUP BY, we prefer to distribute the data according to
+	 * the GROUP BY. With multiple grouping sets, identify the set of common
+	 * entries, and distribute based on that. For example, if you do
+	 * GROUP BY GROUPING SETS ((a, b, c), (b, c)), the common cols are b and c.
+	 */
+	if (result_plan->flow->flotype != FLOW_SINGLETON)
+	{
+		ListCell   *lc;
+		ListCell   *lcl, *lcc;
+		Bitmapset  *common_groupcols = NULL;
+		bool		first = true;
+		int			x;
+
+		forboth(lcl, rollup_lists, lcc, rollup_groupclauses)
+		{
+			List	   *rlist = (List *) lfirst(lcl);
+			List	   *rclause = (List *) lfirst(lcc);
+			List	   *last_list = (List *) llast(rlist);
+			Bitmapset  *this_groupcols = NULL;
+
+			this_groupcols = NULL;
+			foreach (lc, last_list)
+			{
+				SortGroupClause *sc = list_nth(rclause, lfirst_int(lc));
+
+				this_groupcols = bms_add_member(this_groupcols, sc->tleSortGroupRef);
+			}
+
+			if (first)
+				common_groupcols = this_groupcols;
+			else
+			{
+				common_groupcols = bms_int_members(common_groupcols, this_groupcols);
+				bms_free(this_groupcols);
+			}
+			first = false;
+		}
+
+		x = -1;
+		hash_exprs = NIL;
+		while ((x = bms_next_member(common_groupcols, x)) >= 0)
+		{
+			TargetEntry *tle = get_sortgroupref_tle(x, tlist);
+
+			hash_exprs = lappend(hash_exprs, tle->expr);
+		}
+
+		if (!hash_exprs)
+			need_redistribute = true;
+		else
+			need_redistribute = !cdbpathlocus_is_hashed_on_exprs(*current_locus, hash_exprs,
+																 false /* FIXME: should constants be ignored here? */);
+	}
+	else
+	{
+		need_redistribute = false;
+		hash_exprs = NIL;
+	}
+
+	/*
 	 * If we need a Sort operation on the input, generate that.
 	 */
 	if (need_sort_for_grouping)
 	{
 		Sort	   *sort;
 
+		if (need_redistribute && hash_exprs)
+		{
+			result_plan = (Plan *) make_motion_hash(root, result_plan, hash_exprs);
+		}
+
 		sort = make_sort_from_groupcols(root,
 										llast(rollup_groupclauses),
 										top_grpColIdx,
 										result_plan);
-		sort->plan.flow = pull_up_Flow((Plan *) sort, result_plan);
+		sort->plan.flow = pull_up_Flow((Plan *) sort, getAnySubplan((Plan *) sort));
 
-		if (sort->plan.flow->flotype != FLOW_SINGLETON)
+		if (need_redistribute && !hash_exprs)
+		{
 			result_plan = (Plan *) make_sorted_union_motion(root,
 															(Plan *) sort,
 															sort->numCols,
@@ -3236,11 +3313,20 @@ build_grouping_chain(PlannerInfo *root,
 															sort->nullsFirst,
 															false,
 															sort->plan.flow->numsegments);
+		}
 		else
 			result_plan = (Plan *) sort;
 	}
-	else if (result_plan->flow->flotype != FLOW_SINGLETON)
-		result_plan = (Plan *) make_motion_gather(root, result_plan, NIL);
+	else
+	{
+		/*
+		 * The input is already conveniently sorted. We could redistribute it by hash,
+		 * but then we'd need to re-sort it. That doesn't seem like a good idea, so
+		 * we prefer to gather it all, and take advantage of the sort order.
+		 */
+		if (need_redistribute)
+			result_plan = (Plan *) make_motion_gather(root, result_plan, current_pathkeys);
+	}
 
 	/*
 	 * Generate the side nodes that describe the other sort and group
@@ -3348,6 +3434,8 @@ build_grouping_chain(PlannerInfo *root,
 			subplan->lefttree->targetlist = NIL;
 		}
 	}
+
+	*current_locus = cdbpathlocus_from_flow(result_plan->flow);
 
 	return result_plan;
 }

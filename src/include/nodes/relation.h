@@ -309,6 +309,7 @@ typedef struct PlannerInfo
 
 	/* for GroupingFunc fixup in setrefs */
 	AttrNumber *grouping_map;
+	int			grouping_map_size;
 
 	int		   upd_del_replicated_table;
 	bool		is_split_update;	/* true if UPDATE that modifies

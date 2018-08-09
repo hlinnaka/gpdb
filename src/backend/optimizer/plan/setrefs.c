@@ -1627,6 +1627,10 @@ fix_expr_common(PlannerInfo *root, Node *node)
 
 			foreach(lc, g->refs)
 			{
+				int			x = lfirst_int(lc);
+
+				if (x >= root->grouping_map_size || x < 0)
+					elog(ERROR, "invalid refno %d, max %d", x, root->grouping_map_size);
 				cols = lappend_int(cols, grouping_map[lfirst_int(lc)]);
 			}
 
