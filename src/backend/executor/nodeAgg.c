@@ -476,32 +476,15 @@ initialize_aggregate(AggState *aggstate, AggStatePerAgg peraggstate,
 	 * later.
 	 */
 	if (peraggstate->initValueIsNull)
-	{
-		/* Clear the old transition value */
-		if (!peraggstate->transtypeByVal &&
-			!pergroupstate->transValueIsNull &&
-			DatumGetPointer(pergroupstate->transValue) != NULL)
-			pfree(DatumGetPointer(pergroupstate->transValue));
 		pergroupstate->transValue = peraggstate->initValue;
-	}
 	else
 	{
-		if (!peraggstate->transtypeByVal &&
-			!pergroupstate->transValueIsNull &&
-			DatumGetPointer(pergroupstate->transValue) != NULL)
-			pergroupstate->transValue =
-				datumCopyWithMemManager(pergroupstate->transValue,
-										peraggstate->initValue,
-										peraggstate->transtypeByVal,
-										peraggstate->transtypeLen,
-										mem_manager);
-		else
-			pergroupstate->transValue =
-				datumCopyWithMemManager(0,
-										peraggstate->initValue,
-										peraggstate->transtypeByVal,
-										peraggstate->transtypeLen,
-										mem_manager);
+		pergroupstate->transValue =
+			datumCopyWithMemManager(0,
+									peraggstate->initValue,
+									peraggstate->transtypeByVal,
+									peraggstate->transtypeLen,
+									mem_manager);
 	}
 	pergroupstate->transValueIsNull = peraggstate->initValueIsNull;
 
@@ -1474,25 +1457,6 @@ ExecAgg(AggState *node)
 	}
 
 	return NULL;
-}
-
-/*
- * clear_agg_object
- *		Clear necessary per-group memory when agg context memory get reset & deleted.
- *		aggstate - pointer to aggstate
- */
-static void
-clear_agg_object(AggState *aggstate)
-{
-	int			aggno = 0;
-
-	for (aggno = 0; aggno < aggstate->numaggs; aggno++)
-	{
-		AggStatePerGroup pergroupstate = &aggstate->pergroup[aggno];
-
-		pergroupstate->transValue = 0;
-		pergroupstate->transValueIsNull = true;
-	}
 }
 
 /*
