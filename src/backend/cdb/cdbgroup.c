@@ -381,6 +381,21 @@ static Expr *deconstruct_expr(Expr *expr, MppGroupContext *ctx);
 static Node *deconstruct_expr_mutator(Node *node, MppGroupContext *ctx);
 static Node *split_aggref(Aggref *aggref, MppGroupContext *ctx);
 static List *make_vars_tlist(List *tlist, Index varno, AttrNumber offset);
+static Plan *add_second_stage_agg(PlannerInfo *root,
+								  List *prelim_tlist,
+								  List *final_tlist,
+								  List *final_qual,
+								  AggStrategy aggstrategy,
+								  int numGroupCols,
+								  AttrNumber *prelimGroupColIdx,
+								  Oid *prelimGroupOperators,
+								  double numGroups,
+								  AggClauseCosts *agg_costs,
+								  const char *alias,
+								  List **p_current_pathkeys,
+								  Plan *result_plan,
+								  bool use_root,
+								  bool adjust_scatter);
 static Plan *add_subqueryscan(PlannerInfo *root, List **p_pathkeys,
 				 Index varno, Query *subquery, Plan *subplan);
 static List *seq_tlist_concat(List *tlist1, List *tlist2);
@@ -1433,7 +1448,6 @@ make_two_stage_agg_plan(PlannerInfo *root,
 	}
 
 	result_plan = add_second_stage_agg(root,
-									   true,
 									   prelim_tlist,
 									   final_tlist,
 									   final_qual,
@@ -2065,7 +2079,6 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 		}
 
 		result_plan = add_second_stage_agg(root,
-										   true,
 										   prelim_tlist,
 										   inter_tlist,
 										   NULL,
@@ -2138,7 +2151,6 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 	}
 
 	result_plan = add_second_stage_agg(root,
-									   true,
 									   need_inter_agg ? inter_tlist : prelim_tlist,
 									   final_tlist,
 									   final_qual,
@@ -4127,13 +4139,11 @@ UpdateScatterClause(Query *query, List *newtlist)
  * node.
  *
  * Params:
- *  is_agg -- indicate to add an Agg or a Group node.
  *  prelim_tlist -- the targetlist for the existing Agg/Group node.
  *  final_tlist -- the targetlist for the new Agg/Group node.
  */
-Plan *
+static Plan *
 add_second_stage_agg(PlannerInfo *root,
-					 bool is_agg,
 					 List *lower_tlist,
 					 List *upper_tlist,
 					 List *upper_qual,

@@ -35,22 +35,6 @@ extern bool cdbpathlocus_collocates_expressions(PlannerInfo *root, CdbPathLocus 
 											   bool exact_match);
 
 extern CdbPathLocus cdbpathlocus_from_flow(Flow *flow);
-extern Plan *add_second_stage_agg(PlannerInfo *root,
-								  bool is_agg,
-								  List *prelim_tlist,
-								  List *final_tlist,
-								  List *final_qual,
-								  AggStrategy aggstrategy,
-								  int numGroupCols,
-								  AttrNumber *prelimGroupColIdx,
-								  Oid *prelimGroupOperators,
-								  double numGroups,
-								  AggClauseCosts *agg_costs,
-								  const char *alias,
-								  List **p_current_pathkeys,
-								  Plan *result_plan,
-								  bool use_root,
-								  bool adjust_scatter);
 extern List *generate_subquery_tlist(Index varno, List *input_tlist,
 									 bool keep_resjunk, int **p_resno_map);
 extern List *reconstruct_pathkeys(PlannerInfo *root, List *pathkeys, int *resno_map,
