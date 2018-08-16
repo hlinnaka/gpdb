@@ -394,7 +394,6 @@ static Plan *add_second_stage_agg(PlannerInfo *root,
 								  const char *alias,
 								  List **p_current_pathkeys,
 								  Plan *result_plan,
-								  bool use_root,
 								  bool adjust_scatter);
 static Plan *add_subqueryscan(PlannerInfo *root, List **p_pathkeys,
 				 Index varno, Query *subquery, Plan *subplan);
@@ -1460,7 +1459,6 @@ make_two_stage_agg_plan(PlannerInfo *root,
 									   "partial_aggregation",
 									   &current_pathkeys,
 									   result_plan,
-									   true,
 									   true);
 
 	/* Marshal implicit results. Return explicit result. */
@@ -2091,7 +2089,7 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 										   "partial_aggregation",
 										   &current_pathkeys,
 										   result_plan,
-										   true, false);
+										   false);
 	}
 
 	/*
@@ -2163,7 +2161,6 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 									   "partial_aggregation",
 									   &current_pathkeys,
 									   result_plan,
-									   true,
 									   false);
 
 	/* Final sort */
@@ -4156,7 +4153,6 @@ add_second_stage_agg(PlannerInfo *root,
 					 const char *alias,
 					 List **p_current_pathkeys,
 					 Plan *result_plan,
-					 bool use_root,
 					 bool adjust_scatter)
 {
 	Query	   *parse = root->parse;
@@ -4218,7 +4214,7 @@ add_second_stage_agg(PlannerInfo *root,
 			tle->resjunk = false;
 			if (tle->resname == NULL)
 			{
-				if (use_root && IsA(tle->expr, Var))
+				if (IsA(tle->expr, Var))
 				{
 					Var		   *var = (Var *) tle->expr;
 					RangeTblEntry *rte = rt_fetch(var->varno, root->parse->rtable);
@@ -4266,17 +4262,12 @@ add_second_stage_agg(PlannerInfo *root,
 
 	/*
 	 * <EXECUTE s> uses parse->targetList to derive the portal's tupDesc, so
-	 * when use_root is true, the caller owns the responsibility to make sure
-	 * it ends up in an appropriate form at the end of planning.
+	 * the caller owns the responsibility to make sure it ends up in an
+	 * appropriate form at the end of planning.
 	 */
-	if (use_root)
-	{
-		if (adjust_scatter)
-		{
-			UpdateScatterClause(parse, upper_tlist);
-		}
-		parse->targetList = copyObject(upper_tlist);	/* Match range. */
-	}
+	if (adjust_scatter)
+		UpdateScatterClause(parse, upper_tlist);
+	parse->targetList = copyObject(upper_tlist);	/* Match range. */
 
 	result_plan = add_subqueryscan(root, p_current_pathkeys,
 								   1, subquery, result_plan);
