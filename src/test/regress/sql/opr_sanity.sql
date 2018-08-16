@@ -260,7 +260,9 @@ WHERE pronargs > 8 and prolang = 12 AND
 -- Look for functions that return type "internal" and do not have any
 -- "internal" argument.  Such a function would be a security hole since
 -- it might be used to call an internal function from an SQL command.
--- As of 7.3 this query should find only internal_in.
+-- As of 7.3 this query should find internal_in, and as of 9.6 aggregate
+-- deserialization will be found too. These should contain a runtime check to
+-- ensure they can only be called in an aggregate context.
 
 SELECT p1.oid, p1.proname
 FROM pg_proc as p1

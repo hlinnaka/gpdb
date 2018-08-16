@@ -1774,7 +1774,7 @@ DESCR("range intersection");
 
 
 /* gpxlogloc operators */
-DATA(insert OID = 3325 (  "="     PGNSP PGUID b t f 3310 3310	16 3325 3326 gpxlogloceq eqsel eqjoinsel ));
+DATA(insert OID = 6325 (  "="     PGNSP PGUID b t f 3310 3310	16 3325 3326 gpxlogloceq eqsel eqjoinsel ));
 DESCR("equal");
 DATA(insert OID = 3326 (  "<>"    PGNSP PGUID b f f 3310 3310	16 3326 3325 gpxloglocne neqsel neqjoinsel ));
 DESCR("not equal");
