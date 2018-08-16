@@ -11121,21 +11121,21 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	PGresult   *res;
 	int			i_aggtransfn;
 	int			i_aggfinalfn;
+	int			i_aggcombinefn;
 	int			i_aggfinalextra;
 	int			i_aggsortop;
 	int			i_hypothetical;
 	int			i_aggtranstype;
 	int			i_agginitval;
-	int			i_aggprelimfn;
 	int			i_convertok;
 	const char *aggtransfn;
 	const char *aggfinalfn;
+	const char *aggcombinefn;
 	bool		aggfinalextra;
 	const char *aggsortop;
 	bool		hypothetical;
 	const char *aggtranstype;
 	const char *agginitval;
-	const char *aggprelimfn;
 	bool		convertok;
 
 	/* Skip if not to be dumped */
@@ -11156,6 +11156,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
+						  "aggcombinefn, "
 						  "aggfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "(aggkind = 'h') as hypothetical, " /* aggkind was backported to GPDB6 */
@@ -11174,6 +11175,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
+						  "aggprelimfn AS aggcombinefn, "
 						  "false AS aggfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "false AS hypothetical, "
@@ -11197,22 +11199,22 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 
 	i_aggtransfn = PQfnumber(res, "aggtransfn");
 	i_aggfinalfn = PQfnumber(res, "aggfinalfn");
+	i_aggcombinefn = PQfnumber(res, "aggcombinefn");
 	i_aggfinalextra = PQfnumber(res, "aggfinalextra");
 	i_aggsortop = PQfnumber(res, "aggsortop");
 	i_hypothetical = PQfnumber(res, "hypothetical");
 	i_aggtranstype = PQfnumber(res, "aggtranstype");
 	i_agginitval = PQfnumber(res, "agginitval");
-	i_aggprelimfn = PQfnumber(res, "aggprelimfn");
 	i_convertok = PQfnumber(res, "convertok");
 
 	aggtransfn = PQgetvalue(res, 0, i_aggtransfn);
 	aggfinalfn = PQgetvalue(res, 0, i_aggfinalfn);
+	aggcombinefn = PQgetvalue(res, 0, i_aggcombinefn);
 	aggfinalextra = (PQgetvalue(res, 0, i_aggfinalextra)[0] == 't');
 	aggsortop = PQgetvalue(res, 0, i_aggsortop);
 	hypothetical = (PQgetvalue(res, 0, i_hypothetical)[0] == 't');
 	aggtranstype = PQgetvalue(res, 0, i_aggtranstype);
 	agginitval = PQgetvalue(res, 0, i_agginitval);
-	aggprelimfn = PQgetvalue(res, 0, i_aggprelimfn);
 	convertok = (PQgetvalue(res, 0, i_convertok)[0] == 't');
 
 	if (fout->remoteVersion >= 80400)
@@ -11257,19 +11259,17 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 		appendStringLiteralAH(details, agginitval, fout);
 	}
 
-	if (!PQgetisnull(res, 0, i_aggprelimfn))
-	{
-		if (strcmp(aggprelimfn, "-") != 0)
-			appendPQExpBuffer(details, ",\n    PREFUNC = %s",
-							  aggprelimfn);
-	}
-
 	if (strcmp(aggfinalfn, "-") != 0)
 	{
 		appendPQExpBuffer(details, ",\n    FINALFUNC = %s",
 						  aggfinalfn);
 		if (aggfinalextra)
 			appendPQExpBufferStr(details, ",\n    FINALFUNC_EXTRA");
+	}
+
+	if (strcmp(aggcombinefn, "-") != 0)
+	{
+		appendPQExpBuffer(details, ",\n    COMBINEFUNC = %s",	aggcombinefn);
 	}
 
 	aggsortop = convertOperatorReference(fout, aggsortop);
