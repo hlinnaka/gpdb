@@ -118,16 +118,6 @@ static CdbVisitOpt
 MemoryAccountToString(MemoryAccountTree *memoryAccount, void *context,
 		uint32 depth, uint32 parentWalkSerial, uint32 curWalkSerial);
 
-static CdbVisitOpt
-MemoryAccountToCSV(MemoryAccountTree *memoryAccount, void *context,
-		uint32 depth, uint32 parentWalkSerial, uint32 curWalkSerial);
-
-static void
-PsuedoAccountsToCSV(StringInfoData *str, char *prefix);
-
-static void
-SaveMemoryBufToDisk(struct StringInfoData *memoryBuf, char *prefix);
-
 static const char*
 MemoryAccounting_GetOwnerName(MemoryOwnerType ownerType);
 
@@ -455,45 +445,6 @@ MemoryAccounting_CombinedAccountArrayToString(void *accountArrayBytes,
 
 	pfree(tree);
 	pfree(combinedArrayOfPointers);
-}
-
-/*
- * MemoryAccounting_SaveToFile
- *		Saves the current memory accounting tree into a CSV file
- *
- * currentSliceId: The currently executing slice ID
- */
-void
-MemoryAccounting_SaveToFile(int currentSliceId)
-{
-	StringInfoData prefix;
-	StringInfoData memBuf;
-	initStringInfo(&prefix);
-	initStringInfo(&memBuf);
-
-	/* run_id, dataset_id, query_id, scale_factor, gp_session_id, current_statement_timestamp, slice_id, segment_idx, */
-	appendStringInfo(&prefix, "%s,%s,%s,%u,%u,%d," UINT64_FORMAT ",%d,%d",
-			memory_profiler_run_id, memory_profiler_dataset_id, memory_profiler_query_id,
-			memory_profiler_dataset_size, statement_mem, gp_session_id, GetCurrentStatementStartTimestamp(),
-			currentSliceId, GpIdentity.segindex);
-
-	MemoryAccountTree *tree = ConvertMemoryAccountArrayToTree(&longLivingMemoryAccountArray[MEMORY_OWNER_TYPE_Undefined],
-			shortLivingMemoryAccountArray->allAccounts, shortLivingMemoryAccountArray->accountCount);
-	PsuedoAccountsToCSV(&memBuf, prefix.data);
-
-	MemoryAccountSerializerCxt cxt;
-	cxt.buffer = &memBuf;
-	cxt.memoryAccountCount = 0;
-	cxt.prefix = prefix.data;
-
-	uint32 totalWalked = 0;
-
-	MemoryAccountTreeWalkNode(&tree[MEMORY_OWNER_TYPE_LogicalRoot], MemoryAccountToCSV, &cxt, 0, &totalWalked, totalWalked);
-	SaveMemoryBufToDisk(&memBuf, prefix.data);
-
-	pfree(prefix.data);
-	pfree(memBuf.data);
-	pfree(tree);
 }
 
 /*
@@ -1196,76 +1147,6 @@ MemoryAccounting_GetOwnerName(MemoryOwnerType ownerType)
 	return "Error";
 }
 
-/**
- * MemoryAccountToCSV:
- * 		A visitor function that formats a memory account node information in CSV
- * 		format. The full tree is represented in CSV using a tree walk and a repeated
- * 		call of this function from the tree walker
- *
- * memoryAccount: The memory account which will be represented as CSV
- * context: context information to pass between successive function call
- * depth: The depth in the tree for current node. Used to generate indentation.
- * parentWalkSerial: parent node's "walk serial"
- * curWalkSerial: current node's "walk serial"
- */
-static CdbVisitOpt
-MemoryAccountToCSV(MemoryAccountTree *memoryAccountTreeNode, void *context, uint32 depth, uint32 parentWalkSerial, uint32 curWalkSerial)
-{
-	if (memoryAccountTreeNode == NULL) return CdbVisit_Walk;
-
-	MemoryAccount *memoryAccount = memoryAccountTreeNode->account;
-
-	MemoryAccountSerializerCxt *memAccountCxt = (MemoryAccountSerializerCxt*) context;
-
-	/*
-	 * PREFIX, ownerType, curWalkSerial, parentWalkSerial, maxLimit, peak, allocated, freed
-	 */
-	appendStringInfo(memAccountCxt->buffer, "%s,%u,%u,%u," UINT64_FORMAT "," UINT64_FORMAT "," UINT64_FORMAT "," UINT64_FORMAT "\n",
-			memAccountCxt->prefix, memoryAccount->ownerType,
-			curWalkSerial, parentWalkSerial,
-			memoryAccount->maxLimit,
-			memoryAccount->peak,
-			memoryAccount->allocated,
-			memoryAccount->freed
-	);
-
-	memAccountCxt->memoryAccountCount++;
-
-	return CdbVisit_Walk;
-}
-
-/*
- * PsuedoAccountsToCSV
- *		Formats pseudo accounts such as vmem reserved and overall peak to CSV
- *
- * root: The root of the tree (used recursively)
- * str: The output buffer
- * prefix: A common prefix for each csv line
- */
-static void
-PsuedoAccountsToCSV(StringInfoData *str, char *prefix)
-{
-	int64 vmem_reserved = VmemTracker_GetMaxReservedVmemBytes();
-
-	/*
-	 * Add vmem reserved as reported by memprot. We report the vmem reserved in the
-	 * "allocated" and "peak" fields. We set the freed to 0.
-	 */
-	appendStringInfo(str, "%s,%d,%u,%u," UINT64_FORMAT "," UINT64_FORMAT "," UINT64_FORMAT "," UINT64_FORMAT "\n",
-			prefix, MEMORY_STAT_TYPE_VMEM_RESERVED,
-			0 /* Child walk serial */, 0 /* Parent walk serial */,
-			(int64) 0 /* Quota */, vmem_reserved /* Peak */, vmem_reserved /* Allocated */, (int64) 0 /* Freed */);
-
-	/*
-	 * Add peak memory observed from inside memory accounting among all allocations.
-	 */
-	appendStringInfo(str, "%s,%d,%u,%u," UINT64_FORMAT "," UINT64_FORMAT "," UINT64_FORMAT "," UINT64_FORMAT "\n",
-			prefix, MEMORY_STAT_TYPE_MEMORY_ACCOUNTING_PEAK,
-			0 /* Child walk serial */, 0 /* Parent walk serial */,
-			(int64) 0 /* Quota */, MemoryAccountingPeakBalance /* Peak */,
-			MemoryAccountingPeakBalance /* Allocated */, (int64) 0 /* Freed */);
-}
-
 /*
  * MemoryAccounting_ToString
  *		Converts a memory account tree rooted at "root" to string using tree
@@ -1442,33 +1323,4 @@ static void
 MemoryAccounting_ResetPeakBalance()
 {
 	MemoryAccountingPeakBalance = MemoryAccountingOutstandingBalance;
-}
-
-/*
- * SaveMemoryBufToDisk
- *    Saves the memory account information in a file. The file name is auto
- *    generated using gp_session_id, gp_command_count and the passed time stamp
- *
- * memoryBuf: The buffer where the momory tree is serialized in (typically) csv form.
- * prefix: A file name prefix that can be used to uniquely identify the file's content
- */
-static void
-SaveMemoryBufToDisk(struct StringInfoData *memoryBuf, char *prefix)
-{
-	char fileName[MEMORY_REPORT_FILE_NAME_LENGTH];
-
-	Assert((strlen("pg_log/") + strlen("memory_") + strlen(prefix) + strlen(".mem")) < MEMORY_REPORT_FILE_NAME_LENGTH);
-	snprintf(fileName, MEMORY_REPORT_FILE_NAME_LENGTH, "%s/memory_%s.mem", "pg_log", prefix);
-
-	FILE *file = fopen(fileName, "w");
-
-	if (file == NULL)
-		elog(ERROR, "Could not write memory usage information. Failed to open file: %s", fileName);
-
-	uint64 bytes = fwrite(memoryBuf->data, 1, memoryBuf->len, file);
-
-	if (bytes != memoryBuf->len)
-		elog(ERROR, "Could not write memory usage information. Attempted to write %d", memoryBuf->len);
-
-	fclose(file);
 }

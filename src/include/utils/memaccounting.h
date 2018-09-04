@@ -44,27 +44,6 @@ typedef struct MemoryAccountExplain {
 extern int explain_memory_verbosity;
 
 /*
- * Unique run id for memory profiling. May be just a start timestamp for a batch of queries such as TPCH
- */
-extern char* memory_profiler_run_id;
-
-/*
- * Dataset ID. Determined by the external script. One example could be, 1: TPCH, 2: TPCDS etc.
- */
-extern char* memory_profiler_dataset_id;
-
-/*
- * Which query of the query suite is running currently. E.g., query 21 of TPCH
- */
-extern char* memory_profiler_query_id;
-
-/*
- * Scale factor of TPCH/TPCDS etc.
- */
-extern int memory_profiler_dataset_size;
-
-
-/*
  * Each memory account can assume one of the following memory
  * owner types
  */
@@ -237,9 +216,6 @@ MemoryAccounting_GetGlobalPeak(void);
 extern void
 MemoryAccounting_CombinedAccountArrayToString(void *accountArrayBytes,
 		MemoryAccountIdType accountCount, StringInfoData *str, uint32 indentation);
-
-extern void
-MemoryAccounting_SaveToFile(int currentSliceId);
 
 extern void
 MemoryAccounting_SaveToLog(void);

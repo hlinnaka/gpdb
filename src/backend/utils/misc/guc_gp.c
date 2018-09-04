@@ -167,10 +167,6 @@ int			gp_test_toast_max_chunk_size_override = 0;
 bool		log_dispatch_stats = false;
 
 int			explain_memory_verbosity = 0;
-char	   *memory_profiler_run_id = "none";
-char	   *memory_profiler_dataset_id = "none";
-char	   *memory_profiler_query_id = "none";
-int			memory_profiler_dataset_size = 0;
 
 bool		rle_type_compression_stats = false;
 
@@ -4263,16 +4259,6 @@ struct config_int ConfigureNamesInt_gp[] =
 	},
 
 	{
-		{"memory_profiler_dataset_size", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Set the size in GB"),
-			NULL,
-			GUC_GPDB_ADDOPT | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&memory_profiler_dataset_size,
-		0, 0, INT_MAX,
-		NULL, NULL, NULL
-	},
-	{
 		{"repl_catchup_within_range", PGC_SUSET, REPLICATION_STANDBY,
 			gettext_noop("Sets the maximum number of xlog segments allowed to lag"
 					  " when the backends can start blocking despite the WAL"
@@ -4568,39 +4554,6 @@ struct config_string ConfigureNamesString_gp[] =
 		&gp_workfile_compress_algorithm_str,
 		"none",
 		check_gp_workfile_compress_algorithm, assign_gp_workfile_compress_algorithm, NULL
-	},
-
-	{
-		{"memory_profiler_run_id", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Set the unique run ID for memory profiling"),
-			gettext_noop("Any string is acceptable"),
-			GUC_GPDB_ADDOPT | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&memory_profiler_run_id,
-		"none",
-		NULL, NULL, NULL
-	},
-
-	{
-		{"memory_profiler_dataset_id", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Set the dataset ID for memory profiling"),
-			gettext_noop("Any string is acceptable"),
-			GUC_GPDB_ADDOPT | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&memory_profiler_dataset_id,
-		"none",
-		NULL, NULL, NULL
-	},
-
-	{
-		{"memory_profiler_query_id", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Set the query ID for memory profiling"),
-			gettext_noop("Any string is acceptable"),
-			GUC_GPDB_ADDOPT | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&memory_profiler_query_id,
-		"none",
-		NULL, NULL, NULL
 	},
 
 	{
