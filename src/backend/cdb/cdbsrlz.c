@@ -106,6 +106,26 @@ deserializeNode(const char *strNode, int size)
 	return node;
 }
 
+#include "utils/timestamp.h"
+static char *compress_string_real(const char *src, int uncompressed_size, int *compressed_size_p);
+static char *
+compress_string(const char *src, int uncompressed_size, int *compressed_size_p)
+{
+	TimestampTz b, e;
+	char *result;
+	int compressed_size;
+
+	b = GetCurrentTimestamp();
+	result = compress_string_real(src, uncompressed_size, &compressed_size);
+	e = GetCurrentTimestamp();
+
+	elog(NOTICE, "compressed %d -> %d in %d us", uncompressed_size, compressed_size, (int) (e - b));
+
+	*compressed_size_p = compressed_size;
+	return result;
+}
+#define compress_string compress_string_real
+
 #ifdef HAVE_LIBZSTD
 /*
  * Compress a (binary) string using libzstd
