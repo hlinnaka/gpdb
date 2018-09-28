@@ -63,7 +63,6 @@ typedef FormData_pg_opfamily *Form_pg_opfamily;
  * ----------------
  */
 
-DATA(insert OID =  421 (	403		abstime_ops		PGNSP PGUID ));
 DATA(insert OID =  397 (	403		array_ops		PGNSP PGUID ));
 DATA(insert OID =  627 (	405		array_ops		PGNSP PGUID ));
 DATA(insert OID =  423 (	403		bit_ops			PGNSP PGUID ));
@@ -125,12 +124,8 @@ DATA(insert OID = 2224 (	405		int2vector_ops	PGNSP PGUID ));
 DATA(insert OID = 2789 (	403		tid_ops			PGNSP PGUID ));
 DATA(insert OID = 2225 (	405		xid_ops			PGNSP PGUID ));
 DATA(insert OID = 2226 (	405		cid_ops			PGNSP PGUID ));
-DATA(insert OID = 2227 (	405		abstime_ops		PGNSP PGUID ));
-DATA(insert OID = 2228 (	405		reltime_ops		PGNSP PGUID ));
 DATA(insert OID = 2229 (	405		text_pattern_ops	PGNSP PGUID ));
 DATA(insert OID = 2231 (	405		bpchar_pattern_ops	PGNSP PGUID ));
-DATA(insert OID = 2233 (	403		reltime_ops		PGNSP PGUID ));
-DATA(insert OID = 2234 (	403		tinterval_ops	PGNSP PGUID ));
 DATA(insert OID = 2235 (	405		aclitem_ops		PGNSP PGUID ));
 DATA(insert OID = 2593 (	783		box_ops			PGNSP PGUID ));
 DATA(insert OID = 2594 (	783		poly_ops		PGNSP PGUID ));
@@ -169,7 +164,6 @@ DATA(insert OID = 6224 (	405		complex_ops		PGNSP PGUID ));
 /*
  * on-disk bitmap index opfamilies.
  */
-DATA(insert OID = 7014 (	7013	abstime_ops		PGNSP PGUID ));
 DATA(insert OID = 7015 (	7013	array_ops		PGNSP PGUID ));
 DATA(insert OID = 7016 (	7013	bit_ops			PGNSP PGUID ));
 DATA(insert OID = 7017 (	7013	bool_ops		PGNSP PGUID ));
@@ -198,8 +192,6 @@ DATA(insert OID = 7041 (	7013	timestamp_ops	PGNSP PGUID ));
 DATA(insert OID = 7042 (	7013	text_pattern_ops	PGNSP PGUID ));
 DATA(insert OID = 7044 (	7013	bpchar_pattern_ops	PGNSP PGUID ));
 DATA(insert OID = 7046 (	7013	money_ops		PGNSP PGUID ));
-DATA(insert OID = 7047 (	7013	reltime_ops		PGNSP PGUID ));
-DATA(insert OID = 7048 (	7013	tinterval_ops	PGNSP PGUID ));
 
 /*
  * hash support for a few built-in datatypes that are missing it in upstream.

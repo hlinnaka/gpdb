@@ -506,24 +506,6 @@ int24ge(smallint,integer)
 int42ge(integer,smallint)
 oideq(oid,oid)
 oidne(oid,oid)
-abstimeeq(abstime,abstime)
-abstimene(abstime,abstime)
-abstimelt(abstime,abstime)
-abstimegt(abstime,abstime)
-abstimele(abstime,abstime)
-abstimege(abstime,abstime)
-reltimeeq(reltime,reltime)
-reltimene(reltime,reltime)
-reltimelt(reltime,reltime)
-reltimegt(reltime,reltime)
-reltimele(reltime,reltime)
-reltimege(reltime,reltime)
-tintervalleneq(tinterval,reltime)
-tintervallenne(tinterval,reltime)
-tintervallenlt(tinterval,reltime)
-tintervallengt(tinterval,reltime)
-tintervallenle(tinterval,reltime)
-tintervallenge(tinterval,reltime)
 float4eq(real,real)
 float4ne(real,real)
 float4lt(real,real)
@@ -567,12 +549,6 @@ namege(name,name)
 namene(name,name)
 oidlt(oid,oid)
 oidle(oid,oid)
-tintervaleq(tinterval,tinterval)
-tintervalne(tinterval,tinterval)
-tintervallt(tinterval,tinterval)
-tintervalgt(tinterval,tinterval)
-tintervalle(tinterval,tinterval)
-tintervalge(tinterval,tinterval)
 macaddr_eq(macaddr,macaddr)
 macaddr_lt(macaddr,macaddr)
 macaddr_le(macaddr,macaddr)
@@ -1158,7 +1134,6 @@ WHERE a.aggfnoid = p.oid AND
 
 -- Cross-check transfn against its entry in pg_proc.
 -- NOTE: use physically_coercible here, not binary_coercible, because
--- max and min on abstime are implemented using int4larger/int4smaller.
 SELECT a.aggfnoid::oid, p.proname, ptr.oid, ptr.proname
 FROM pg_aggregate AS a, pg_proc AS p, pg_proc AS ptr
 WHERE a.aggfnoid = p.oid AND
@@ -1339,7 +1314,6 @@ WHERE a.aggfnoid = p.oid AND
 -- Check that all combine functions have signature
 -- combine(transtype, transtype) returns transtype
 -- NOTE: use physically_coercible here, not binary_coercible, because
--- max and min on abstime are implemented using int4larger/int4smaller.
 -- start_ignore
 -- GPDB: pivot_sum() currently fails this. It uses int8_matrix_accum,
 -- which is declared to takes as argument and returns an int8[], as the

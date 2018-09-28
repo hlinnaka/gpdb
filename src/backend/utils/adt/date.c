@@ -28,7 +28,6 @@
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
-#include "utils/nabstime.h"
 #include "utils/sortsupport.h"
 
 /*
@@ -1016,45 +1015,6 @@ timestamptz_date(PG_FUNCTION_ARGS)
 					 errmsg("timestamp out of range")));
 
 		result = date2j(tm->tm_year, tm->tm_mon, tm->tm_mday) - POSTGRES_EPOCH_JDATE;
-	}
-
-	PG_RETURN_DATEADT(result);
-}
-
-
-/* abstime_date()
- * Convert abstime to date data type.
- */
-Datum
-abstime_date(PG_FUNCTION_ARGS)
-{
-	AbsoluteTime abstime = PG_GETARG_ABSOLUTETIME(0);
-	DateADT		result;
-	struct pg_tm tt,
-			   *tm = &tt;
-	int			tz;
-
-	switch (abstime)
-	{
-		case INVALID_ABSTIME:
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				   errmsg("cannot convert reserved abstime value to date")));
-			result = 0;			/* keep compiler quiet */
-			break;
-
-		case NOSTART_ABSTIME:
-			DATE_NOBEGIN(result);
-			break;
-
-		case NOEND_ABSTIME:
-			DATE_NOEND(result);
-			break;
-
-		default:
-			abstime2tm(abstime, &tz, tm, NULL);
-			result = date2j(tm->tm_year, tm->tm_mon, tm->tm_mday) - POSTGRES_EPOCH_JDATE;
-			break;
 	}
 
 	PG_RETURN_DATEADT(result);

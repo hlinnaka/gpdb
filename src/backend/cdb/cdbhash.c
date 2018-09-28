@@ -28,7 +28,6 @@
 #include "utils/date.h"
 #include "utils/cash.h"
 #include "utils/datetime.h"
-#include "utils/nabstime.h"
 #include "utils/rangetypes.h"
 #include "utils/varbit.h"
 #include "utils/uuid.h"
@@ -224,10 +223,6 @@ cdbhash(CdbHash *h, int attno, Datum datum, bool isnull)
 	TimeADT		timebuf;
 	TimeTzADT  *timetzptr;
 	Interval   *intervalptr;
-	AbsoluteTime abstime_buf;
-	RelativeTime reltime_buf;
-	TimeInterval tinterval;
-	AbsoluteTime tinterval_len;
 
 	RangeType *range;
 
@@ -256,7 +251,6 @@ cdbhash(CdbHash *h, int attno, Datum datum, bool isnull)
 	 * special case buffers
 	 */
 	uint32		nanbuf;
-	uint32		invalidbuf;
 
 	void	   *tofree = NULL;
 
@@ -481,69 +475,6 @@ cdbhash(CdbHash *h, int attno, Datum datum, bool isnull)
 			 * structure won't be included in the hash!
 			 */
 			len = sizeof(intervalptr->time) + sizeof(intervalptr->month);
-			break;
-
-		case ABSTIMEOID:
-			abstime_buf = DatumGetAbsoluteTime(datum);
-
-			if (abstime_buf == INVALID_ABSTIME)
-			{
-				/* hash to a constant value */
-				invalidbuf = INVALID_VAL;
-				len = sizeof(invalidbuf);
-				buf = &invalidbuf;
-			}
-			else
-			{
-				len = sizeof(abstime_buf);
-				buf = &abstime_buf;
-			}
-
-			break;
-
-		case RELTIMEOID:
-			reltime_buf = DatumGetRelativeTime(datum);
-
-			if (reltime_buf == INVALID_RELTIME)
-			{
-				/* hash to a constant value */
-				invalidbuf = INVALID_VAL;
-				len = sizeof(invalidbuf);
-				buf = &invalidbuf;
-			}
-			else
-			{
-				len = sizeof(reltime_buf);
-				buf = &reltime_buf;
-			}
-
-			break;
-
-		case TINTERVALOID:
-			tinterval = DatumGetTimeInterval(datum);
-
-			/*
-			 * check if a valid interval. the '0' status code stands for
-			 * T_INTERVAL_INVAL which is defined in nabstime.c. We use the
-			 * actual value instead of defining it again here.
-			 */
-			if (tinterval->status == 0 ||
-				tinterval->data[0] == INVALID_ABSTIME ||
-				tinterval->data[1] == INVALID_ABSTIME)
-			{
-				/* hash to a constant value */
-				invalidbuf = INVALID_VAL;
-				len = sizeof(invalidbuf);
-				buf = &invalidbuf;
-			}
-			else
-			{
-				/* normalize on length of the time interval */
-				tinterval_len = tinterval->data[1] - tinterval->data[0];
-				len = sizeof(tinterval_len);
-				buf = &tinterval_len;
-			}
-
 			break;
 
 			/*
@@ -829,9 +760,6 @@ isGreenplumDbHashableBaseType(Oid typid)
 		case TIMEOID:
 		case TIMETZOID:
 		case INTERVALOID:
-		case ABSTIMEOID:
-		case RELTIMEOID:
-		case TINTERVALOID:
 		case INETOID:
 		case CIDROID:
 		case MACADDROID:
@@ -888,9 +816,6 @@ bool isGreenplumDbOprRedistributable(Oid oprid)
 		case TimeEqualOperator:
 		case TimeTZEqualOperator:
 		case IntervalEqualOperator:
-		case AbsTimeEqualOperator:
-		case RelTimeEqualOperator:
-		case TIntervalEqualOperator:
 		case InetEqualOperator:
 		case MacAddrEqualOperator:
 		case BitEqualOperator:

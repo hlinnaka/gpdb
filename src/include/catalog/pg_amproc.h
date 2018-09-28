@@ -82,7 +82,6 @@ typedef FormData_pg_amproc *Form_pg_amproc;
 
 /* btree */
 DATA(insert (	397   2277 2277 1 382 ));
-DATA(insert (	421   702 702 1 357 ));
 DATA(insert (	423   1560 1560 1 1596 ));
 DATA(insert (	424   16 16 1 1693 ));
 DATA(insert (	426   1042 1042 1 1078 ));
@@ -134,8 +133,6 @@ DATA(insert (	2002   1562 1562 1 1672 ));
 DATA(insert (	2095   25 25 1 2166 ));
 DATA(insert (	2097   1042 1042 1 2180 ));
 DATA(insert (	2099   790 790 1  377 ));
-DATA(insert (	2233   703 703 1  380 ));
-DATA(insert (	2234   704 704 1  381 ));
 DATA(insert (	2789   27 27 1 2794 ));
 DATA(insert (	2968   2950 2950 1 2960 ));
 DATA(insert (	2994   2249 2249 1 2987 ));
@@ -176,8 +173,6 @@ DATA(insert (	2223   17 17 1 456 ));
 DATA(insert (	2224   22 22 1 398 ));
 DATA(insert (	2225   28 28 1 450 ));
 DATA(insert (	2226   29 29 1 450 ));
-DATA(insert (	2227   702 702 1 450 ));
-DATA(insert (	2228   703 703 1 450 ));
 DATA(insert (	2229   25 25 1 400 ));
 DATA(insert (	2231   1042 1042 1 1080 ));
 DATA(insert (	2235   1033 1033 1 329 ));
@@ -447,7 +442,6 @@ DATA(insert (	4017   25 25 5 4031 ));
 /*
  * the operator routines for the on-disk bitmap index.
  */
-DATA(insert (	7014	702 702 1 357 ));		/* abstime */
 DATA(insert (	7015	2277  2277 1 382 ));		/* array */
 DATA(insert (	7016	1560  1560 1 1596 ));	/* bit */
 DATA(insert (	7017	16  16 1 1693 ));	/* bool */
@@ -490,8 +484,6 @@ DATA(insert (	7041 1114 1184 1 2526 ));	/* timestamp-timestamptz */
 DATA(insert (	7042	 25   25 1 2166 ));	/* text pattern */
 DATA(insert (	7044	1042  1042 1 2180 ));	/* bpchar pattern */
 DATA(insert (	7046	790  790 1  377 ));	/* money */
-DATA(insert (	7047	703  703 1 380 ));		/* reltime */
-DATA(insert (	7048	704  704 1 381 ));		/* tinterval */
 
 /*
  * hash support for a few built-in datatypes that are missing it in upstream.

@@ -423,15 +423,6 @@ DESCR("single-precision floating point number, 4-byte storage");
 DATA(insert OID = 701 (  float8    PGNSP PGUID	8 FLOAT8PASSBYVAL b N t t \054 0	 0 1022 float8in float8out float8recv float8send - - - d p f 0 -1 0 0 _null_ _null_ _null_ ));
 DESCR("double-precision floating point number, 8-byte storage");
 #define FLOAT8OID 701
-DATA(insert OID = 702 (  abstime   PGNSP PGUID	4 t b D f t \054 0	 0 1023 abstimein abstimeout abstimerecv abstimesend - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
-DESCR("absolute, limited-range date and time (Unix system time)");
-#define ABSTIMEOID		702
-DATA(insert OID = 703 (  reltime   PGNSP PGUID	4 t b T f t \054 0	 0 1024 reltimein reltimeout reltimerecv reltimesend - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
-DESCR("relative, limited-range time interval (Unix delta time)");
-#define RELTIMEOID		703
-DATA(insert OID = 704 (  tinterval PGNSP PGUID 12 f b T f t \054 0	 0 1025 tintervalin tintervalout tintervalrecv tintervalsend - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
-DESCR("(abstime,abstime), time interval");
-#define TINTERVALOID	704
 DATA(insert OID = 705 (  unknown   PGNSP PGUID -2 f b X f t \054 0	 0 0 unknownin unknownout unknownrecv unknownsend - - - c p f 0 -1 0 0 _null_ _null_ _null_ ));
 DESCR("");
 #define UNKNOWNOID		705
@@ -489,9 +480,6 @@ DATA(insert OID = 1021 (  _float4	 PGNSP PGUID -1 f b A f t \054 0 700 0 array_i
 #define FLOAT4ARRAYOID 1021
 DATA(insert OID = 1022 (  _float8	 PGNSP PGUID -1 f b A f t \054 0 701 0 array_in array_out array_recv array_send - - array_typanalyze d x f 0 -1 0 0 _null_ _null_ _null_ ));
 #define FLOAT8ARRAYOID 1022
-DATA(insert OID = 1023 (  _abstime	 PGNSP PGUID -1 f b A f t \054 0 702 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
-DATA(insert OID = 1024 (  _reltime	 PGNSP PGUID -1 f b A f t \054 0 703 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
-DATA(insert OID = 1025 (  _tinterval PGNSP PGUID -1 f b A f t \054 0 704 0 array_in array_out array_recv array_send - - array_typanalyze i x f 0 -1 0 0 _null_ _null_ _null_ ));
 DATA(insert OID = 1027 (  _polygon	 PGNSP PGUID -1 f b A f t \054 0 604 0 array_in array_out array_recv array_send - - array_typanalyze d x f 0 -1 0 0 _null_ _null_ _null_ ));
 DATA(insert OID = 1033 (  aclitem	 PGNSP PGUID 12 f b U f t \054 0 0 1034 aclitemin aclitemout - - - - - i p f 0 -1 0 0 _null_ _null_ _null_ ));
 DESCR("access control list");

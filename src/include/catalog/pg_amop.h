@@ -271,16 +271,6 @@ DATA(insert (	428   17 17 4 s 1960	403 0 ));
 DATA(insert (	428   17 17 5 s 1959	403 0 ));
 
 /*
- *	btree abstime_ops
- */
-
-DATA(insert (	421   702 702 1 s  562	403 0 ));
-DATA(insert (	421   702 702 2 s  564	403 0 ));
-DATA(insert (	421   702 702 3 s  560	403 0 ));
-DATA(insert (	421   702 702 4 s  565	403 0 ));
-DATA(insert (	421   702 702 5 s  563	403 0 ));
-
-/*
  *	btree datetime_ops
  */
 
@@ -467,26 +457,6 @@ DATA(insert (	2099   790 790 4 s	905 403 0 ));
 DATA(insert (	2099   790 790 5 s	903 403 0 ));
 
 /*
- *	btree reltime_ops
- */
-
-DATA(insert (	2233   703 703 1 s	568 403 0 ));
-DATA(insert (	2233   703 703 2 s	570 403 0 ));
-DATA(insert (	2233   703 703 3 s	566 403 0 ));
-DATA(insert (	2233   703 703 4 s	571 403 0 ));
-DATA(insert (	2233   703 703 5 s	569 403 0 ));
-
-/*
- *	btree tinterval_ops
- */
-
-DATA(insert (	2234   704 704 1 s	813 403 0 ));
-DATA(insert (	2234   704 704 2 s	815 403 0 ));
-DATA(insert (	2234   704 704 3 s	811 403 0 ));
-DATA(insert (	2234   704 704 4 s	816 403 0 ));
-DATA(insert (	2234   704 704 5 s	814 403 0 ));
-
-/*
  *	btree array_ops
  */
 
@@ -593,10 +563,6 @@ DATA(insert (	2224   22 22 1 s	386 405 0 ));
 DATA(insert (	2225   28 28 1 s	352 405 0 ));
 /* cid_ops */
 DATA(insert (	2226   29 29 1 s	385 405 0 ));
-/* abstime_ops */
-DATA(insert (	2227   702 702 1 s	560 405 0 ));
-/* reltime_ops */
-DATA(insert (	2228   703 703 1 s	566 405 0 ));
 /* text_pattern_ops */
 DATA(insert (	2229   25 25 1 s	98	405 0 ));
 /* bpchar_pattern_ops */
@@ -865,14 +831,6 @@ DATA(insert (	3550	869 869 27 s	934 783 0 ));
 /*
  * the operators for the on-disk bitmap index.
  */
-/*
- * on-disk bitmap index abstime
- */
-DATA(insert (	7014	702 702 1 s 562 7013 0 ));
-DATA(insert (	7014	702 702 2 s 564 7013 0 ));
-DATA(insert (	7014	702 702 3 s 560 7013 0 ));
-DATA(insert (	7014	702 702 4 s 565 7013 0 ));
-DATA(insert (	7014	702 702 5 s 563 7013 0 ));
 
 /*
  * on-disk bitmap index array
@@ -1251,24 +1209,6 @@ DATA(insert (	7046	790 790 2 s 904 7013 0 ));
 DATA(insert (	7046	790 790 3 s 900 7013 0 ));
 DATA(insert (	7046	790 790 4 s 905 7013 0 ));
 DATA(insert (	7046	790 790 5 s 903 7013 0 ));
-
-/*
- * reltime
- */
-DATA(insert (	7047	703 703 1 s 568 7013 0 ));
-DATA(insert (	7047	703 703 2 s 570 7013 0 ));
-DATA(insert (	7047	703 703 3 s 566 7013 0 ));
-DATA(insert (	7047	703 703 4 s 571 7013 0 ));
-DATA(insert (	7047	703 703 5 s 569 7013 0 ));
-
-/*
- * tinterval
- */
-DATA(insert (	7048	704 704 1 s 813 7013 0 ));
-DATA(insert (	7048	704 704 2 s 815 7013 0 ));
-DATA(insert (	7048	704 704 3 s 811 7013 0 ));
-DATA(insert (	7048	704 704 4 s 816 7013 0 ));
-DATA(insert (	7048	704 704 5 s 814 7013 0 ));
 
 /*
  * hash support for a few built-in datatypes that are missing it in upstream.

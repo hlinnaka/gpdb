@@ -94,7 +94,6 @@ typedef FormData_pg_opclass *Form_pg_opclass;
  * ----------------
  */
 
-DATA(insert (	403		abstime_ops			PGNSP PGUID  421  702 t 0 ));
 DATA(insert (	403		array_ops			PGNSP PGUID  397 2277 t 0 ));
 DATA(insert (	405		array_ops			PGNSP PGUID  627 2277 t 0 ));
 DATA(insert (	403		bit_ops				PGNSP PGUID  423 1560 t 0 ));
@@ -177,13 +176,9 @@ DATA(insert (	405		int2vector_ops		PGNSP PGUID 2224   22 t 0 ));
 DATA(insert (	403		tid_ops				PGNSP PGUID 2789   27 t 0 ));
 DATA(insert (	405		xid_ops				PGNSP PGUID 2225   28 t 0 ));
 DATA(insert (	405		cid_ops				PGNSP PGUID 2226   29 t 0 ));
-DATA(insert (	405		abstime_ops			PGNSP PGUID 2227  702 t 0 ));
-DATA(insert (	405		reltime_ops			PGNSP PGUID 2228  703 t 0 ));
 DATA(insert (	405		text_pattern_ops	PGNSP PGUID 2229   25 f 0 ));
 DATA(insert (	405		varchar_pattern_ops PGNSP PGUID 2229   25 f 0 ));
 DATA(insert (	405		bpchar_pattern_ops	PGNSP PGUID 2231 1042 f 0 ));
-DATA(insert (	403		reltime_ops			PGNSP PGUID 2233  703 t 0 ));
-DATA(insert (	403		tinterval_ops		PGNSP PGUID 2234  704 t 0 ));
 DATA(insert (	405		aclitem_ops			PGNSP PGUID 2235 1033 t 0 ));
 DATA(insert (	783		box_ops				PGNSP PGUID 2593  603 t 0 ));
 DATA(insert (	783		point_ops			PGNSP PGUID 1029  600 t 603 ));
@@ -191,7 +186,6 @@ DATA(insert (	783		poly_ops			PGNSP PGUID 2594  604 t 603 ));
 DATA(insert (	783		circle_ops			PGNSP PGUID 2595  718 t 603 ));
 DATA(insert (	2742	_int4_ops			PGNSP PGUID 2745  1007 t 23 ));
 DATA(insert (	2742	_text_ops			PGNSP PGUID 2745  1009 t 25 ));
-DATA(insert (	2742	_abstime_ops		PGNSP PGUID 2745  1023 t 702 ));
 DATA(insert (	2742	_bit_ops			PGNSP PGUID 2745  1561 t 1560 ));
 DATA(insert (	2742	_bool_ops			PGNSP PGUID 2745  1000 t 16 ));
 DATA(insert (	2742	_bpchar_ops			PGNSP PGUID 2745  1014 t 1042 ));
@@ -218,8 +212,6 @@ DATA(insert (	2742	_varbit_ops			PGNSP PGUID 2745  1563 t 1562 ));
 DATA(insert (	2742	_varchar_ops		PGNSP PGUID 2745  1015 t 1043 ));
 DATA(insert (	2742	_timestamp_ops		PGNSP PGUID 2745  1115 t 1114 ));
 DATA(insert (	2742	_money_ops			PGNSP PGUID 2745  791 t 790 ));
-DATA(insert (	2742	_reltime_ops		PGNSP PGUID 2745  1024 t 703 ));
-DATA(insert (	2742	_tinterval_ops		PGNSP PGUID 2745  1025 t 704 ));
 DATA(insert (	403		uuid_ops			PGNSP PGUID 2968  2950 t 0 ));
 DATA(insert (	405		uuid_ops			PGNSP PGUID 2969  2950 t 0 ));
 DATA(insert (	403		pg_lsn_ops			PGNSP PGUID 3253  3220 t 0 ));
@@ -246,7 +238,6 @@ DATA(insert (	2742	jsonb_path_ops		PGNSP PGUID 4037  3802 f 23 ));
 /*
  * the operators for the on-disk bitmap index.
  */
-DATA(insert (	7013	abstime_ops			PGNSP PGUID 7014 702 t 0 ));
 DATA(insert (	7013	array_ops			PGNSP PGUID 7015 2277 t 0 ));
 DATA(insert (	7013	bit_ops				PGNSP PGUID 7016 1560 t 0 ));
 DATA(insert (	7013	bool_ops			PGNSP PGUID 7017 16 t 0 ));
@@ -278,8 +269,6 @@ DATA(insert (	7013	text_pattern_ops	PGNSP PGUID 7042  25 f 0 ));
 DATA(insert (	7013	varchar_pattern_ops PGNSP PGUID 7042  25 f 0 ));
 DATA(insert (	7013	bpchar_pattern_ops	PGNSP PGUID 7044 1042 f 0 ));
 DATA(insert (	7013	money_ops			PGNSP PGUID 7046 790 t 0 ));
-DATA(insert (	7013	reltime_ops			PGNSP PGUID 7047 703 t 0 ));
-DATA(insert (	7013	tinterval_ops		PGNSP PGUID 7048 704 t 0 ));
 
 /*
  * hash support for a few built-in datatypes that are missing it in upstream.

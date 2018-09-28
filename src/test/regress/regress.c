@@ -530,7 +530,7 @@ ttdummy(PG_FUNCTION_ARGS)
 		if (attnum[i] < 0)
 			elog(ERROR, "ttdummy (%s): there is no attribute %s", relname, args[i]);
 		if (SPI_gettypeid(tupdesc, attnum[i]) != INT4OID)
-			elog(ERROR, "ttdummy (%s): attributes %s and %s must be of abstime type",
+			elog(ERROR, "ttdummy (%s): attributes %s and %s must be of integer type",
 				 relname, args[0], args[1]);
 	}
 

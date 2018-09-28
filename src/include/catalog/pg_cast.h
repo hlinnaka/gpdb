@@ -250,32 +250,19 @@ DATA(insert (  194	 25    0 i b ));
 /*
  * Datetime category
  */
-DATA(insert (  702 1082 1179 a f ));
-DATA(insert (  702 1083 1364 a f ));
-DATA(insert (  702 1114 2023 i f ));
-DATA(insert (  702 1184 1173 i f ));
-DATA(insert (  703 1186 1177 i f ));
 DATA(insert ( 1082 1114 2024 i f ));
 DATA(insert ( 1082 1184 1174 i f ));
 DATA(insert ( 1083 1186 1370 i f ));
 DATA(insert ( 1083 1266 2047 i f ));
-DATA(insert ( 1114	702 2030 a f ));
 DATA(insert ( 1114 1082 2029 a f ));
 DATA(insert ( 1114 1083 1316 a f ));
 DATA(insert ( 1114 1184 2028 i f ));
-DATA(insert ( 1184	702 1180 a f ));
 DATA(insert ( 1184 1082 1178 a f ));
 DATA(insert ( 1184 1083 2019 a f ));
 DATA(insert ( 1184 1114 2027 a f ));
 DATA(insert ( 1184 1266 1388 a f ));
-DATA(insert ( 1186	703 1194 a f ));
 DATA(insert ( 1186 1083 1419 a f ));
 DATA(insert ( 1266 1083 2046 a f ));
-/* Cross-category casts between int4 and abstime, reltime */
-DATA(insert (	23	702    0 e b ));
-DATA(insert (  702	 23    0 e b ));
-DATA(insert (	23	703    0 e b ));
-DATA(insert (  703	 23    0 e b ));
 
 /*
  * Geometric category

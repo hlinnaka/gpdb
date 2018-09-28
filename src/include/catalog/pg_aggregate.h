@@ -178,7 +178,6 @@ DATA(insert ( 2117	n 0 int2larger		-				int2larger			-	-	-				-				-				f f 520	
 DATA(insert ( 2118	n 0 oidlarger		-				oidlarger			-	-	-				-				-				f f 610		26		0	0		0	_null_ _null_ ));
 DATA(insert ( 2119	n 0 float4larger	-				float4larger		-	-	-				-				-				f f 623		700		0	0		0	_null_ _null_ ));
 DATA(insert ( 2120	n 0 float8larger	-				float8larger		-	-	-				-				-				f f 674		701		0	0		0	_null_ _null_ ));
-DATA(insert ( 2121	n 0 int4larger		-				int4larger			-	-	-				-				-				f f 563		702		0	0		0	_null_ _null_ ));
 DATA(insert ( 2122	n 0 date_larger		-				date_larger			-	-	-				-				-				f f 1097	1082	0	0		0	_null_ _null_ ));
 DATA(insert ( 2123	n 0 time_larger		-				time_larger			-	-	-				-				-				f f 1112	1083	0	0		0	_null_ _null_ ));
 DATA(insert ( 2124	n 0 timetz_larger	-				timetz_larger		-	-	-				-				-				f f 1554	1266	0	0		0	_null_ _null_ ));
@@ -200,7 +199,6 @@ DATA(insert ( 2133	n 0 int2smaller		-				int2smaller			-	-	-				-				-				f f 95
 DATA(insert ( 2134	n 0 oidsmaller		-				oidsmaller			-	-	-				-				-				f f 609		26		0	0		0	_null_ _null_ ));
 DATA(insert ( 2135	n 0 float4smaller	-				float4smaller		-	-	-				-				-				f f 622		700		0	0		0	_null_ _null_ ));
 DATA(insert ( 2136	n 0 float8smaller	-				float8smaller		-	-	-				-				-				f f 672		701		0	0		0	_null_ _null_ ));
-DATA(insert ( 2137	n 0 int4smaller		-				int4smaller			-	-	-				-				-				f f 562		702		0	0		0	_null_ _null_ ));
 DATA(insert ( 2138	n 0 date_smaller	-				date_smaller		-	-	-				-				-				f f 1095	1082	0	0		0	_null_ _null_ ));
 DATA(insert ( 2139	n 0 time_smaller	-				time_smaller		-	-	-				-				-				f f 1110	1083	0	0		0	_null_ _null_ ));
 DATA(insert ( 2140	n 0 timetz_smaller	-				timetz_smaller		-	-	-				-				-				f f 1552	1266	0	0		0	_null_ _null_ ));
