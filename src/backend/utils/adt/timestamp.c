@@ -2021,6 +2021,26 @@ IntegerTimestampToTimestampTz(int64 timestamp)
 #endif
 
 /*
+ * timeofday(*) -- returns the current time as a text.
+ */
+Datum
+timeofday(PG_FUNCTION_ARGS)
+{
+	struct timeval tp;
+	char		templ[128];
+	char		buf[128];
+	pg_time_t	tt;
+
+	gettimeofday(&tp, NULL);
+	tt = (pg_time_t) tp.tv_sec;
+	pg_strftime(templ, sizeof(templ), "%a %b %d %H:%M:%S.%%06d %Y %Z",
+				pg_localtime(&tt, session_timezone));
+	snprintf(buf, sizeof(buf), templ, tp.tv_usec);
+
+	PG_RETURN_TEXT_P(cstring_to_text(buf));
+}
+
+/*
  * TimestampDifference -- convert the difference between two timestamps
  *		into integer seconds and microseconds
  *
