@@ -1206,3 +1206,45 @@ bmoptions(PG_FUNCTION_ARGS)
 		PG_RETURN_BYTEA_P(result);
 	PG_RETURN_NULL();
 }
+
+
+#include "cdb/cdbvars.h"
+FILE *dump_file = NULL;
+void
+_dump_page(char *file, XLogRecPtr recptr, RelFileNode *relfilenode, Buffer buf)
+{
+	int			i;
+	unsigned char *p;
+
+	if (!dump_file)
+	{
+		dump_file = fopen(psprintf("/tmp/bmdump_%d_%s", GpIdentity.segindex, file), "a");
+		if (!dump_file)
+		{
+			elog(WARNING, "could not open dump file %s", file);
+			return;
+		}
+	}
+
+	fprintf(dump_file, "LSN %X/%08X relfilenode %u/%u/%u blk %u",
+			(uint32) (recptr >> 32), (uint32) recptr,
+			relfilenode->spcNode,
+			relfilenode->dbNode,
+			relfilenode->relNode,
+			BufferGetBlockNumber(buf));
+
+	p = (unsigned char *) BufferGetPage(buf);
+	for (i = 0; i < BLCKSZ; i++)
+	{
+		if (i % 32 == 0)
+			fprintf(dump_file, "\nLSN %X/%08X %02x: ",
+					(uint32) (recptr >> 32), (uint32) recptr,
+					i);
+		if (i % 4 == 0)
+			fprintf(dump_file, " ");
+		fprintf(dump_file, "%02x", p[i]);
+	}
+	fprintf(dump_file, "\n");
+
+	fflush(dump_file);
+}

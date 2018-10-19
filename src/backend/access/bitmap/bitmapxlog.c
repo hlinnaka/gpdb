@@ -376,6 +376,18 @@ _bitmap_xlog_insert_bitmapwords(XLogRecPtr lsn, XLogRecord *record)
 		}
 	}
 
+	/*
+	 * WAL consistency checking
+	 */
+#if 0
+	_dump_page("redo", lsn, &xlrec->bm_node, lovBuffer);
+	for (bmpageno = 0; bmpageno < xlrec->bm_num_pages; bmpageno++)
+	{
+		if (BufferIsValid(bitmapBuffers[bmpageno]))
+			_dump_page("redo", lsn, &xlrec->bm_node, bitmapBuffers[bmpageno]);
+	}
+#endif
+
 	/* Release buffers */
 	UnlockReleaseBuffer(lovBuffer);
 	for (bmpageno = 0; bmpageno < xlrec->bm_num_pages; bmpageno++)

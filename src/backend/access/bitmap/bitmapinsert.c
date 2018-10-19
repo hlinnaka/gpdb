@@ -1425,6 +1425,19 @@ _bitmap_write_new_bitmapwords(Relation rel,
 			 BufferGetBlockNumber(lovBuffer), lovOffset,
 			 lovItem->bm_last_setbit, lovItem->bm_last_tid_location);
 
+
+	/*
+	 * WAL consistency checking
+	 */
+#if 0
+	_dump_page("insert", XactLastRecEnd, &rel->rd_node, lovBuffer);
+	foreach(lcb, perpage_buffers)
+	{
+		_dump_page("insert", XactLastRecEnd, &rel->rd_node, (Buffer) lfirst_int(lcb));
+		Assert(PageSizeIsValid(PageGetPageSize((BufferGetPage((Buffer) lfirst_int(lcb))))));
+	}
+#endif
+
 	/* release all bitmap buffers. */
 	foreach(lcb, perpage_buffers)
 	{
