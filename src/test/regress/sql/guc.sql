@@ -236,13 +236,6 @@ set regex_flavor = basic;
 
 select myfunc(0), current_setting('regex_flavor');
 
--- In GPDB, the plan looks somewhat different from what you get on
--- PostgreSQL, so that the current_setting() in previous query is
--- evaluated before myfunc(0), and therefore it shows 'advanced'.
--- Query again to show that the myfunc(0) call actually changed
--- the setting.
-select current_setting('regex_flavor');
-
 set regex_flavor = advanced;
 
 -- it should roll back on error, though

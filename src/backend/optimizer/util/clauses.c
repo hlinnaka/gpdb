@@ -58,6 +58,7 @@ typedef struct
 	List	   *active_fns;
 	Node	   *case_val;
 	bool		estimate;
+	bool		eval_stable_functions;
 	bool		recurse_queries; /* recurse into query structures */
 	bool		recurse_sublink_testexpr; /* recurse into sublink test expressions */
 	Size        max_size; /* max constant binary size in bytes, 0: no restrictions */
@@ -1936,6 +1937,22 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	context.recurse_sublink_testexpr = true;
 	context.max_size = 0;
 
+	/*
+	 * If this expression is part of a query, and the query isn't a simple
+	 * "SELECT foo()" style query with no actual tables involved, then we
+	 * also aggressively evaluate stable functions, in addition to immutable
+	 * ones. Such plans cannot be reused, and therefore need to be re-planned
+	 * on every execution, but it can be a big win if it allows partition
+	 * elimination to happen. That's considered a good tradeoff in GPDB, as
+	 * typical queries are long-running.
+	 *
+	 * We also need 'root->glob' if we do that, so that we can mark the plan
+	 * as one-off, in root->glob->oneoffPlan.
+	 */
+	if (root && root->parse->rtable && root->glob)
+		context.eval_stable_functions = true;
+	else
+		context.eval_stable_functions = false;
 	return eval_const_expressions_mutator(node, &context);
 }
 
@@ -3447,9 +3464,9 @@ evaluate_function(Oid funcid, Oid result_type, int32 result_typmod, List *args,
 		 /* okay */ ;
 	else if (context->estimate && funcform->provolatile == PROVOLATILE_STABLE)
 		 /* okay */ ;
-	else if (context->glob && funcform->provolatile == PROVOLATILE_STABLE)
+	else if (context->eval_stable_functions && funcform->provolatile == PROVOLATILE_STABLE)
 	{
-		 /* okay, but we cannot reuse this plan */
+		/* okay, but we cannot reuse this plan */
 		context->glob->oneoffPlan = true;
 	}
 	else
