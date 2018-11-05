@@ -65,14 +65,15 @@ typedef enum CdbLocusType
  *
  * If the distribution is a hashed one (locustype == CdbLocusType_Hashed
  *      or CdbLocusType_HashedOJ), then the tuples are distributed based on
- *      values of a partitioning key.
+ *      values of a partitioning key. The partitioning key is often called
+ *		a "distribution key", to avoid confusion with table partitioning.
  *
  *      A tuple's partitioning key is an m-tuple of values (v1, v2, ..., vm)
  *      computed by evaluating an m-tuple of expressions (e1, e2, ..., em)
  *      on the columns of the tuple.  Each expression 'ei' is drawn from
  *      the corresponding set of expressions Ei = {expr, expr, ... }
  *      in the i'th position of the m-List (E1, E2, ..., Em) that hangs
- *      from the 'partkey' field.  (The data structure used to represent
+ *      from the 'distkey' field.  (The data structure used to represent
  *      these sets depends upon the locustype, as described below.)
  *      The CdbPathLocus_Degree() macro returns 'm'.
  *
@@ -91,26 +92,26 @@ typedef enum CdbLocusType
  *
  * If locustype == CdbLocusType_Hashed:
  *      Rows are distributed on a hash function of the partitioning key.
- *      The 'partkey' field points to a pathkey list (see pathkeys.c).
- *      Each of the sets 'Ei' is represented as a PathKey, and in particular
- *      its equivalence class, which is a List of expressions that are
- *      constrained by equality predicates to be equal to one another.
+ *      The 'distkey' field points to a DistributionKey list.
+ *      Each of the sets 'Ei' is represented as a DistributionKey, and in
+ *      particular its equivalence class, which is a List of expressions that
+ *      are constrained by equality predicates to be equal to one another.
  *
  * If locustype == CdbLocusType_HashedOJ:
  *      Rows are distributed on a hash function of the partitioning key,
  *      the same as CdbLocusType_Hashed.  Each of the sets 'Ei' in the
- *      'partkey' list is represented as a List of PathKeys, where again,
- *      each pathkey represents an equivalence class. All the equivalence
- *      classes can be considered as equal for the purposes of the locus in
- *      a join relation. This case arises in the result of outer join.
+ *      'distkey' list is represented as a List of DistributionKeys, where
+ *      again each DistributionKey represents an equivalence class. All the
+ *      equivalence classes can be considered as equal for the purposes of the
+ *		locus in a join relation. This case arises in the result of outer join.
  *
  * If locustype == CdbLocusType_Strewn:
  *      Rows are distributed according to a criterion that is unknown or
  *      may depend on inputs that are unknown or unavailable in the present
- *      context.  The 'partkey' field is NIL and the CdbPathLocus_Degree()
+ *      context.  The 'distkey' field is NIL and the CdbPathLocus_Degree()
  *      macro returns 0.
  *
- * If the distribution is not partitioned, then the 'partkey' field is NIL
+ * If the distribution is not partitioned, then the 'distkey' field is NIL
  *      and the CdbPathLocus_Degree() macro returns 0.
  *
  * The attribute numsegments specify how many segments are the tuples
@@ -134,15 +135,15 @@ typedef enum CdbLocusType
  */
 typedef struct CdbPathLocus
 {
-    CdbLocusType    locustype;
-    List           *partkey_h;
-    List           *partkey_oj;
-    int             numsegments;
+	CdbLocusType locustype;
+	List	   *distkey_h;
+	List	   *distkey_oj;
+	int			numsegments;
 } CdbPathLocus;
 
 #define CdbPathLocus_Degree(locus)          \
-	(CdbPathLocus_IsHashed(locus) ? list_length((locus).partkey_h) :	\
-	 (CdbPathLocus_IsHashedOJ(locus) ? list_length((locus).partkey_oj) : 0))
+	(CdbPathLocus_IsHashed(locus) ? list_length((locus).distkey_h) :	\
+	 (CdbPathLocus_IsHashedOJ(locus) ? list_length((locus).distkey_oj) : 0))
 
 #define CdbPathLocus_NumSegments(locus)         \
             ((locus).numsegments)
@@ -151,13 +152,13 @@ typedef struct CdbPathLocus
  * CdbPathLocus_IsEqual
  *
  * Returns true if one CdbPathLocus is exactly the same as the other.
- * To test for logical equivalence, use cdbpathlocus_compare() instead.
+ * To test for logical equivalence, use cdbpathlocus_equal() instead.
  */
 #define CdbPathLocus_IsEqual(a, b)              \
             ((a).locustype == (b).locustype &&  \
              (a).numsegments == (b).numsegments && \
-             (a).partkey_h == (b).partkey_oj &&		  \
-             (a).partkey_oj == (b).partkey_oj)        \
+             (a).distkey_h == (b).distkey_oj &&		  \
+             (a).distkey_oj == (b).distkey_oj)        \
 
 #define CdbPathLocus_CommonSegments(a, b) \
             Min((a).numsegments, (b).numsegments)
@@ -208,8 +209,8 @@ typedef struct CdbPathLocus
         CdbPathLocus *_locus = (plocus);                \
         _locus->locustype = (_locustype);               \
         _locus->numsegments = (numsegments_);                        \
-        _locus->partkey_h = NIL;                        \
-        _locus->partkey_oj = NIL;                       \
+        _locus->distkey_h = NIL;                        \
+        _locus->distkey_oj = NIL;                       \
     } while (0)
 
 #define CdbPathLocus_MakeNull(plocus, numsegments_)                   \
@@ -224,22 +225,22 @@ typedef struct CdbPathLocus
             CdbPathLocus_MakeSimple((plocus), CdbLocusType_SegmentGeneral, (numsegments_))
 #define CdbPathLocus_MakeReplicated(plocus, numsegments_)             \
             CdbPathLocus_MakeSimple((plocus), CdbLocusType_Replicated, (numsegments_))
-#define CdbPathLocus_MakeHashed(plocus, partkey_, numsegments_)       \
+#define CdbPathLocus_MakeHashed(plocus, distkey_, numsegments_)       \
     do {                                                \
         CdbPathLocus *_locus = (plocus);                \
         _locus->locustype = CdbLocusType_Hashed;		\
         _locus->numsegments = (numsegments_);           \
-        _locus->partkey_h = (partkey_);					\
-        _locus->partkey_oj = NIL;                       \
+        _locus->distkey_h = (distkey_);					\
+        _locus->distkey_oj = NIL;                       \
         Assert(cdbpathlocus_is_valid(*_locus));         \
     } while (0)
-#define CdbPathLocus_MakeHashedOJ(plocus, partkey_, numsegments_)     \
+#define CdbPathLocus_MakeHashedOJ(plocus, distkey_, numsegments_)     \
     do {                                                \
         CdbPathLocus *_locus = (plocus);                \
         _locus->locustype = CdbLocusType_HashedOJ;		\
         _locus->numsegments = (numsegments_);           \
-        _locus->partkey_h = NIL;                        \
-        _locus->partkey_oj = (partkey_);				\
+        _locus->distkey_h = NIL;                        \
+        _locus->distkey_oj = (distkey_);				\
         Assert(cdbpathlocus_is_valid(*_locus));         \
     } while (0)
 #define CdbPathLocus_MakeStrewn(plocus, numsegments_)                 \
@@ -269,15 +270,15 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b);
 /************************************************************************/
 
 /*
- * cdbpathlocus_get_partkey_exprs
+ * cdbpathlocus_get_distkey_exprs
  *
- * Returns a List with one Expr for each partkey column.  Each item either is
+ * Returns a List with one Expr for each distkey column.  Each item either is
  * in the given targetlist, or has no Var nodes that are not in the targetlist;
  * and uses only rels in the given set of relids.  Returns NIL if the
- * partkey cannot be expressed in terms of the given relids and targetlist.
+ * distkey cannot be expressed in terms of the given relids and targetlist.
  */
 List *
-cdbpathlocus_get_partkey_exprs(CdbPathLocus     locus,
+cdbpathlocus_get_distkey_exprs(CdbPathLocus     locus,
                                Bitmapset       *relids,
                                List            *targetlist);
 
@@ -315,11 +316,13 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo  *root,
  * This function tests whether grouping on a given set of exprs can be done
  * in place without motion.
  *
- * For a hashed locus, returns false if the partkey has a column whose
+ * For a hashed locus, returns false if the distkey has a column whose
  * equivalence class contains no expr belonging to the given list.
+ *
+ * If 'ignore_constants' is true, any constants in the locus are ignored.
  */
 bool
-cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist);
+cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist, bool ignore_constants);
 
 /*
  * cdbpathlocus_is_hashed_on_eclasses
@@ -327,7 +330,7 @@ cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist);
  * This function tests whether grouping on a given set of exprs can be done
  * in place without motion.
  *
- * For a hashed locus, returns false if the partkey has any column whose
+ * For a hashed locus, returns false if the distkey has any column whose
  * equivalence class is not in 'eclasses' list.
  *
  * If 'ignore_constants' is true, any constants in the locus are ignored.
@@ -347,7 +350,7 @@ cdbpathlocus_is_hashed_on_eclasses(CdbPathLocus locus, List *eclasses, bool igno
  * needed to bring them together.  This function tests whether the join
  * result (whose locus is given) can be deduped in place without motion.
  *
- * For a hashed locus, returns false if the partkey has a column whose
+ * For a hashed locus, returns false if the distkey has a column whose
  * equivalence class contains no Var node belonging to the given set of
  * relids.  Caller should specify the relids of the non-subquery tables.
  */
@@ -361,5 +364,8 @@ cdbpathlocus_is_hashed_on_relids(CdbPathLocus locus, Bitmapset *relids);
  */
 bool
 cdbpathlocus_is_valid(CdbPathLocus locus);
+
+List *
+cdbpathlocus_get_distkeys_for_pathkeys(List *pathkeys);
 
 #endif   /* CDBPATHLOCUS_H */

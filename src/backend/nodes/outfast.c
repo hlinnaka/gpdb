@@ -1688,6 +1688,9 @@ _outNode(StringInfo str, void *obj)
 			case T_PathKey:
 				_outPathKey(str, obj);
 				break;
+			case T_DistributionKey:
+				_outDistributionKey(str, obj);
+				break;
 			case T_ParamPathInfo:
 				_outParamPathInfo(str, obj);
 				break;

@@ -1594,7 +1594,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	bool		tested_hashed_distinct = false;
 	double		numDistinct = 1;
 	List	   *distinctExprs = NIL;
-	List	   *distinct_dist_keys = NIL;
+	List	   *distinct_dist_pathkeys = NIL;
 	List	   *distinct_dist_exprs = NIL;
 	bool		must_gather;
 
@@ -2483,15 +2483,15 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					need_gather_for_partitioning = false;
 				else
 				{
-					List	   *partition_dist_keys;
+					List	   *partition_dist_pathkeys;
 					List	   *partition_dist_exprs;
 
-					make_distribution_keys_for_groupclause(root,
-														   wc->partitionClause,
-														   tlist,
-														   &partition_dist_keys,
-														   &partition_dist_exprs);
-					if (!partition_dist_keys)
+					make_distribution_exprs_for_groupclause(root,
+															wc->partitionClause,
+															tlist,
+															&partition_dist_pathkeys,
+															&partition_dist_exprs);
+					if (!partition_dist_exprs)
 					{
 						/*
 						 * There is no PARTITION BY, or none of the PARTITION BY
@@ -2500,7 +2500,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						 */
 						need_gather_for_partitioning = true;
 					}
-					else if (cdbpathlocus_collocates(root, current_locus, partition_dist_keys, false))
+					else if (cdbpathlocus_collocates_pathkeys(root, current_locus, partition_dist_pathkeys, false))
 					{
 						need_gather_for_partitioning = false;
 					}
@@ -2516,8 +2516,9 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						 * Change current_locus based on the new distribution
 						 * pathkeys.
 						 */
-						CdbPathLocus_MakeHashed(&current_locus, partition_dist_keys,
-												CdbPathLocus_NumSegments(current_locus));
+						current_locus = cdbpathlocus_from_exprs(root,
+																partition_dist_exprs,
+																CdbPathLocus_NumSegments(current_locus));
 						need_gather_for_partitioning = false;
 					}
 				}
@@ -2749,11 +2750,11 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * the cost of an extra Redistribute-Sort-Unique on the pre-uniqued
 		 * (reduced) input.
 		 */
-		make_distribution_keys_for_groupclause(root,
-											   parse->distinctClause,
-											   result_plan->targetlist,
-											   &distinct_dist_keys,
-											   &distinct_dist_exprs);
+		make_distribution_exprs_for_groupclause(root,
+												parse->distinctClause,
+												result_plan->targetlist,
+												&distinct_dist_pathkeys,
+												&distinct_dist_exprs);
 
 		distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
 												result_plan->targetlist);
@@ -2764,8 +2765,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			bool		needMotion;
 
-			needMotion = !cdbpathlocus_collocates(root, current_locus,
-												  distinct_dist_keys, false /* exact_match */ );
+			needMotion = !cdbpathlocus_collocates_expressions(root, current_locus,
+														   distinct_dist_exprs, false /* exact_match */ );
 
 			/* Apply the preunique optimization, if enabled and worthwhile. */
 			/* GPDB_84_MERGE_FIXME: pre-unique for hash distinct not implemented. */
