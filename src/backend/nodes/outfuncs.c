@@ -1941,9 +1941,9 @@ _outFlow(StringInfo str, const Flow *node)
 static void
 _outCdbPathLocus(StringInfo str, const CdbPathLocus *node)
 {
-    WRITE_ENUM_FIELD(locustype, CdbLocusType);
-    WRITE_NODE_FIELD(partkey_h);
-    WRITE_NODE_FIELD(partkey_oj);
+	WRITE_ENUM_FIELD(locustype, CdbLocusType);
+	WRITE_NODE_FIELD(distkey_h);
+	WRITE_NODE_FIELD(distkey_oj);
 }                               /* _outCdbPathLocus */
 
 
@@ -2387,6 +2387,14 @@ _outPathKey(StringInfo str, const PathKey *node)
 	WRITE_OID_FIELD(pk_opfamily);
 	WRITE_INT_FIELD(pk_strategy);
 	WRITE_BOOL_FIELD(pk_nulls_first);
+}
+
+static void
+_outDistributionKey(StringInfo str, const DistributionKey *node)
+{
+	WRITE_NODE_TYPE("DISTRIBUTIONKEY");
+
+	WRITE_NODE_FIELD(dk_eclass);
 }
 
 static void
@@ -5052,6 +5060,9 @@ _outNode(StringInfo str, const void *obj)
 				break;
 			case T_PathKey:
 				_outPathKey(str, obj);
+				break;
+			case T_DistributionKey:
+				_outDistributionKey(str, obj);
 				break;
 			case T_ParamPathInfo:
 				_outParamPathInfo(str, obj);

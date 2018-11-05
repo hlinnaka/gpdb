@@ -789,6 +789,15 @@ _equalPathKey(const PathKey *a, const PathKey *b)
 }
 
 static bool
+_equalDistributionKey(const DistributionKey *a, const DistributionKey *b)
+{
+	/* We assume pointer equality is sufficient to compare the eclasses */
+	COMPARE_SCALAR_FIELD(dk_eclass);
+
+	return true;
+}
+
+static bool
 _equalRestrictInfo(const RestrictInfo *a, const RestrictInfo *b)
 {
 	COMPARE_NODE_FIELD(clause);
@@ -3000,6 +3009,9 @@ equal(const void *a, const void *b)
 			 */
 		case T_PathKey:
 			retval = _equalPathKey(a, b);
+			break;
+		case T_DistributionKey:
+			retval = _equalDistributionKey(a, b);
 			break;
 		case T_RestrictInfo:
 			retval = _equalRestrictInfo(a, b);

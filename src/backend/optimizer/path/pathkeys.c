@@ -1191,9 +1191,9 @@ build_join_pathkeys(PlannerInfo *root,
  ****************************************************************************/
 
 /*
- * cdb_make_pathkey_for_expr
- *	  Returns a canonicalized PathKey which represents an equivalence
- *	  class of expressions that must be equal to the given expression.
+ * cdb_make_distkey_for_expr
+ *	  Returns a DistributionKey which represents an equivalence class of
+ *	  expressions that must be equal to the given expression.
  *
  *	  The caller specifies the name of the equality operator thus:
  *			list_make1(makeString("="))
@@ -1209,19 +1209,16 @@ build_join_pathkeys(PlannerInfo *root,
  *	  excess of optimism, that our hashed partitioning function
  *	  implements the same notion of equality as these operators.)
  */
-PathKey *
-cdb_make_pathkey_for_expr(PlannerInfo *root,
+DistributionKey *
+cdb_make_distkey_for_expr(PlannerInfo *root,
 						  Node *expr,
 						  List *eqopname)
 {
-	Oid			opfamily = InvalidOid;
-	Oid			typeoid = InvalidOid;
-	Oid			eqopoid = InvalidOid;
-	PathKey    *pk = NULL;
+	Oid			typeoid;
+	Oid			eqopoid;
+	DistributionKey *dk;
 	List	   *mergeopfamilies;
 	EquivalenceClass *eclass;
-	int			strategy = 0;
-	ListCell   *lc;
 	Oid			lefttype;
 	Oid			righttype;
 
@@ -1239,15 +1236,6 @@ cdb_make_pathkey_for_expr(PlannerInfo *root,
 		elog(ERROR, "could not find mergejoinable = operator for type %u", typeoid);
 
 	mergeopfamilies = get_mergejoin_opfamilies(eqopoid);
-	foreach(lc, mergeopfamilies)
-	{
-		opfamily = lfirst_oid(lc);
-		strategy = get_op_opfamily_strategy(eqopoid, opfamily);
-		if (strategy)
-			break;
-	}
-	if (!lc)
-		elog(ERROR, "could not find operator family for equality operator %u", eqopoid);
 
 	/*
 	 * Get the equality operator's operand type. It might be different from the
@@ -1270,9 +1258,11 @@ cdb_make_pathkey_for_expr(PlannerInfo *root,
 									  0,
 									  NULL,
 									  true);
-	pk = make_canonical_pathkey(root, eclass, opfamily, strategy, false);
 
-	return pk;
+	dk = makeNode(DistributionKey);
+	dk->dk_eclass = eclass;
+
+	return dk;
 }
 
 /*
@@ -1309,39 +1299,40 @@ cdb_make_pathkey_for_expr(PlannerInfo *root,
  * NB: We ignore the presence or absence of a RelabelType node atop either
  * expr in determining whether a PathKey expr matches a targetlist expr.
  */
-PathKey *
-cdb_pull_up_pathkey(PlannerInfo *root,
-					PathKey *pathkey,
-					Relids relids,
-					List *targetlist,
-					List *newvarlist,
-					Index newrelid)
+DistributionKey *
+cdb_pull_up_distribution_key(PlannerInfo *root,
+							 DistributionKey *distkey,
+							 Relids relids,
+							 List *targetlist,
+							 List *newvarlist,
+							 Index newrelid)
 {
-	Expr	   *sub_pathkeyexpr;
+	Expr	   *sub_distkeyexpr;
 	EquivalenceClass *outer_ec;
 	Expr	   *newexpr = NULL;
+	DistributionKey *newdistkey;
 
-	Assert(pathkey);
+	Assert(distkey);
 	Assert(!newvarlist ||
 		   list_length(newvarlist) == list_length(targetlist));
 
 	/* Find an expr that we can rewrite to use the projected columns. */
-	sub_pathkeyexpr = cdbpullup_findPathKeyExprInTargetList(pathkey, targetlist);
+	sub_distkeyexpr = cdbpullup_findEclassInTargetList(distkey->dk_eclass, targetlist);
 
 	/* Replace expr's Var nodes with new ones referencing the targetlist. */
-	if (sub_pathkeyexpr)
+	if (sub_distkeyexpr)
 	{
-		newexpr = cdbpullup_expr(sub_pathkeyexpr,
+		newexpr = cdbpullup_expr(sub_distkeyexpr,
 								 targetlist,
 								 newvarlist,
 								 newrelid);
 	}
 	/* If not found, see if the equiv class contains a constant expr. */
-	else if (CdbPathkeyEqualsConstant(pathkey))
+	else if (CdbDistributionKeyEqualsConstant(distkey))
 	{
 		ListCell   *lc;
 
-		foreach(lc, pathkey->pk_eclass->ec_members)
+		foreach(lc, distkey->dk_eclass->ec_members)
 		{
 			EquivalenceMember *em = lfirst(lc);
 
@@ -1362,19 +1353,17 @@ cdb_pull_up_pathkey(PlannerInfo *root,
 	outer_ec = get_eclass_for_sort_expr(root,
 										newexpr,
 										NULL, /* nullable_relids */ /* GPDB_94_MERGE_FIXME: is NULL ok here? */
-										pathkey->pk_eclass->ec_opfamilies,
+										distkey->dk_eclass->ec_opfamilies,
 										exprType((Node *) newexpr),
 										exprCollation((Node *) newexpr),
 										0,
 										relids,
 										true);
 
-	/* Find or create the equivalence class for the transformed expr. */
-	return make_canonical_pathkey(root,
-								  outer_ec,
-								  pathkey->pk_opfamily,
-								  pathkey->pk_strategy,
-								  pathkey->pk_nulls_first);
+	/* Create the DistributionKey for the transformed expr. */
+	newdistkey = makeNode(DistributionKey);
+	newdistkey->dk_eclass = outer_ec;
+	return newdistkey;
 }
 
 
@@ -1442,14 +1431,14 @@ make_pathkeys_for_sortclauses(PlannerInfo *root,
  * grouping clause. Only expressions that are GPDB-hashable are included,
  * so the resulting lists can be shorter than 'groupclause', or even empty.
  *
- * The result is stored in *partition_dist_keys and *partition_dist_exprs.
- * *partition_dist_keys is set to a list of PathKeys, and
+ * The result is stored in *partition_dist_pathkeys and *partition_dist_exprs.
+ * *partition_dist_pathkeys is set to a list of PathKeys, and
  * *partition_dist_exprs to a corresponding list of plain expressions.
  */
 void
-make_distribution_keys_for_groupclause(PlannerInfo *root, List *groupclause, List *tlist,
-									   List **partition_dist_keys,
-									   List **partition_dist_exprs)
+make_distribution_exprs_for_groupclause(PlannerInfo *root, List *groupclause, List *tlist,
+										List **partition_dist_pathkeys,
+										List **partition_dist_exprs)
 {
 	List	   *pathkeys = NIL;
 	List	   *exprs = NIL;
@@ -1459,14 +1448,13 @@ make_distribution_keys_for_groupclause(PlannerInfo *root, List *groupclause, Lis
 	{
 		SortGroupClause *sortcl = (SortGroupClause *) lfirst(l);
 		Expr	   *expr;
-		PathKey    *pathkey;
+		PathKey	   *pathkey;
 
 		expr = (Expr *) get_sortgroupclause_expr(sortcl, tlist);
 
 		if (!isGreenplumDbHashable(exprType((Node *) expr)))
 			continue;
 
-		Assert(OidIsValid(sortcl->sortop));
 		pathkey = make_pathkey_from_sortop(root,
 										   expr,
 										   root->nullable_baserels,
@@ -1479,7 +1467,7 @@ make_distribution_keys_for_groupclause(PlannerInfo *root, List *groupclause, Lis
 		exprs = lappend(exprs, expr);
 	}
 
-	*partition_dist_keys = pathkeys;
+	*partition_dist_pathkeys = pathkeys;
 	*partition_dist_exprs = exprs;
 }
 
