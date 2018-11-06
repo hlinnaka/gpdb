@@ -29,6 +29,7 @@ cdbpath_create_motion_path(PlannerInfo     *root,
 
 CdbPathLocus
 cdbpath_motion_for_join(PlannerInfo    *root,
+						RelOptInfo *joinrel,
                         JoinType        jointype,           /* JOIN_INNER/FULL/LEFT/RIGHT/IN */
                         Path          **p_outer_path,       /* INOUT */
                         Path          **p_inner_path,       /* INOUT */

@@ -65,7 +65,6 @@ choose_setop_type(List *planlist)
 		switch (subplanflow->locustype)
 		{
 			case CdbLocusType_Hashed:
-			case CdbLocusType_HashedOJ:
 			case CdbLocusType_Strewn:
 				ok_general = ok_replicated = FALSE;
 				has_partitioned = TRUE;
@@ -132,7 +131,6 @@ adjust_setop_arguments(PlannerInfo *root, List *planlist, GpSetOpType setop_type
 				switch (subplanflow->locustype)
 				{
 					case CdbLocusType_Hashed:
-					case CdbLocusType_HashedOJ:
 					case CdbLocusType_Strewn:
 						Assert(subplanflow->flotype == FLOW_PARTITIONED);
 						break;
@@ -164,7 +162,6 @@ adjust_setop_arguments(PlannerInfo *root, List *planlist, GpSetOpType setop_type
 				switch (subplanflow->locustype)
 				{
 					case CdbLocusType_Hashed:
-					case CdbLocusType_HashedOJ:
 					case CdbLocusType_Strewn:
 						Assert(subplanflow->flotype == FLOW_PARTITIONED);
 						adjusted_plan = (Plan *) make_motion_gather_to_QD(root, subplan, NULL);
@@ -201,7 +198,6 @@ adjust_setop_arguments(PlannerInfo *root, List *planlist, GpSetOpType setop_type
 				switch (subplanflow->locustype)
 				{
 					case CdbLocusType_Hashed:
-					case CdbLocusType_HashedOJ:
 					case CdbLocusType_Strewn:
 						Assert(subplanflow->flotype == FLOW_PARTITIONED);
 						/* Gather to QE.  No need to keep ordering. */

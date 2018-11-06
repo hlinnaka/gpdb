@@ -55,8 +55,7 @@ cdbpathtoplan_create_flow(PlannerInfo *root,
 	{
 		flow = makeFlow(FLOW_REPLICATED, locus.numsegments);
 	}
-	else if (CdbPathLocus_IsHashed(locus) ||
-			 CdbPathLocus_IsHashedOJ(locus))
+	else if (CdbPathLocus_IsHashed(locus))
 	{
 		flow = makeFlow(FLOW_PARTITIONED, locus.numsegments);
 		flow->hashExpr = cdbpathlocus_get_distkey_exprs(locus,

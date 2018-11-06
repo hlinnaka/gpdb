@@ -3003,9 +3003,9 @@ cdbpathlocus_collocates_pathkeys(PlannerInfo *root, CdbPathLocus locus, List *pa
 		return true;
 
 	if (!CdbPathLocus_IsHashed(locus))
-		return false;			/* Or would HashedOJ ok, too? */
+		return false;
 
-	if (exact_match && list_length(pathkeys) != list_length(locus.distkey_h))
+	if (exact_match && list_length(pathkeys) != list_length(locus.distkeys))
 		return false;
 
 	/*
@@ -3048,9 +3048,9 @@ cdbpathlocus_collocates_expressions(PlannerInfo *root, CdbPathLocus locus, List 
 		return true;
 
 	if (!CdbPathLocus_IsHashed(locus))
-		return false;			/* Or would HashedOJ ok, too? */
+		return false;
 
-	if (exact_match && list_length(exprs) != list_length(locus.distkey_h))
+	if (exact_match && list_length(exprs) != list_length(locus.distkeys))
 		return false;
 
 	/*

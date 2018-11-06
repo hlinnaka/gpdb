@@ -458,3 +458,17 @@ INSERT INTO inhdisttest_c (ssn, lastname, junk, id, morejunk, uid1, uid2, uid3) 
 
 select * from inhdisttest_a;
 select * from inhdisttest_b;
+
+
+--
+-- Test that NULLs are distributed correctly, by a CTAS involving an outer join
+--
+create temporary table even (i int4);
+insert into even select g*2 from generate_series(1, 10) g;
+create temporary table odd (i int4);
+insert into odd select g*2+1 from generate_series(1, 10) g;
+
+create temporary table x as select even.i as a, odd.i as b from even full outer join odd on (even.i = odd.i) distributed by (a);
+
+-- Check that all the rows with NULL distribution key are stored on the same segment.
+select count(distinct gp_segment_id) from x where a is null;
