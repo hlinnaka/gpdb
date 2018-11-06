@@ -1308,7 +1308,6 @@ inheritance_planner(PlannerInfo *root)
 						locus_ok = locus_ok && (locustype == append_locustype);
 						break;
 					case CdbLocusType_Hashed:
-					case CdbLocusType_HashedOJ:
 					case CdbLocusType_Strewn:
 						/* MPP-2023: Among subplans, these loci are okay. */
 						break;
@@ -2506,6 +2505,30 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						 * gather everything to a single node.
 						 */
 						need_gather_for_partitioning = true;
+						if (CdbPathLocus_IsHashed(current_locus))
+						{
+							ListCell   *lc;
+							bool		all_constant = true;
+
+							foreach(lc, current_locus.distkeys)
+							{
+								if (!CdbDistributionKeyEqualsConstant((DistributionKey *) lfirst(lc)))
+								{
+									all_constant = false;
+									break;
+								}
+							}
+							if (all_constant)
+							{
+								/*
+								 * All the distribution keys are constant. This is effectively
+								 * the same as the case as a "bottleneck" locus. Even though it's
+								 * hash distributed, all the keys constant, so all the rows are
+								 * actually on the same segment.
+								 */
+								need_gather_for_partitioning = false;
+							}
+						}
 					}
 					else if (cdbpathlocus_collocates_pathkeys(root, current_locus, partition_dist_pathkeys, false))
 					{
@@ -2842,7 +2865,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			{
 				if (distinct_dist_exprs)
 				{
-					result_plan = (Plan *) make_motion_hash(root, result_plan, distinct_dist_exprs);
+					result_plan = (Plan *) make_motion_hash(root, result_plan,
+															distinct_dist_exprs);
 					current_pathkeys = NIL;		/* Any pre-existing order now lost. */
 				}
 				else

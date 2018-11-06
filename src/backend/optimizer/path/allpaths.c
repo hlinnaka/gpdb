@@ -2685,9 +2685,6 @@ print_path(PlannerInfo *root, Path *path, int indent)
 		case CdbLocusType_Hashed:
 			ltype = "Hashed";
 			break;
-		case CdbLocusType_HashedOJ:
-			ltype = "HashedOJ";
-			break;
 		case CdbLocusType_Strewn:
 			ltype = "Strewn";
 			break;

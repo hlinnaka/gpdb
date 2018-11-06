@@ -2995,6 +2995,7 @@ create_nestloop_path(PlannerInfo *root,
 
 	/* Add motion nodes above subpaths and decide where to join. */
 	join_locus = cdbpath_motion_for_join(root,
+										 joinrel,
 										 jointype,
 										 &outer_path,       /* INOUT */
 										 &inner_path,       /* INOUT */
@@ -3191,6 +3192,7 @@ create_mergejoin_path(PlannerInfo *root,
 		preserve_outer_ordering = preserve_inner_ordering = false;
 
 	join_locus = cdbpath_motion_for_join(root,
+										 joinrel,
 										 jointype,
 										 &outer_path,       /* INOUT */
 										 &inner_path,       /* INOUT */
@@ -3289,6 +3291,7 @@ create_hashjoin_path(PlannerInfo *root,
 
 	/* Add motion nodes above subpaths and decide where to join. */
 	join_locus = cdbpath_motion_for_join(root,
+										 joinrel,
 										 jointype,
 										 &outer_path,       /* INOUT */
 										 &inner_path,       /* INOUT */

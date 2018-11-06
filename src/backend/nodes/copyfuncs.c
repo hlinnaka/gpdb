@@ -2370,7 +2370,7 @@ _copyDistributionKey(const DistributionKey *from)
 	DistributionKey    *newnode = makeNode(DistributionKey);
 
 	/* EquivalenceClasses are never moved, so just shallow-copy the pointer */
-	COPY_SCALAR_FIELD(dk_eclass);
+	newnode->dk_eclass = from->dk_eclass;
 
 	return newnode;
 }

@@ -553,3 +553,18 @@ select * from inhdisttest_b;
   1 | lastname c |      422
 (2 rows)
 
+--
+-- Test that NULLs are distributed correctly, by a CTAS involving an outer join
+--
+create temporary table even (i int4);
+insert into even select g*2 from generate_series(1, 10) g;
+create temporary table odd (i int4);
+insert into odd select g*2+1 from generate_series(1, 10) g;
+create temporary table x as select even.i as a, odd.i as b from even full outer join odd on (even.i = odd.i) distributed by (a);
+-- Check that all the rows with NULL distribution key are stored on the same segment.
+select count(distinct gp_segment_id) from x where a is null;
+ count 
+-------
+     1
+(1 row)
+

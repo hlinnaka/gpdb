@@ -34,59 +34,6 @@ static List *cdb_build_distribution_keys(PlannerInfo *root,
 								AttrNumber *attrs);
 
 /*
- * Are two distkeys equal?
- *
- * This is roughly the same as compare_pathkeys, but compare_pathkeys
- * requires the input pathkeys to be canonicalized. The PathKeys we use to
- * represent hashed distribution are not canonicalized, so we can't use it.
- *
- * FIXME: there's no concept of canonicalization for dist keys, is there?
- */
-static bool
-distkeys_equal(List *adistkeys, List *bdistkeys)
-{
-	ListCell   *acell;
-	ListCell   *bcell;
-
-	forboth(acell, adistkeys, bcell, bdistkeys)
-	{
-		DistributionKey *adistkey = (DistributionKey *) lfirst(acell);
-		DistributionKey *bdistkey = (DistributionKey *) lfirst(bcell);
-
-		Assert(IsA(adistkey, DistributionKey));
-		Assert(IsA(bdistkey, DistributionKey));
-
-		if (adistkey->dk_eclass != bdistkey->dk_eclass)
-			return false;
-	}
-	return true;
-}
-
-/*
- * Does given list of distribution keys contain the given key? "contains" is
- * defined in terms of distkeys_equal.
- */
-static bool
-list_contains_distkey(List *list, List *distkey)
-{
-	ListCell   *lc;
-	bool		found;
-
-	found = false;
-	foreach(lc, list)
-	{
-		List	   *ldistkey = (List *) lfirst(lc);
-
-		if (distkeys_equal(distkey, ldistkey))
-		{
-			found = true;
-			break;
-		}
-	}
-	return found;
-}
-
-/*
  * cdbpathlocus_equal
  *
  *    - Returns false if locus a or locus b is "strewn", meaning that it
@@ -97,7 +44,7 @@ list_contains_distkey(List *list, List *distkey)
  *
  *    - Returns true if both a and b are hashed and the set of possible
  *      m-tuples of expressions (e1, e2, ..., em) produced by a's partkey
- *      is equal to the set produced by b's partkey.
+ *      is equal to the set produced by b's distkey.
  *
  *    - Returns false otherwise.
  */
@@ -106,8 +53,6 @@ cdbpathlocus_equal(CdbPathLocus a, CdbPathLocus b)
 {
 	ListCell   *acell;
 	ListCell   *bcell;
-	ListCell   *aequivdistkeycell;
-	ListCell   *bequivdistkeycell;
 
 	/* Unless a and b have the same numsegments the result is always false */
 	if (CdbPathLocus_NumSegments(a) !=
@@ -129,57 +74,17 @@ cdbpathlocus_equal(CdbPathLocus a, CdbPathLocus b)
 	if (a.locustype == b.locustype)
 	{
 		if (CdbPathLocus_IsHashed(a))
-			return distkeys_equal(a.distkey_h, b.distkey_h);
-
-		if (CdbPathLocus_IsHashedOJ(a))
 		{
-			forboth(acell, a.distkey_oj, bcell, b.distkey_oj)
+			forboth(acell, a.distkeys, bcell, b.distkeys)
 			{
-				List	   *aequivdistkeylist = (List *) lfirst(acell);
-				List	   *bequivdistkeylist = (List *) lfirst(bcell);
+				DistributionKey *adistkey = (DistributionKey *) lfirst(acell);
+				DistributionKey *bdistkey = (DistributionKey *) lfirst(bcell);
 
-				foreach(bequivdistkeycell, bequivdistkeylist)
-				{
-					List	   *bdistkey = (List *) lfirst(bequivdistkeycell);
-
-					if (!list_contains_distkey(aequivdistkeylist, bdistkey))
-						return false;
-				}
-				foreach(aequivdistkeycell, aequivdistkeylist)
-				{
-					List	   *adistkey = (List *) lfirst(aequivdistkeycell);
-
-					if (!list_contains_distkey(bequivdistkeylist, adistkey))
-						return false;
-				}
+				if (adistkey->dk_eclass != bdistkey->dk_eclass)
+					return false;
 			}
 			return true;
 		}
-	}
-
-	if (CdbPathLocus_IsHashedOJ(a) &&
-		CdbPathLocus_IsHashed(b))
-	{
-		CdbSwap(CdbPathLocus, a, b);
-	}
-
-	if (CdbPathLocus_IsHashed(a) &&
-		CdbPathLocus_IsHashedOJ(b))
-	{
-		forboth(acell, a.distkey_h, bcell, b.distkey_oj)
-		{
-			List	   *adistkey = (List *) lfirst(acell);
-			List	   *bequivdistkeylist = (List *) lfirst(bcell);
-
-			foreach(bequivdistkeycell, bequivdistkeylist)
-			{
-				List	   *bdistkey = (List *) lfirst(bequivdistkeycell);
-
-				if (adistkey != bdistkey)
-					return false;
-			}
-		}
-		return true;
 	}
 
 	Assert(false);
@@ -422,7 +327,7 @@ cdbpathlocus_get_distkey_exprs(CdbPathLocus locus,
 
 	if (CdbPathLocus_IsHashed(locus))
 	{
-		foreach(distkeycell, locus.distkey_h)
+		foreach(distkeycell, locus.distkeys)
 		{
 			DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
 			Expr	   *item;
@@ -437,31 +342,6 @@ cdbpathlocus_get_distkey_exprs(CdbPathLocus locus,
 				return NIL;
 
 			result = lappend(result, item);
-		}
-		return result;
-	}
-	else if (CdbPathLocus_IsHashedOJ(locus))
-	{
-		foreach(distkeycell, locus.distkey_oj)
-		{
-			List	   *distkeylist = (List *) lfirst(distkeycell);
-			ListCell   *distkeylistcell;
-			Expr	   *item = NULL;
-
-			foreach(distkeylistcell, distkeylist)
-			{
-				DistributionKey *distkey = (DistributionKey *) lfirst(distkeylistcell);
-
-				item = cdbpullup_findEclassInTargetList(distkey->dk_eclass, targetlist);
-
-				if (item)
-				{
-					result = lappend(result, item);
-					break;
-				}
-			}
-			if (!item)
-				return NIL;
 		}
 		return result;
 	}
@@ -510,7 +390,7 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 
 	if (CdbPathLocus_IsHashed(locus))
 	{
-		foreach(distkeycell, locus.distkey_h)
+		foreach(distkeycell, locus.distkeys)
 		{
 			DistributionKey *olddistkey;
 			DistributionKey *newdistkey;
@@ -542,58 +422,6 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
 		CdbPathLocus_MakeHashed(&newlocus, newdistkeys, numsegments);
 		return newlocus;
 	}
-	else if (CdbPathLocus_IsHashedOJ(locus))
-	{
-		/* For each column of the distribution key... */
-		foreach(distkeycell, locus.distkey_oj)
-		{
-			DistributionKey *olddistkey;
-			DistributionKey *newdistkey = NULL;
-
-			/* Get DistributionKey for key expr rewritten in terms of projection cols. */
-			List	   *distkeylist = (List *) lfirst(distkeycell);
-			ListCell   *distkeylistcell;
-
-			foreach(distkeylistcell, distkeylist)
-			{
-				olddistkey = (DistributionKey *) lfirst(distkeylistcell);
-				newdistkey = cdb_pull_up_distribution_key(root,
-														  olddistkey,
-														  relids,
-														  targetlist,
-														  newvarlist,
-														  newrelid);
-				if (newdistkey)
-					break;
-			}
-
-			/*
-			 * NB: Targetlist might include columns from both sides of outer
-			 * join "=" comparison, in which case cdb_pull_up_distribution_keys might
-			 * succeed on keys from more than one distkeylist. The
-			 * pulled-up locus could then be a HashedOJ locus, perhaps saving
-			 * a Motion when an outer join is followed by UNION ALL followed
-			 * by a join or aggregate.  For now, don't bother.
-			 */
-
-			/*
-			 * Fail if can't evaluate distribution key in the context of this
-			 * targetlist.
-			 */
-			if (!newdistkey)
-			{
-				CdbPathLocus_MakeStrewn(&newlocus, numsegments);
-				return newlocus;
-			}
-
-			/* Assemble new distkeys. */
-			newdistkeys = lappend(newdistkeys, newdistkey);
-		}
-
-		/* Build new locus. */
-		CdbPathLocus_MakeHashed(&newlocus, newdistkeys, numsegments);
-		return newlocus;
-	}
 	else
 		return locus;
 }								/* cdbpathlocus_pull_above_projection */
@@ -606,20 +434,17 @@ cdbpathlocus_pull_above_projection(struct PlannerInfo *root,
  * already been applied to the sources.
  */
 CdbPathLocus
-cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
+cdbpathlocus_join(RelOptInfo *joinrel, JoinType jointype, CdbPathLocus a, CdbPathLocus b)
 {
-	ListCell   *acell;
-	ListCell   *bcell;
-	List	   *equivdistkeylist;
-	CdbPathLocus ojlocus = {0};
+	CdbPathLocus resultlocus = {0};
 	int			numsegments;
+	List	   *distkeys;
+	ListCell   *acell,
+		*bcell;
 
+	Assert(joinrel->reloptkind == RELOPT_JOINREL);
 	Assert(cdbpathlocus_is_valid(a));
 	Assert(cdbpathlocus_is_valid(b));
-
-	/* Do both input rels have same locus? */
-	if (cdbpathlocus_equal(a, b))
-		return a;
 
 	numsegments = CdbPathLocus_CommonSegments(a, b);
 
@@ -629,8 +454,8 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 	if (CdbPathLocus_IsSingleQE(a) &&
 		CdbPathLocus_IsSingleQE(b))
 	{
-		CdbPathLocus_MakeSingleQE(&ojlocus, numsegments);
-		return ojlocus;
+		CdbPathLocus_MakeSingleQE(&resultlocus, numsegments);
+		return resultlocus;
 	}
 
 	/*
@@ -670,71 +495,127 @@ cdbpathlocus_join(CdbPathLocus a, CdbPathLocus b)
 		return a;
 
 	/*
-	 * This is an outer join, or one or both inputs are outer join results.
-	 * And a and b are on the same segments.
+	 * Both sides must be hashed, then. And the distribution keys should be
+	 * compatible; otherwise the caller should not be building a join directly
+	 * between the two rels. A Motion would be needed.
 	 */
-
+	Assert(CdbPathLocus_IsHashed(a));
+	Assert(CdbPathLocus_IsHashed(b));
 	Assert(CdbPathLocus_Degree(a) > 0 &&
 		   CdbPathLocus_NumSegments(a) == CdbPathLocus_NumSegments(b) &&
 		   CdbPathLocus_Degree(a) == CdbPathLocus_Degree(b));
 
-	if (CdbPathLocus_IsHashed(a) &&
-		CdbPathLocus_IsHashed(b))
+	switch (jointype)
 	{
-		/* Zip the two distkey lists together to make a HashedOJ locus. */
-		List	   *distkey_oj = NIL;
+		case JOIN_INNER:
+		case JOIN_SEMI:
+		case JOIN_DEDUP_SEMI:
+		case JOIN_DEDUP_SEMI_REVERSE:
+		case JOIN_UNIQUE_OUTER:
+		case JOIN_UNIQUE_INNER:
+			/*
+			 * There's an equijoin predicate on the distribution keys, so the
+			 * distribution key columns have the same values on both sides of
+			 * the join. We could legitimately use the locus of either side to
+			 * represent the distribution of the join rel. Decide which one to
+			 * use.
+			 *
+			 * If both input rels have the exact same locus, there isn't really
+			 * a choice to be made. This is the common case, with normal INNER
+			 * JOINs, as the join predicate, e.g "a.col = b.col" between the two
+			 * sides forms an equivalence class, and that equivalence class
+			 * represents the distribution key of both sides.
+			 */
+			if (cdbpathlocus_equal(a, b))
+				return a;
 
-		forboth(acell, a.distkey_h, bcell, b.distkey_h)
-		{
-			DistributionKey *adistkey = (DistributionKey *) lfirst(acell);
-			DistributionKey *bdistkey = (DistributionKey *) lfirst(bcell);
+			/*
+			 * In some cases, however, we might have an equijoin predicate between two
+			 * different equivalence classes. That appens if one side of the join
+			 * predicate is "outerjoin delayed". Usually, outerjoin delayed predicates
+			 * occur with outer joins, by we can get here at least in some cases
+			 * involving EXISTS and IN clauses that have been converted to joins.
+			 *
+			 * Try to choose the side that's more useful above the join, for matching
+			 * with other joins above this one, or for grouping/sorting. We do that
+			 * by looking at the EquivalenceClasses on both sides. If an EC refers to
+			 * relations outside this join rel, then that seems useful for joining with
+			 * those other relations, and we pick that EC.
+			 */
+			distkeys = NIL;
+			forboth(acell, a.distkeys, bcell, b.distkeys)
+			{
+				DistributionKey *adistkey = (DistributionKey *) lfirst(acell);
+				DistributionKey *bdistkey = (DistributionKey *) lfirst(bcell);
+				DistributionKey *newdistkey;
+				bool		a_is_useful_for_more_joins;
+				bool		b_is_useful_for_more_joins;
 
-			equivdistkeylist = list_make2(adistkey, bdistkey);
-			distkey_oj = lappend(distkey_oj, equivdistkeylist);
-		}
-		CdbPathLocus_MakeHashedOJ(&ojlocus, distkey_oj, numsegments);
-		Assert(cdbpathlocus_is_valid(ojlocus));
-		return ojlocus;
+				newdistkey = makeNode(DistributionKey);
+
+				a_is_useful_for_more_joins = !bms_is_subset(adistkey->dk_eclass->ec_relids, joinrel->relids);
+				b_is_useful_for_more_joins = !bms_is_subset(bdistkey->dk_eclass->ec_relids, joinrel->relids);
+
+				if (a_is_useful_for_more_joins && b_is_useful_for_more_joins)
+				{
+					/*
+					 * This shouldn't happen, the inner side of a left outer
+					 * join should not have any EC members from the outer side.
+					 * Or maybe there are cases, but I haven't been able to
+					 * construct one. But if it does happen, let's not panic.
+					 * Remember, we can legitimately use either EC to represent
+					 * this, so arbitrarily pick one of them. This might not be
+					 * optimal, but it's correct.
+					 *
+					 * In testing, it would be nice to find out if this ever
+					 * happens, though, hence the Assert.
+					 */
+					Assert(false);
+					elog(DEBUG1, "both ECs representing the distribution key of a join would be useful for more joins");
+					newdistkey->dk_eclass = adistkey->dk_eclass;
+				}
+				else if (a_is_useful_for_more_joins)
+					newdistkey->dk_eclass = adistkey->dk_eclass;
+				else if (b_is_useful_for_more_joins)
+					newdistkey->dk_eclass = bdistkey->dk_eclass;
+				else
+				{
+					/* Neither side seems useful for further joins. Arbitrarily, pick 'a' */
+					/* FIXME: Might one side be useful for sorting/grouping? */
+					newdistkey->dk_eclass = adistkey->dk_eclass;
+				}
+
+				distkeys = lappend(distkeys, newdistkey);
+			}
+			CdbPathLocus_MakeHashed(&resultlocus, distkeys, numsegments);
+			break;
+
+		case JOIN_LEFT:
+		case JOIN_LASJ_NOTIN:
+		case JOIN_ANTI:
+			/* Use the locus of the outer side. */
+			resultlocus = a;
+			break;
+
+		case JOIN_RIGHT:
+			/* Use the locus of the outer side */
+			resultlocus = b;
+			break;
+
+		case JOIN_FULL:
+			/*
+			 * In a FULL JOIN, the non-null rows are distributed according the
+			 * distribution key of either side. But NULL rows can appear in
+			 * any segment, i.e. they are not properly distributed according
+			 * to any distribution key. We have to therefore mark the locus as
+			 * strewn.
+			 */
+			CdbPathLocus_MakeStrewn(&resultlocus, numsegments);
+			break;
 	}
 
-	if (!CdbPathLocus_IsHashedOJ(a))
-		CdbSwap(CdbPathLocus, a, b);
-
-	Assert(CdbPathLocus_IsHashedOJ(a));
-	Assert(CdbPathLocus_IsHashed(b) ||
-		   CdbPathLocus_IsHashedOJ(b));
-
-	if (CdbPathLocus_IsHashed(b))
-	{
-		List	   *distkey_oj = NIL;
-
-		forboth(acell, a.distkey_oj, bcell, b.distkey_h)
-		{
-			List	   *aequivdistkeylist = (List *) lfirst(acell);
-			DistributionKey *bdistkey = (DistributionKey *) lfirst(bcell);
-
-			equivdistkeylist = lappend(list_copy(aequivdistkeylist), bdistkey);
-			distkey_oj = lappend(distkey_oj, equivdistkeylist);
-		}
-		CdbPathLocus_MakeHashedOJ(&ojlocus, distkey_oj, numsegments);
-	}
-	else if (CdbPathLocus_IsHashedOJ(b))
-	{
-		List	   *distkey_oj = NIL;
-
-		forboth(acell, a.distkey_oj, bcell, b.distkey_oj)
-		{
-			List	   *aequivdistkeylist = (List *) lfirst(acell);
-			List	   *bequivdistkeylist = (List *) lfirst(bcell);
-
-			equivdistkeylist = list_union_ptr(aequivdistkeylist,
-											  bequivdistkeylist);
-			distkey_oj = lappend(distkey_oj, equivdistkeylist);
-		}
-		CdbPathLocus_MakeHashedOJ(&ojlocus, distkey_oj, numsegments);
-	}
-	Assert(cdbpathlocus_is_valid(ojlocus));
-	return ojlocus;
+	Assert(cdbpathlocus_is_valid(resultlocus));
+	return resultlocus;
 }								/* cdbpathlocus_join */
 
 /*
@@ -758,13 +639,13 @@ cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist,
 
 	if (CdbPathLocus_IsHashed(locus))
 	{
-		foreach(distkeycell, locus.distkey_h)
+		foreach(distkeycell, locus.distkeys)
 		{
+			DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
 			bool		found = false;
 			ListCell   *i;
 
 			/* Does distribution key have an expr that is equal() to one in exprlist? */
-			DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
 
 			Assert(IsA(distkey, DistributionKey));
 
@@ -780,44 +661,6 @@ cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist,
 					found = true;
 					break;
 				}
-			}
-			if (!found)
-				return false;
-		}
-		/* Every column of the distkey contains an expr in exprlist. */
-		return true;
-	}
-	else if (CdbPathLocus_IsHashedOJ(locus))
-	{
-		foreach(distkeycell, locus.distkey_oj)
-		{
-			List	   *distkeylist = (List *) lfirst(distkeycell);
-			ListCell   *distkeylistcell;
-			bool		found = false;
-
-			foreach(distkeylistcell, distkeylist)
-			{
-				/* Does some expr in distkey match some item in exprlist? */
-				DistributionKey *item = (DistributionKey *) lfirst(distkeylistcell);
-				ListCell   *i;
-
-				Assert(IsA(item, DistributionKey));
-
-				if (ignore_constants && CdbEquivClassIsConstant(item->dk_eclass))
-					continue;
-
-				foreach(i, item->dk_eclass->ec_members)
-				{
-					EquivalenceMember *em = (EquivalenceMember *) lfirst(i);
-
-					if (list_member(exprlist, em->em_expr))
-					{
-						found = true;
-						break;
-					}
-				}
-				if (found)
-					break;
 			}
 			if (!found)
 				return false;
@@ -851,20 +694,19 @@ cdbpathlocus_is_hashed_on_eclasses(CdbPathLocus locus, List *eclasses,
 
 	if (CdbPathLocus_IsHashed(locus))
 	{
-		foreach(distkeycell, locus.distkey_h)
+		foreach(distkeycell, locus.distkeys)
 		{
 			DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
 			bool		found = false;
-			EquivalenceClass *dk_ec;
+			EquivalenceClass *dk_eclass = distkey->dk_eclass;
 
 			/* Does distkey have an eclass that's not in 'eclasses'? */
 			Assert(IsA(distkey, DistributionKey));
 
-			dk_ec = distkey->dk_eclass;
-			while (dk_ec->ec_merged != NULL)
-				dk_ec = dk_ec->ec_merged;
+			while (dk_eclass->ec_merged != NULL)
+				dk_eclass = dk_eclass->ec_merged;
 
-			if (ignore_constants && CdbEquivClassIsConstant(dk_ec))
+			if (ignore_constants && CdbEquivClassIsConstant(dk_eclass))
 				continue;
 
 			foreach(eccell, eclasses)
@@ -874,56 +716,11 @@ cdbpathlocus_is_hashed_on_eclasses(CdbPathLocus locus, List *eclasses,
 				while (ec->ec_merged != NULL)
 					ec = ec->ec_merged;
 
-				if (ec == dk_ec)
+				if (ec == dk_eclass)
 				{
 					found = true;
 					break;
 				}
-			}
-			if (!found)
-				return false;
-		}
-		/* Every column of the distribution key contains an expr in exprlist. */
-		return true;
-	}
-	else if (CdbPathLocus_IsHashedOJ(locus))
-	{
-		foreach(distkeycell, locus.distkey_oj)
-		{
-			List	   *distkeylist = (List *) lfirst(distkeycell);
-			ListCell   *distkeylistcell;
-			bool		found = false;
-
-			foreach(distkeylistcell, distkeylist)
-			{
-				DistributionKey *distkey = (DistributionKey *) lfirst(distkeylistcell);
-				EquivalenceClass *dk_ec;
-
-				/* Does distkey have an eclass that's not in 'eclasses'? */
-				Assert(IsA(distkey, DistributionKey));
-
-				dk_ec = distkey->dk_eclass;
-				while (dk_ec->ec_merged != NULL)
-					dk_ec = dk_ec->ec_merged;
-
-				if (ignore_constants && CdbEquivClassIsConstant(dk_ec))
-					continue;
-
-				foreach(eccell, eclasses)
-				{
-					EquivalenceClass *ec = (EquivalenceClass *) lfirst(eccell);
-
-					while (ec->ec_merged != NULL)
-						ec = ec->ec_merged;
-
-					if (ec == dk_ec)
-					{
-						found = true;
-						break;
-					}
-				}
-				if (found)
-					break;
 			}
 			if (!found)
 				return false;
@@ -961,7 +758,7 @@ cdbpathlocus_is_hashed_on_relids(CdbPathLocus locus, Bitmapset *relids)
 	{
 		ListCell   *lc1;
 
-		foreach(lc1, locus.distkey_h)
+		foreach(lc1, locus.distkeys)
 		{
 			/* Does distribution key contain a Var whose varno is in relids? */
 			DistributionKey *distkey = (DistributionKey *) lfirst(lc1);
@@ -969,6 +766,7 @@ cdbpathlocus_is_hashed_on_relids(CdbPathLocus locus, Bitmapset *relids)
 			ListCell   *lc2;
 
 			Assert(IsA(distkey, DistributionKey));
+
 			foreach(lc2, distkey->dk_eclass->ec_members)
 			{
 				EquivalenceMember *em = (EquivalenceMember *) lfirst(lc2);
@@ -978,47 +776,6 @@ cdbpathlocus_is_hashed_on_relids(CdbPathLocus locus, Bitmapset *relids)
 					found = true;
 					break;
 				}
-			}
-			if (!found)
-				return false;
-		}
-
-		/*
-		 * Every column of the distkey contains a Var whose varno is in
-		 * relids.
-		 */
-		return true;
-	}
-	else if (CdbPathLocus_IsHashedOJ(locus))
-	{
-		ListCell   *lc1;
-
-		foreach(lc1, locus.distkey_oj)
-		{
-			bool		found = false;
-			List	   *distkeylist = (List *) lfirst(lc1);
-			ListCell   *lc2;
-
-			foreach(lc2, distkeylist)
-			{
-				/* Does distribution key contain a Var whose varno is in relids? */
-				DistributionKey *item = (DistributionKey *) lfirst(lc2);
-				ListCell   *lc3;
-
-				Assert(IsA(item, DistributionKey));
-
-				foreach(lc3, item->dk_eclass->ec_members)
-				{
-					EquivalenceMember *em = (EquivalenceMember *) lfirst(lc3);
-
-					if (IsA(em->em_expr, Var) &&bms_is_subset(em->em_relids, relids))
-					{
-						found = true;
-						break;
-					}
-				}
-				if (found)
-					break;
 			}
 			if (!found)
 				return false;
@@ -1048,36 +805,20 @@ cdbpathlocus_is_valid(CdbPathLocus locus)
 	if (!CdbLocusType_IsValid(locus.locustype))
 		goto bad;
 
-	if (!CdbPathLocus_IsHashed(locus) && locus.distkey_h != NIL)
-		goto bad;
-	if (!CdbPathLocus_IsHashedOJ(locus) && locus.distkey_oj != NIL)
+	if (!CdbPathLocus_IsHashed(locus) && locus.distkeys != NIL)
 		goto bad;
 
 	if (CdbPathLocus_IsHashed(locus))
 	{
-		if (locus.distkey_h == NIL)
+		if (locus.distkeys == NIL)
 			goto bad;
-		if (!IsA(locus.distkey_h, List))
+		if (!IsA(locus.distkeys, List))
 			goto bad;
-		foreach(distkeycell, locus.distkey_h)
+		foreach(distkeycell, locus.distkeys)
 		{
 			DistributionKey *item = (DistributionKey *) lfirst(distkeycell);
 
 			if (!item || !IsA(item, DistributionKey))
-				goto bad;
-		}
-	}
-	if (CdbPathLocus_IsHashedOJ(locus))
-	{
-		if (locus.distkey_oj == NIL)
-			goto bad;
-		if (!IsA(locus.distkey_oj, List))
-			goto bad;
-		foreach(distkeycell, locus.distkey_oj)
-		{
-			List	   *item = (List *) lfirst(distkeycell);
-
-			if (!item || !IsA(item, List))
 				goto bad;
 		}
 	}
