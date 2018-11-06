@@ -5209,7 +5209,6 @@ ExecEvalReshuffleExpr(ReshuffleExprState *astate,
 {
 	ReshuffleExpr *sr = (ReshuffleExpr *) astate->xprstate.expr;
 	ListCell   *k;
-	ListCell   *t;
 	CdbHash	   *hnew;
 	uint32		newSeg;
 	bool		result;
@@ -5222,17 +5221,7 @@ ExecEvalReshuffleExpr(ReshuffleExprState *astate,
 		if (NULL != sr->hashKeys)
 		{
 			/* For hash distributed tables */
-			Oid		   *typeoids;
-
-			typeoids = (Oid *) palloc(list_length(astate->hashTypes) * sizeof(Oid));
-
-			i = 0;
-			foreach(t, astate->hashTypes)
-			{
-				typeoids[i++] = lfirst_oid(t);
-			}
-
-			hnew = makeCdbHash(sr->newSegs, list_length(astate->hashTypes), typeoids);
+			hnew = makeCdbHash(sr->newSegs, list_length(astate->hashKeys), astate->hashFuncs);
 
 			cdbhashinit(hnew);
 			i = 0;
@@ -6156,8 +6145,17 @@ ExecInitExpr(Expr *node, PlanState *parent)
 			{
 				ReshuffleExpr *sr = (ReshuffleExpr *) node;
 				ReshuffleExprState *exprstate = makeNode(ReshuffleExprState);
+				int			i;
+				ListCell   *lc;
+
 				exprstate->hashKeys = (List*) ExecInitExpr((Expr *) sr->hashKeys, parent);
-				exprstate->hashTypes = sr->hashTypes;
+
+				exprstate->hashFuncs = palloc(list_length(sr->hashFuncs) * sizeof(Oid));
+				i = 0;
+				foreach(lc, sr->hashFuncs)
+				{
+					exprstate->hashFuncs[i++] = lfirst_oid(lc);
+				}
 				exprstate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalReshuffleExpr;
 				state = (ExprState*)exprstate;
 			}

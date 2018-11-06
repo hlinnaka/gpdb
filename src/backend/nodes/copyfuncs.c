@@ -259,8 +259,9 @@ _copyResult(const Result *from)
 	 */
 	COPY_NODE_FIELD(resconstantqual);
 
-	COPY_SCALAR_FIELD(hashFilter);
-	COPY_NODE_FIELD(hashList);
+	COPY_SCALAR_FIELD(numHashFilterAttrs);
+	COPY_POINTER_FIELD(hashFilterAttrs, from->numHashFilterAttrs * sizeof(AttrNumber));
+	COPY_POINTER_FIELD(hashFilterFuncs, from->numHashFilterAttrs * sizeof(Oid));
 
 	return newnode;
 }
@@ -1306,8 +1307,8 @@ _copyMotion(const Motion *from)
 
 	COPY_SCALAR_FIELD(motionType);
 
-	COPY_NODE_FIELD(hashExpr);
-	COPY_NODE_FIELD(hashDataTypes);
+	COPY_NODE_FIELD(hashExprs);
+	COPY_POINTER_FIELD(hashFuncs, list_length(from->hashExprs) * sizeof(Oid));
 
 	COPY_SCALAR_FIELD(numOutputSegs);
 	COPY_POINTER_FIELD(outputSegIdx, from->numOutputSegs * sizeof(int));
@@ -1380,7 +1381,9 @@ _copyReshuffle(const Reshuffle *from)
 	CopyPlanFields((Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(tupleSegIdx);
+	COPY_SCALAR_FIELD(numPolicyAttrs);
 	COPY_NODE_FIELD(policyAttrs);
+	COPY_POINTER_FIELD(policyHashFuncs, from->numPolicyAttrs * sizeof(Oid));
 	COPY_SCALAR_FIELD(oldSegs);
 	COPY_SCALAR_FIELD(ptype);
 	return newnode;
@@ -2311,7 +2314,8 @@ _copyFlow(const Flow *from)
 	COPY_SCALAR_FIELD(locustype);
 	COPY_SCALAR_FIELD(segindex);
 	COPY_SCALAR_FIELD(numsegments);
-	COPY_NODE_FIELD(hashExpr);
+	COPY_NODE_FIELD(hashExprs);
+	COPY_NODE_FIELD(hashOpfamilies);
 	COPY_NODE_FIELD(flow_before_req_move);
 
 	return newnode;
@@ -2369,6 +2373,7 @@ _copyDistributionKey(const DistributionKey *from)
 {
 	DistributionKey    *newnode = makeNode(DistributionKey);
 
+	COPY_SCALAR_FIELD(dk_opfamily);
 	/* EquivalenceClasses are never moved, so just shallow-copy the pointer */
 	newnode->dk_eclass = from->dk_eclass;
 
@@ -5001,6 +5006,7 @@ _copyGpPolicy(const GpPolicy *from)
 	COPY_SCALAR_FIELD(numsegments);
 	COPY_SCALAR_FIELD(nattrs);
 	COPY_POINTER_FIELD(attrs, from->nattrs * sizeof(AttrNumber));
+	COPY_POINTER_FIELD(opclasses, from->nattrs * sizeof(Oid));
 
 	return newnode;
 }
@@ -5012,7 +5018,7 @@ _copyDistributedBy(const DistributedBy *from)
 
 	COPY_SCALAR_FIELD(ptype);
 	COPY_SCALAR_FIELD(numsegments);
-	COPY_NODE_FIELD(keys);
+	COPY_NODE_FIELD(keyCols);
 
 	return newnode;
 }
@@ -5025,7 +5031,7 @@ _copyReshuffleExpr(const ReshuffleExpr *from)
 	newnode->newSegs = from->newSegs;
 	newnode->oldSegs = from->oldSegs;
 	COPY_NODE_FIELD(hashKeys);
-	COPY_NODE_FIELD(hashTypes);
+	COPY_NODE_FIELD(hashFuncs);
 	newnode->ptype = from->ptype;
 	return newnode;
 }

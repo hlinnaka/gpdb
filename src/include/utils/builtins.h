@@ -744,6 +744,8 @@ extern Datum pg_get_partition_rule_def(PG_FUNCTION_ARGS);
 extern Datum pg_get_partition_rule_def_ext(PG_FUNCTION_ARGS);
 extern Datum pg_get_partition_template_def(PG_FUNCTION_ARGS);
 
+extern Datum pg_get_table_distributedby(PG_FUNCTION_ARGS);
+
 
 /* tid.c */
 extern Datum tidin(PG_FUNCTION_ARGS);
@@ -760,6 +762,7 @@ extern Datum tidge(PG_FUNCTION_ARGS);
 extern Datum bttidcmp(PG_FUNCTION_ARGS);
 extern Datum tidlarger(PG_FUNCTION_ARGS);
 extern Datum tidsmaller(PG_FUNCTION_ARGS);
+extern Datum hashtid(PG_FUNCTION_ARGS);
 extern Datum currtid_byreloid(PG_FUNCTION_ARGS);
 extern Datum currtid_byrelname(PG_FUNCTION_ARGS);
 

@@ -838,6 +838,9 @@ typedef struct DistributionKey
 	NodeTag		type;
 
 	EquivalenceClass *dk_eclass;	/* the value that is distributed */
+
+	/* Hash operator family that determines the hash function to use */
+	Oid			dk_opfamily;
 } DistributionKey;
 
 /*

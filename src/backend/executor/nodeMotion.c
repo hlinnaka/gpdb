@@ -117,7 +117,7 @@ static void execMotionSortedReceiverFirstTime(MotionState * node);
 
 static int
 CdbMergeComparator(void *lhs, void *rhs, void *context);
-static uint32 evalHashKey(ExprContext *econtext, List *hashkeys, List *hashtypes, CdbHash *h);
+static uint32 evalHashKey(ExprContext *econtext, List *hashkeys, CdbHash *h);
 
 static void doSendEndOfStream(Motion * motion, MotionState * node);
 static void doSendTuple(Motion * motion, MotionState * node, TupleTableSlot *outerTupleSlot);
@@ -875,7 +875,7 @@ ExecInitMotion(Motion * node, EState *estate, int eflags)
 	motionstate->ps.state = estate;
 	motionstate->mstype = MOTIONSTATE_NONE;
 	motionstate->stopRequested = false;
-	motionstate->hashExpr = NULL;
+	motionstate->hashExprs = NIL;
 	motionstate->cdbhash = NULL;
 	motionstate->isExplictGatherMotion = false;
 
@@ -1002,24 +1002,16 @@ ExecInitMotion(Motion * node, EState *estate, int eflags)
 	if (motionstate->mstype == MOTIONSTATE_SEND && node->motionType == MOTIONTYPE_HASH) 
 	{
 		int			nkeys;
-		Oid		   *typeoids;
-		int			i;
 		int			numsegments;
-		ListCell   *ht;
 
 		Assert(node->numOutputSegs > 0);
 
-		nkeys = list_length(node->hashDataTypes);
-		
-		if (nkeys > 0)
-			motionstate->hashExpr = (List *) ExecInitExpr((Expr *) node->hashExpr,
-							(PlanState *) motionstate);
+		nkeys = list_length(node->hashExprs);
 
-		typeoids = palloc(nkeys * sizeof(Oid));
-		i = 0;
-		foreach(ht, node->hashDataTypes)
+		if (nkeys > 0)
 		{
-			typeoids[i++] = lfirst_oid(ht);
+			motionstate->hashExprs = (List *) ExecInitExpr((Expr *) node->hashExprs,
+							(PlanState *) motionstate);
 		}
 
 		/*
@@ -1045,7 +1037,7 @@ ExecInitMotion(Motion * node, EState *estate, int eflags)
 			numsegments = node->numOutputSegs;
 		}
 
-		motionstate->cdbhash = makeCdbHash(numsegments, nkeys, typeoids);
+		motionstate->cdbhash = makeCdbHash(numsegments, nkeys, node->hashFuncs);
     }
 
 	/* Merge Receive: Set up the key comparator and priority queue. */
@@ -1349,7 +1341,7 @@ CdbMergeComparator_DestroyContext(CdbMergeComparatorContext *ctx)
  * Experimental code that will be replaced later with new hashing mechanism
  */
 uint32
-evalHashKey(ExprContext *econtext, List *hashkeys, List *hashtypes, CdbHash * h)
+evalHashKey(ExprContext *econtext, List *hashkeys, CdbHash * h)
 {
 	ListCell   *hk;
 	MemoryContext oldContext;
@@ -1479,8 +1471,7 @@ doSendTuple(Motion * motion, MotionState * node, TupleTableSlot *outerTupleSlot)
 
 		econtext->ecxt_outertuple = outerTupleSlot;
 
-		hval = evalHashKey(econtext, node->hashExpr,
-				motion->hashDataTypes, node->cdbhash);
+		hval = evalHashKey(econtext, node->hashExprs, node->cdbhash);
 
 		Assert(hval < getgpsegmentCount() && "redistribute destination outside segment array");
 		

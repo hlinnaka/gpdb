@@ -1208,10 +1208,13 @@ build_join_pathkeys(PlannerInfo *root,
  *	  equality operators.  (We assume, in what may be a temporary
  *	  excess of optimism, that our hashed partitioning function
  *	  implements the same notion of equality as these operators.)
+ *
+ * FIXME: perhaps it would make more sense for this to take an opfamily as argument?
  */
 DistributionKey *
 cdb_make_distkey_for_expr(PlannerInfo *root,
 						  Node *expr,
+						  Oid opfamily,
 						  List *eqopname)
 {
 	Oid			typeoid;
@@ -1221,6 +1224,8 @@ cdb_make_distkey_for_expr(PlannerInfo *root,
 	EquivalenceClass *eclass;
 	Oid			lefttype;
 	Oid			righttype;
+
+	Assert(OidIsValid(opfamily));
 
 	/* Get the expr's data type. */
 	typeoid = exprType(expr);
@@ -1261,6 +1266,7 @@ cdb_make_distkey_for_expr(PlannerInfo *root,
 
 	dk = makeNode(DistributionKey);
 	dk->dk_eclass = eclass;
+	dk->dk_opfamily = opfamily;
 
 	return dk;
 }
@@ -1362,6 +1368,7 @@ cdb_pull_up_distribution_key(PlannerInfo *root,
 
 	/* Create the DistributionKey for the transformed expr. */
 	newdistkey = makeNode(DistributionKey);
+	newdistkey->dk_opfamily = distkey->dk_opfamily;
 	newdistkey->dk_eclass = outer_ec;
 	return newdistkey;
 }
@@ -1438,22 +1445,25 @@ make_pathkeys_for_sortclauses(PlannerInfo *root,
 void
 make_distribution_exprs_for_groupclause(PlannerInfo *root, List *groupclause, List *tlist,
 										List **partition_dist_pathkeys,
-										List **partition_dist_exprs)
+										List **partition_dist_exprs,
+										List **partition_dist_opfamilies)
 {
 	List	   *pathkeys = NIL;
 	List	   *exprs = NIL;
+	List	   *opfamilies = NIL;
 	ListCell   *l;
 
 	foreach(l, groupclause)
 	{
 		SortGroupClause *sortcl = (SortGroupClause *) lfirst(l);
-		Expr	   *expr;
 		PathKey	   *pathkey;
+		Expr	   *expr;
+		Oid			opfamily;
+
+		if (!sortcl->hashable)
+			continue;
 
 		expr = (Expr *) get_sortgroupclause_expr(sortcl, tlist);
-
-		if (!isGreenplumDbHashable(exprType((Node *) expr)))
-			continue;
 
 		pathkey = make_pathkey_from_sortop(root,
 										   expr,
@@ -1463,12 +1473,20 @@ make_distribution_exprs_for_groupclause(PlannerInfo *root, List *groupclause, Li
 										   sortcl->tleSortGroupRef,
 										   true);
 
+		// FIXME: Is this still needed/wanted?
+		if (EC_MUST_BE_REDUNDANT(pathkey->pk_eclass))
+			continue;
+
+		opfamily = get_compatible_hash_opfamily(sortcl->eqop);
+
 		pathkeys = lappend(pathkeys, pathkey);
 		exprs = lappend(exprs, expr);
+		opfamilies = lappend_oid(opfamilies, opfamily);
 	}
 
 	*partition_dist_pathkeys = pathkeys;
 	*partition_dist_exprs = exprs;
+	*partition_dist_opfamilies = opfamilies;
 }
 
 /****************************************************************************

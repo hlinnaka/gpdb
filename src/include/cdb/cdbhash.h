@@ -19,7 +19,6 @@
 
 /*
  * Hash Method
- * if change here, please also change pg_database.h
  */
 #define INVALID_HASH_METHOD      (-1)
 #define MODULO_HASH_METHOD       0
@@ -44,10 +43,11 @@ typedef struct CdbHash
 	int			numsegs;		/* number of segments in Greenplum Database used for
 								 * partitioning  */
 	CdbHashReduce reducealg;	/* the algorithm used for reducing to buckets		*/
+	bool		is_legacy_hash;
 	uint32		rrindex;		/* round robin index for empty policy tables		*/
 
 	int			natts;
-	Oid			typeoids[FLEXIBLE_ARRAY_MEMBER];
+	FmgrInfo   *hashfuncs;
 } CdbHash;
 
 /*
@@ -76,14 +76,19 @@ extern void cdbhashnokey(CdbHash *h);
  */
 extern unsigned int cdbhashreduce(CdbHash *h);
 
-/*
- * Return true if Oid is hashable internally in Greenplum Database.
- */
-extern bool isGreenplumDbHashable(Oid typid);
+extern Oid cdb_default_distribution_opclass_for_type(Oid typid);
+extern Oid cdb_hashproc_in_opfamily(Oid opfamily, Oid typeoid, bool missing_ok);
 
-/*
- * Return true if the operator Oid is hashable internally in Greenplum Database.
- */
-extern bool isGreenplumDbOprRedistributable(Oid oprid);
+/* prototypes and other things, from cdblegacyhash.c */
+
+/* 32 bit FNV-1  non-zero initial basis */
+#define FNV1_32_INIT ((uint32)0x811c9dc5)
+
+extern uint32 magic_hash_stash;
+
+extern bool isLegacyCdbHashFunction(Oid funcid);
+
+extern Oid get_legacy_cdbhash_opclass_for_base_type(Oid typid);
+extern uint32 hashNullDatum(void);
 
 #endif   /* CDBHASH_H */

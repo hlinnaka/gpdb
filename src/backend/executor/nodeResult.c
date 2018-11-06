@@ -271,14 +271,11 @@ TupleMatchesHashFilter(ResultState *node, TupleTableSlot *resultSlot)
 	Assert(resultNode);
 	Assert(!TupIsNull(resultSlot));
 
-	if (resultNode->hashFilter)
+	if (resultNode->numHashFilterAttrs > 0)
 	{
-		Assert(resultNode->hashFilter);
-		ListCell	*cell;
 		CdbHash		*hash;
 		int			numSegments;
 		int			i;
-		Oid		   *typeoids;
 
 		if (node->ps.state->es_plannedstmt->planGen == PLANGEN_PLANNER)
 		{
@@ -300,40 +297,28 @@ TupleMatchesHashFilter(ResultState *node, TupleTableSlot *resultSlot)
 			numSegments = GP_POLICY_ALL_NUMSEGMENTS;
 		}
 
-		typeoids = (Oid *) palloc(list_length(resultNode->hashList) * sizeof(Oid));
-
 		/*
-		 * Note that the table may be randomly distributed. hashList will be
-		 * empty in that case.
+		 * Note that a table may be randomly distributed. numHashFilterAttrs will
+		 * be 0 in that case.
 		 */
-		i = 0;
-		foreach(cell, resultNode->hashList)
-		{
-			int			attnum = lfirst_int(cell);
-
-			Assert(attnum > 0);
-			typeoids[i++] = resultSlot->tts_tupleDescriptor->attrs[attnum - 1]->atttypid;
-		}
-
-		hash = makeCdbHash(numSegments, list_length(resultNode->hashList), typeoids);
+		hash = makeCdbHash(numSegments,
+						   resultNode->numHashFilterAttrs,
+						   resultNode->hashFilterFuncs);
 
 		cdbhashinit(hash);
-		i = 0;
-		foreach(cell, resultNode->hashList)
+		for (i = 0; i < resultNode->numHashFilterAttrs; i++)
 		{
-			int			attnum = lfirst_int(cell);
+			int			attnum = resultNode->hashFilterAttrs[i];
 			Datum		hAttr;
 			bool		isnull;
 
 			hAttr = slot_getattr(resultSlot, attnum, &isnull);
 
 			cdbhash(hash, i + 1, hAttr, isnull);
-			i++;
 		}
 
 		int targetSeg = cdbhashreduce(hash);
 
-		pfree(typeoids);
 		pfree(hash);
 
 		res = (targetSeg == GpIdentity.segindex);

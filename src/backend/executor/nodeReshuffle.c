@@ -123,6 +123,7 @@
 
 #include "executor/executor.h"
 #include "executor/nodeReshuffle.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 
 #include "cdb/cdbhash.h"
@@ -138,41 +139,23 @@
  * 	compute the Hash keys
  */
 static int
-EvalHashSegID(Datum *values, bool *nulls, List *policyAttrs,
+EvalHashSegID(Datum *values, bool *nulls,
+			  int nattrs, AttrNumber *policyAttrs, Oid *policyHashFuncs,
 			  List *targetlist, int nsegs)
 {
 	CdbHash	   *hnew;
 	uint32		newSeg;
-	ListCell   *lc;
-	Oid		   *typeoids;
 	int			i;
 
-	Assert(policyAttrs);
-	Assert(targetlist);
-
-	typeoids = palloc(list_length(policyAttrs) * sizeof(Oid));
-
-	i = 0;
-	foreach(lc, policyAttrs)
-	{
-		AttrNumber attidx = lfirst_int(lc);
-		TargetEntry *entry = list_nth(targetlist, attidx - 1);
-
-		typeoids[i] = exprType((Node *) entry->expr);
-		i++;
-	}
-
-	hnew = makeCdbHash(nsegs, list_length(policyAttrs), typeoids);
+	hnew = makeCdbHash(nsegs, nattrs, policyHashFuncs);
 
 	cdbhashinit(hnew);
 
-	i = 0;
-	foreach(lc, policyAttrs)
+	for (i = 0; i < nattrs; i++)
 	{
-		AttrNumber attidx = lfirst_int(lc);
+		AttrNumber attidx = policyAttrs[i];
 
 		cdbhash(hnew, i + 1, values[attidx - 1], nulls[attidx - 1]);
-		i++;
 	}
 
 	newSeg = cdbhashreduce(hnew);
@@ -252,7 +235,9 @@ ExecReshuffle(ReshuffleState *node)
 				values[reshuffle->tupleSegIdx - 1] =
 						Int32GetDatum(EvalHashSegID(values,
 													nulls,
+													reshuffle->numPolicyAttrs,
 													reshuffle->policyAttrs,
+													reshuffle->policyHashFuncs,
 													reshuffle->plan.targetlist,
 													getgpsegmentCount()));
 			}
@@ -281,7 +266,9 @@ ExecReshuffle(ReshuffleState *node)
 				Datum newSegID = Int32GetDatum(
 						EvalHashSegID(values,
 									  nulls,
+									  reshuffle->numPolicyAttrs,
 									  reshuffle->policyAttrs,
+									  reshuffle->policyHashFuncs,
 									  reshuffle->plan.targetlist,
 									  reshuffle->oldSegs));
 

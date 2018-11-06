@@ -1463,16 +1463,16 @@ gpdb::IndexExists
 	return false;
 }
 
-bool
-gpdb::IsGreenplumDbHashable
+Oid
+gpdb::GetDefaultDistributionOpclassForType
 	(
 	Oid typid
 	)
 {
 	GP_WRAP_START;
 	{
-		/* catalog tables: pg_type */
-		return isGreenplumDbHashable(typid);
+		/* catalog tables: pg_type, pg_opclass */
+		return cdb_default_distribution_opclass_for_type(typid);
 	}
 	GP_WRAP_END;
 	return false;

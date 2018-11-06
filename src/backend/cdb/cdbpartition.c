@@ -2418,7 +2418,7 @@ get_partition_attrs(PartitionNode *pn)
 
 void
 partition_get_policies_attrs(PartitionNode *pn, GpPolicy *master_policy,
-							 List **cols)
+							 List **cols, List **opclasses)
 {
 	if (!pn)
 		return;
@@ -2437,7 +2437,10 @@ partition_get_policies_attrs(PartitionNode *pn, GpPolicy *master_policy,
 			int			attno;
 
 			for (attno = 0; attno < master_policy->nattrs; attno++)
+			{
 				*cols = lappend_int(*cols, master_policy->attrs[attno]);
+				*opclasses = lappend_oid(*opclasses, master_policy->opclasses[attno]);
+			}
 		}
 
 		foreach(lc, pn->rules)
@@ -2453,16 +2456,22 @@ partition_get_policies_attrs(PartitionNode *pn, GpPolicy *master_policy,
 
 				for (attno = 0; attno < rel->rd_cdbpolicy->nattrs; attno++)
 				{
+					// FIXME: should we compare opclasses here? I don't think
+					// it's necessary, because it never makes sense to distribute
+					// by the same column twice, even if with different opclasses.
 					if (!list_member_int(*cols,
 										 rel->rd_cdbpolicy->attrs[attno]))
+					{
 						*cols = lappend_int(*cols,
 											rel->rd_cdbpolicy->attrs[attno]);
+						*opclasses = lappend_oid(*opclasses, rel->rd_cdbpolicy->opclasses[attno]);
+					}
 				}
 			}
 			heap_close(rel, NoLock);
 
 			partition_get_policies_attrs(rule->children, master_policy,
-										 cols);
+										 cols, opclasses);
 		}
 	}
 }
@@ -8037,7 +8046,6 @@ can_implement_dist_on_part(Relation rel, DistributedBy *dist)
 {
 	ListCell	*lc;
 	int		i;
-	List		*dist_cnames;	
 
 	if (Gp_role != GP_ROLE_DISPATCH)
 	{
@@ -8047,41 +8055,38 @@ can_implement_dist_on_part(Relation rel, DistributedBy *dist)
 	}
 
 	/* Random is okay.  It is represented by a list of one empty list. */
-	if (dist->ptype == POLICYTYPE_PARTITIONED && dist->keys == NIL)
+	if (dist->ptype == POLICYTYPE_PARTITIONED && dist->keyCols == NIL)
 		return true;
 
 	if (dist->ptype == POLICYTYPE_REPLICATED)
 		return false;
 
-	dist_cnames = dist->keys;	
-
 	/* Require an exact match to the policy of the parent. */
-	if (list_length(dist_cnames) != rel->rd_cdbpolicy->nattrs)
+	if (list_length(dist->keyCols) != rel->rd_cdbpolicy->nattrs)
 		return false;
 
 	i = 0;
-	foreach(lc, dist_cnames)
+	foreach(lc, dist->keyCols)
 	{
+		IndexElem  *ielem = (IndexElem *) lfirst(lc);
 		AttrNumber	attnum;
-		char	   *cname;
 		HeapTuple	tuple;
-		Node	   *item = lfirst(lc);
 		bool		ok = false;
 
-		if (!(item && IsA(item, String)))
-			return false;
+		Assert(IsA(ielem, IndexElem));
 
-		cname = strVal((Value *) item);
-		tuple = SearchSysCacheAttName(RelationGetRelid(rel), cname);
+		tuple = SearchSysCacheAttName(RelationGetRelid(rel), ielem->name);
 		if (!HeapTupleIsValid(tuple))
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_COLUMN),
 					 errmsg("column \"%s\" of relation \"%s\" does not exist",
-							cname,
+							ielem->name,
 							RelationGetRelationName(rel))));
 
 		attnum = ((Form_pg_attribute) GETSTRUCT(tuple))->attnum;
-		ok = attnum == rel->rd_cdbpolicy->attrs[i++];
+
+		if (attnum == rel->rd_cdbpolicy->attrs[i++])
+			ok = true;
 
 		ReleaseSysCache(tuple);
 

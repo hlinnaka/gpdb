@@ -766,7 +766,8 @@ _equalFlow(const Flow *a, const Flow *b)
 	COMPARE_SCALAR_FIELD(locustype);
 	COMPARE_SCALAR_FIELD(segindex);
 	COMPARE_SCALAR_FIELD(numsegments);
-	COMPARE_NODE_FIELD(hashExpr);
+	COMPARE_NODE_FIELD(hashExprs);
+	COMPARE_NODE_FIELD(hashOpfamilies);
 
 	return true;
 }
@@ -793,6 +794,7 @@ _equalDistributionKey(const DistributionKey *a, const DistributionKey *b)
 {
 	/* We assume pointer equality is sufficient to compare the eclasses */
 	COMPARE_SCALAR_FIELD(dk_eclass);
+	COMPARE_SCALAR_FIELD(dk_opfamily);
 
 	return true;
 }
@@ -2720,7 +2722,7 @@ _equalDistributedBy(const DistributedBy *a, const DistributedBy *b)
 {
 	COMPARE_SCALAR_FIELD(ptype);
 	COMPARE_SCALAR_FIELD(numsegments);
-	COMPARE_NODE_FIELD(keys);
+	COMPARE_NODE_FIELD(keyCols);
 
 	return true;
 }
@@ -2742,7 +2744,7 @@ _equalReshuffleExpr(const ReshuffleExpr *a, const ReshuffleExpr *b)
 	COMPARE_SCALAR_FIELD(newSegs);
 	COMPARE_SCALAR_FIELD(oldSegs);
 	COMPARE_NODE_FIELD(hashKeys);
-	COMPARE_NODE_FIELD(hashTypes);
+	COMPARE_NODE_FIELD(hashFuncs);
 	COMPARE_SCALAR_FIELD(ptype);
 	return true;
 }

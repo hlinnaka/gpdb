@@ -10818,3 +10818,74 @@ pg_get_partition_template_def(PG_FUNCTION_ARGS)
 
 	PG_RETURN_TEXT_P(string_to_text(str));
 }
+
+/* ----------
+ * get_table_distributedby		- Get the DISTRIBUTED BY definition of a table.
+ * ----------
+ */
+Datum
+pg_get_table_distributedby(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	StringInfoData buf;
+
+	/*
+	 * Fetch the pol tuple by the Oid of the index
+	 */
+	GpPolicy *policy = GpPolicyFetch(relid);
+
+	/*
+	 * Start the index definition.  Note that the index's name should never be
+	 * schema-qualified, but the indexed rel's name may be.
+	 */
+	initStringInfo(&buf);
+
+	if (policy->ptype == POLICYTYPE_ENTRY)
+	{
+		/* not distributed */
+	}
+	else if (policy->ptype == POLICYTYPE_REPLICATED)
+	{
+		appendStringInfo(&buf, "DISTRIBUTED REPLICATED");
+	}
+	else if (policy->ptype == POLICYTYPE_PARTITIONED && policy->nattrs == 0)
+	{
+		appendStringInfo(&buf, "DISTRIBUTED RANDOMLY");
+	}
+	else if (policy->ptype == POLICYTYPE_PARTITIONED && policy->nattrs > 0)
+	{
+		int			keyno;
+		char	   *sep;
+
+		appendStringInfoString(&buf, "DISTRIBUTED BY (");
+
+		sep = "";
+		for (keyno = 0; keyno < policy->nattrs; keyno++)
+		{
+			AttrNumber	attnum = policy->attrs[keyno];
+			Oid			opclass = policy->opclasses[keyno];
+			Oid			keycoltype;
+			char	   *attname;
+
+			appendStringInfoString(&buf, sep);
+			sep = ", ";
+
+			attname = get_relid_attribute_name(relid, attnum);
+			appendStringInfoString(&buf, quote_identifier(attname));
+			keycoltype = get_atttype(relid, attnum);
+
+			/* Add the operator class name, if not default */
+			get_opclass_name(opclass, keycoltype, &buf);
+		}
+		appendStringInfoChar(&buf, ')');
+	}
+	else
+	{
+		elog(ERROR, "unexpected policy type '%c'", policy->ptype);
+	}
+
+	/* Clean up */
+	pfree(policy);
+
+	PG_RETURN_TEXT_P(string_to_text(buf.data));
+}

@@ -612,6 +612,9 @@ DATA(insert (	1998   1700 1700 1 s 1752 405 0 ));
 /* array_ops */
 DATA(insert (	627    2277 2277 1 s 1070 405 0 ));
 
+/* complex_ops */
+DATA(insert (	6224   7198 7198 1 s 6469 405 0 ));
+
 
 /*
  *	gist box_ops
@@ -1275,5 +1278,61 @@ DATA(insert (	7080	3310 3310 2 s 3329 403 0 ));
 DATA(insert (	7080	3310 3310 3 s 6325 403 0 ));
 DATA(insert (	7080	3310 3310 4 s 3330 403 0 ));
 DATA(insert (	7080	3310 3310 5 s 3328 403 0 ));
+
+/*
+ *	legacy cdbhash ops
+ */
+DATA(insert (	7100 21 21 1 s 94 405 0 ));			/* int2 */
+DATA(insert (	7100 23 23 1 s 96 405 0 ));			/* int4 */
+DATA(insert (	7100 20 20 1 s 410 405 0 ));		/* int8 */
+/* cross-datatype integer ops */
+DATA(insert (	7100   21 23 1 s	532  405 0 ));
+DATA(insert (	7100   21 20 1 s	1862 405 0 ));
+DATA(insert (	7100   23 21 1 s	533  405 0 ));
+DATA(insert (	7100   23 20 1 s	15	 405 0 ));
+DATA(insert (	7100   20 21 1 s	1868 405 0 ));
+DATA(insert (	7100   20 23 1 s	416  405 0 ));
+
+DATA(insert (	7101 700 700 1 s 620 405 0 ));		/* float4 */
+DATA(insert (	7102 701 701 1 s 670 405 0 ));		/* float8 */
+DATA(insert (	7103 1700 1700 1 s 1752 405 0 ));	/* numeric */
+DATA(insert (	7104 18 18 1 s 92 405 0 ));			/* char */
+/* text is also for varchar. bpchar is in the same opfamily too, but has its own equality operator */
+DATA(insert (	7105 25 25 1 s 98 405 0 ));			/* text */
+DATA(insert (	7105 1042 1042 1 s 1054 405 0 ));	/* bpchar */
+/*
+ * In the legacy hash function, the hashing of 'text' and 'bpchar' are compatible,
+ * so we could support cross-datatype comparison between them. But there are no
+ * cross-datatype operators between them, we rely on casts for them, so we cannot
+ * represent them here.
+ */
+DATA(insert (	7106 17 17 1 s 1955 405 0 ));		/* bytea */
+DATA(insert (	7107 19 19 1 s 93 405 0 ));			/* name */
+DATA(insert (	7108 26 26 1 s 607 405 0 ));		/* oid */
+DATA(insert (	7110 27 27 1 s 387 405 0 ));		/* tid */
+DATA(insert (	7111 1114 1114 1 s 2060 405 0 ));	/* timestamp */
+DATA(insert (	7112 1184 1184 1 s 1320 405 0 ));	/* timestamptz */
+DATA(insert (	7113 1082 1082 1 s 1093 405 0 ));	/* date */
+DATA(insert (	7114 1083 1083 1 s 1108 405 0 ));	/* time */
+DATA(insert (	7115 1266 1266 1 s 1550 405 0 ));	/* timetz */
+DATA(insert (	7116 1186 1186 1 s 1330 405 0 ));	/* interval */
+DATA(insert (	7117 702 702 1 s 560 405 0 ));		/* abstime */
+DATA(insert (	7118 703 703 1 s 566 405 0 ));		/* reltime */
+DATA(insert (	7119 704 704 1 s 811 405 0 ));		/* tinterval */
+DATA(insert (	7120 869 869 1 s 1201 405 0 ));		/* inet */
+DATA(insert (	7122 829 829 1 s 1220 405 0 ));		/* macaddr */
+DATA(insert (	7123 1560 1560 1 s 1784 405 0 ));	/* bit */
+DATA(insert (	7124 1562 1562 1 s 1804 405 0 ));	/* varbit */
+DATA(insert (	7125 16 16 1 s 91 405 0 ));			/* bool */
+DATA(insert (	7126 2277 2277 1 s 1070 405 0 ));	/* anyarray */
+DATA(insert (	7127 30 30 1 s 649 405 0 ));		/* oidvector */
+DATA(insert (	7128 790 790 1 s 900 405 0 ));		/* money */
+DATA(insert (	7129 7198 7198 1 s 6469 405 0 ));	/* complex */
+
+
+/* hash support for TID */
+DATA(insert (	7130   27 27 1 s 387 405 0 ));
+DATA(insert (	7131   1560 1560 1 s 1784 405 0 ));
+DATA(insert (	7132   1562 1562 1 s 1804 405 0 ));
 
 #endif   /* PG_AMOP_H */

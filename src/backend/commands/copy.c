@@ -7048,11 +7048,17 @@ InitDistributionData(CopyState cstate, Form_pg_attribute *attr,
 		 * we're sure to parse all necessary columns in the input data and we
 		 * have all column types handy.
 		 */
-		List *cols = NIL;
-		HASHCTL hash_ctl;
+		List	   *cols = NIL;
+		List	   *opclasses = NIL;
+		HASHCTL		hash_ctl;
 
 		partition_get_policies_attrs(estate->es_result_partitions,
-		                             cstate->rel->rd_cdbpolicy, &cols);
+		                             cstate->rel->rd_cdbpolicy,
+									 &cols, &opclasses);
+		p_nattrs = list_length(cols);
+		policy = createHashPartitionedPolicy(cols, opclasses,
+											 cstate->rel->rd_cdbpolicy->numsegments);
+
 		MemSet(&hash_ctl, 0, sizeof(hash_ctl));
 		hash_ctl.keysize = sizeof(Oid);
 		hash_ctl.entrysize = sizeof(cdbhashdata);
@@ -7063,9 +7069,6 @@ InitDistributionData(CopyState cstate, Form_pg_attribute *attr,
 		                      100 /* XXX: need a better value, but what? */,
 		                      &hash_ctl,
 		                      HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
-		p_nattrs = list_length(cols);
-		policy = createHashPartitionedPolicy(cols,
-											 cstate->rel->rd_cdbpolicy->numsegments);
 	}
 
 	/*

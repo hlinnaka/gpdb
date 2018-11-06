@@ -715,8 +715,7 @@ plan_tree_mutator(Node *node,
 				FLATCOPY(newmotion, motion, Motion);
 				PLANMUTATE(newmotion, motion);
 
-				MUTATE(newmotion->hashExpr, motion->hashExpr, List *);
-				MUTATE(newmotion->hashDataTypes, motion->hashDataTypes, List *);
+				MUTATE(newmotion->hashExprs, motion->hashExprs, List *);
 				COPYARRAY(newmotion, motion, numOutputSegs, outputSegIdx);
 
 				COPYARRAY(newmotion, motion, numSortCols, sortColIdx);
@@ -733,7 +732,7 @@ plan_tree_mutator(Node *node,
 				Flow	   *newflow;
 
 				FLATCOPY(newflow, flow, Flow);
-				MUTATE(newflow->hashExpr, flow->hashExpr, List *);
+				MUTATE(newflow->hashExprs, flow->hashExprs, List *);
 				return (Node *) newflow;
 			}
 			break;

@@ -27,6 +27,7 @@
 #include "cdb/partitionselection.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/typcache.h"
 #include "utils/uri.h"
 #include "gpos/base.h"
 
@@ -1896,6 +1897,7 @@ CTranslatorDXLToPlStmt::TranslateDXLMotion
 		// translate hash expr list
 		List *hash_expr_list = NIL;
 		List *hash_expr_types_list = NIL;
+		int numHashExprs;
 
 		if (EdxlopPhysicalMotionRedistribute == motion_dxlop->GetDXLOperator())
 		{
@@ -1911,9 +1913,27 @@ CTranslatorDXLToPlStmt::TranslateDXLMotion
 				);
 		}
 		GPOS_ASSERT(gpdb::ListLength(hash_expr_list) == gpdb::ListLength(hash_expr_types_list));
+		numHashExprs = gpdb::ListLength(hash_expr_list);
 
-		motion->hashExpr = hash_expr_list;
-		motion->hashDataTypes = hash_expr_types_list;
+		int i = 0;
+		ListCell *lc;
+		Oid *hashFuncs = (Oid *) gpdb::GPDBAlloc(numHashExprs * sizeof(Oid));
+		foreach(lc, hash_expr_list)
+		{
+			Node	   *expr = (Node *) lfirst(lc);
+		    Oid			typeoid = gpdb::ExprType(expr);
+			TypeCacheEntry *typentry;
+
+			typentry = gpdb::LookupTypeCache(typeoid,
+											 TYPECACHE_HASH_OPFAMILY |
+											 TYPECACHE_HASH_PROC);
+			hashFuncs[i] = typentry->hash_proc_finfo.fn_oid;
+
+			i++;
+		  }
+
+		motion->hashExprs = hash_expr_list;
+		motion->hashFuncs = hashFuncs;
 	}
 
 	// cleanup
@@ -2096,14 +2116,16 @@ CTranslatorDXLToPlStmt::TranslateDXLRedistributeMotionToResultHashFilters
 		);
 
 	// translate hash expr list
-	result->hashFilter = true;
-
 	if (EdxlopPhysicalMotionRedistribute == motion_dxlop->GetDXLOperator())
 	{
 		CDXLNode *hash_expr_list_dxlnode = (*motion_dxlnode)[EdxlrmIndexHashExprList];
 		const ULONG length = hash_expr_list_dxlnode->Arity();
 		GPOS_ASSERT(0 < length);
-		
+
+		result->numHashFilterAttrs = length;
+		result->hashFilterAttrs = (AttrNumber *) gpdb::GPDBAlloc(length * sizeof(AttrNumber));
+		result->hashFilterFuncs = (Oid *) gpdb::GPDBAlloc(length * sizeof(Oid));
+
 		for (ULONG ul = 0; ul < length; ul++)
 		{
 			CDXLNode *hash_expr_dxlnode = (*hash_expr_list_dxlnode)[ul];
@@ -2147,11 +2169,12 @@ CTranslatorDXLToPlStmt::TranslateDXLRedistributeMotionToResultHashFilters
 				resno = target_entry->resno;
 			}
 			GPOS_ASSERT(gpos::int_max != resno);
-			
-			result->hashList = gpdb::LAppendInt(result->hashList, resno);
+
+			result->hashFilterAttrs[ul] = resno;
+			result->hashFilterFuncs[ul] = InvalidOid;	// FIXME: get hash function
 		}
 	}
-	
+
 	// cleanup
 	child_contexts->Release();
 

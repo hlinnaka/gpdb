@@ -422,7 +422,7 @@ create table distby_with_constraint21 (col1 int4, col2 int4, col3 int4, UNIQUE  
 create table distby_with_constraint22 (col1 int4, col2 int4, col3 int4, UNIQUE      (col1, col2), PRIMARY KEY (col3, col1));
 
 -- Check what distribution key was chosen for all the cases above.
-select c.relname, policytype, attrnums from pg_class c, gp_distribution_policy p where c.oid = p.localoid and relname LIKE 'distby_with_%' order by relname;
+select c.relname, policytype, distkey, distclass from pg_class c, gp_distribution_policy p where c.oid = p.localoid and relname LIKE 'distby_with_%' order by relname;
 
 
 --
@@ -472,3 +472,81 @@ create temporary table x as select even.i as a, odd.i as b from even full outer 
 
 -- Check that all the rows with NULL distribution key are stored on the same segment.
 select count(distinct gp_segment_id) from x where a is null;
+
+
+--
+-- Test joins involving tables with distribution keys using non-default
+-- hash opclasses.
+--
+
+-- For the tests, we define our own equality operator called |=|, which
+-- compares the absolute values. For example -1 |=| 1.
+CREATE FUNCTION abseq(int, int) RETURNS BOOL AS $$ begin return abs($1) = abs($2); end; $$ LANGUAGE plpgsql STRICT IMMUTABLE;
+CREATE OPERATOR |=| (PROCEDURE = abseq, LEFTARG = int, RIGHTARG = int, COMMUTATOR = |=|, hashes, merges);
+
+-- and a hash opclass to back it.
+CREATE FUNCTION simplehashfunc(int) RETURNS int AS $$ begin return abs($1); end; $$ LANGUAGE plpgsql STRICT IMMUTABLE;
+
+CREATE OPERATOR FAMILY simple_int_hash_ops USING hash;
+
+CREATE OPERATOR CLASS simple_int_hash_ops FOR TYPE int4
+  USING hash FAMILY simple_int_hash_ops AS
+  OPERATOR 1 |=|,
+  FUNCTION 1 simplehashfunc(int);
+
+-- we need a btree opclass too. Otherwise the planner won't consider collocation.
+CREATE FUNCTION abslt(int, int) RETURNS BOOL AS $$ begin return abs($1) < abs($2); end; $$ LANGUAGE plpgsql STRICT IMMUTABLE;
+CREATE OPERATOR |<| (PROCEDURE = abslt, LEFTARG = int, RIGHTARG = int, hashes);
+CREATE FUNCTION absgt(int, int) RETURNS BOOL AS $$ begin return abs($1) > abs($2); end; $$ LANGUAGE plpgsql STRICT IMMUTABLE;
+CREATE OPERATOR |>| (PROCEDURE = absgt, LEFTARG = int, RIGHTARG = int, hashes);
+
+CREATE FUNCTION abscmp(int, int) RETURNS int AS $$ begin return btint4cmp(abs($1),abs($2)); end; $$ LANGUAGE plpgsql STRICT IMMUTABLE;
+
+CREATE OPERATOR CLASS simple_int_btree_ops FOR TYPE int4
+  USING btree AS
+  OPERATOR 1 |<|,
+  OPERATOR 3 |=|,
+  OPERATOR 5 |>|,
+  FUNCTION 1 abscmp(int, int);
+
+-- Create test tables. At first, use the default opclasses, suitable
+-- for the normal = equality operator.
+CREATE TABLE atab (a int) DISTRIBUTED BY (a);
+INSERT INTO atab VALUES (-1), (0), (1);
+CREATE TABLE btab (b int) DISTRIBUTED BY (b);
+INSERT INTO btab VALUES (-1), (0), (1), (2);
+
+-- The default opclass isn't helpful with the |=| operator, so this needs
+-- a Motion.
+EXPLAIN SELECT a, b FROM atab, btab WHERE a |=| b;
+SELECT a, b FROM atab, btab WHERE a |=| b;
+
+-- Change distribution key of atab to use our fancy opclass.
+DROP TABLE atab;
+CREATE TABLE atab (a int) DISTRIBUTED BY (a simple_int_hash_ops);
+INSERT INTO atab VALUES (-1), (0), (1);
+
+-- The other side is still distributed using the default opclass,
+-- so we still need a Motion.
+EXPLAIN (COSTS OFF) SELECT a, b FROM atab, btab WHERE a |=| b;
+SELECT a, b FROM atab, btab WHERE a |=| b;
+
+-- Change distribution policy on atab to match. (Drop and recreate, rather
+-- than use ALTER TABLE, so that both CREATE and ALTER TABLE get tested.)
+ALTER TABLE btab SET DISTRIBUTED BY (b simple_int_hash_ops);
+
+-- Now we should be able to answer this query without a Redistribute Motion
+EXPLAIN (COSTS OFF) SELECT a, b FROM atab, btab WHERE a |=| b;
+SELECT a, b FROM atab, btab WHERE a |=| b;
+
+-- On the other hand, a regular equality join now needs a Redistribute Motion
+-- (Given the way our hash function is defined, it could actually be used for
+-- normal equality too. But the planner has no way to know that.)
+EXPLAIN (COSTS OFF) SELECT a, b FROM atab, btab WHERE a = b;
+SELECT a, b FROM atab, btab WHERE a = b;
+
+-- Test deparsing of the non-default opclass
+\d atab
+
+-- Check dependency. The table should depend on the operator class.
+-- TODO: we don't track dependencies yet.

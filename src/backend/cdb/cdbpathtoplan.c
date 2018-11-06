@@ -58,9 +58,11 @@ cdbpathtoplan_create_flow(PlannerInfo *root,
 	else if (CdbPathLocus_IsHashed(locus))
 	{
 		flow = makeFlow(FLOW_PARTITIONED, locus.numsegments);
-		flow->hashExpr = cdbpathlocus_get_distkey_exprs(locus,
-														relids,
-														plan->targetlist);
+		cdbpathlocus_get_distkey_exprs(locus,
+									   relids,
+									   plan->targetlist,
+									   &flow->hashExprs,
+									   &flow->hashOpfamilies);
 
 		/*
 		 * hashExpr can be NIL if the rel is partitioned on columns that

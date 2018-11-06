@@ -13,7 +13,13 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/skey.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_amop.h"
+#include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"	/* CDB_PROC_TIDTOI8 */
 #include "catalog/pg_type.h"	/* INT8OID */
@@ -27,10 +33,13 @@
 #include "parser/parse_expr.h"	/* exprType() */
 #include "parser/parse_oper.h"
 
+#include "utils/catcache.h"
+#include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 #include "cdb/cdbdef.h"			/* CdbSwap() */
-#include "cdb/cdbhash.h"		/* isGreenplumDbHashable() */
+#include "cdb/cdbhash.h"		/* cdb_default_distribution_opclass_for_type() */
 
 #include "cdb/cdbpath.h"		/* me */
 #include "cdb/cdbutil.h"
@@ -393,10 +402,13 @@ typedef struct
  * A helper function to create a DistributionKey for an EquivalenceClass.
  */
 static DistributionKey *
-makeDistributionKeyForEC(EquivalenceClass *eclass)
+makeDistributionKeyForEC(EquivalenceClass *eclass, Oid opfamily)
 {
 	DistributionKey *dk = makeNode(DistributionKey);
 
+	Assert(OidIsValid(opfamily));
+
+	dk->dk_opfamily = opfamily;
 	dk->dk_eclass = eclass;
 
 	return dk;
@@ -461,7 +473,7 @@ cdbpath_match_preds_to_distkey_tail(CdbpathMatchPredsContext *ctx,
 				DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
 
 				if (distkey->dk_eclass == a_ec)
-					codistkey = makeDistributionKeyForEC(b_ec);
+					codistkey = makeDistributionKeyForEC(b_ec, distkey->dk_opfamily);
 			}
 
 			if (codistkey)
@@ -581,6 +593,9 @@ cdbpath_match_preds_to_both_distkeys(PlannerInfo *root,
 		DistributionKey *inner_distkey = (DistributionKey *) lfirst(innercell);
 		ListCell   *rcell;
 
+		if (outer_distkey->dk_opfamily != inner_distkey->dk_opfamily)
+			return false;	/* incompatible hashing scheme */
+
 		foreach(rcell, mergeclause_list)
 		{
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(rcell);
@@ -614,31 +629,70 @@ cdbpath_match_preds_to_both_distkeys(PlannerInfo *root,
 	return true;
 }								/* cdbpath_match_preds_to_both_distkeys */
 
-
-
 /*
- * cdb_pathkey_isGreenplumDbHashable
+ * GetDefaultOpClass
  *
- * Iterates through a list of equivalence class members and determines if all
- * of them are GreenplumDbHashable.
+ * Given the OIDs of a datatype and an access method, find the default
+ * operator class, if any.  Returns InvalidOid if there is none.
  */
-static bool
-cdbpath_eclass_isGreenplumDbHashable(EquivalenceClass *ec)
+static Oid
+GetOpclassInOpfamily(Oid opcmethod, Oid opcfamily, Oid opcintype)
 {
-	ListCell   *j;
+	Oid			result = InvalidOid;
+	Relation	rel;
+	ScanKeyData skey[1];
+	SysScanDesc scan;
+	HeapTuple	tup;
 
-	foreach(j, ec->ec_members)
+	/* If it's a domain, look at the base type instead */
+	// FIXME: is this needed?
+	opcintype = getBaseType(opcintype);
+
+	// FIXME: copy-pasted from GetDefaultOpClass. Fix comments.
+	/*
+	 * We scan through all the opclasses available for the access method,
+	 * looking for one that is marked default and matches the target type
+	 * (either exactly or binary-compatibly, but prefer an exact match).
+	 *
+	 * We could find more than one binary-compatible match.  If just one is
+	 * for a preferred type, use that one; otherwise we fail, forcing the user
+	 * to specify which one he wants.  (The preferred-type special case is a
+	 * kluge for varchar: it's binary-compatible to both text and bpchar, so
+	 * we need a tiebreaker.)  If we find more than one exact match, then
+	 * someone put bogus entries in pg_opclass.
+	 */
+	rel = heap_open(OperatorClassRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey[0],
+				Anum_pg_opclass_opcmethod,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(opcmethod));
+
+	scan = systable_beginscan(rel, OpclassAmNameNspIndexId, true,
+							  NULL, 1, skey);
+
+	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
-		EquivalenceMember *em = (EquivalenceMember *) lfirst(j);
+		Form_pg_opclass opclass = (Form_pg_opclass) GETSTRUCT(tup);
 
-		/* Fail on non-hashable expression types */
-		if (!isGreenplumDbHashable(exprType((Node *) em->em_expr)))
-			return false;
+		/* ignore altogether if not a default opclass */
+		Assert(opclass->opcmethod == opcmethod);
+		if (opcfamily == opclass->opcfamily &&
+			IsBinaryCoercible(opcintype, opclass->opcintype))
+		{
+			// FIXME: there should be only one match. Check that?
+			// Or is it possible to have multiple that are binary coercible?
+			result = HeapTupleGetOid(tup);
+			break;
+		}
 	}
 
-	return true;
-}
+	systable_endscan(scan);
 
+	heap_close(rel, AccessShareLock);
+
+	return result;
+}
 
 /*
  * cdbpath_distkeys_from_preds
@@ -665,6 +719,14 @@ cdbpath_distkeys_from_preds(PlannerInfo *root,
 	foreach(rcell, mergeclause_list)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(rcell);
+		Oid			lhs_opno;
+		Oid			rhs_opno;
+		Oid			lhs_type;
+		Oid			rhs_type;
+		Oid			opfamily;
+		CatCList   *catlist;
+		Oid			type2;
+		int			i;
 
 		Assert(rinfo->left_ec != NULL);
 		Assert(rinfo->right_ec != NULL);
@@ -674,9 +736,51 @@ cdbpath_distkeys_from_preds(PlannerInfo *root,
 		/*
 		 * skip non-hashable keys
 		 */
-		if (!cdbpath_eclass_isGreenplumDbHashable(rinfo->left_ec) ||
-			!cdbpath_eclass_isGreenplumDbHashable(rinfo->right_ec))
+		if (!rinfo->hashjoinoperator)
+			continue;
+
+		/* look up the left and right datatypes of the hashjoin = operator */
+		if (!get_compatible_hash_operators(rinfo->hashjoinoperator,
+										   &lhs_opno, &rhs_opno))
+			continue;
+		/* Find a hash opfamily that supports both types. */
+		op_input_types(lhs_opno, &lhs_type, &type2);
+		Assert(lhs_type == type2);
+		op_input_types(rhs_opno, &rhs_type, &type2);
+		Assert(rhs_type == type2);
+
+		/*
+		 * We search through all the pg_amop entries for opno1.
+		 */
+		catlist = SearchSysCacheList1(AMOPOPID, ObjectIdGetDatum(lhs_opno));
+
+		for (i = 0; i < catlist->n_members; i++)
 		{
+			HeapTuple	op_tuple = &catlist->members[i]->tuple;
+			Form_pg_amop op_form = (Form_pg_amop) GETSTRUCT(op_tuple);
+
+			Assert(op_form->amoplefttype == lhs_type);
+			Assert(op_form->amoplefttype == op_form->amoprighttype);
+
+			/* must be in the same hash opfamily */
+			if (op_form->amopmethod == HASH_AM_OID)
+			{
+				/* Can we find an opclass for both sides in this opfamily? */
+				if(GetOpclassInOpfamily(HASH_AM_OID, op_form->amopfamily, lhs_type))
+				{
+					if (GetOpclassInOpfamily(HASH_AM_OID, op_form->amopfamily, rhs_type))
+					{
+						opfamily = op_form->amopfamily;
+					}
+				}
+			}
+		}
+
+		ReleaseSysCacheList(catlist);
+
+		if (!OidIsValid(opfamily))
+		{
+			/* could not find hash operator classes for both sides from same opfamily. */
 			continue;
 		}
 
@@ -698,7 +802,7 @@ cdbpath_distkeys_from_preds(PlannerInfo *root,
 			}
 			if (!found)
 			{
-				DistributionKey *a_dk = makeDistributionKeyForEC(rinfo->left_ec);
+				DistributionKey *a_dk = makeDistributionKeyForEC(rinfo->left_ec, opfamily);
 				a_distkeys = lappend(a_distkeys, a_dk);
 			}
 		}
@@ -757,8 +861,8 @@ cdbpath_distkeys_from_preds(PlannerInfo *root,
 
 			if (!found)
 			{
-				DistributionKey *a_dk = makeDistributionKeyForEC(a_ec);
-				DistributionKey *b_dk = makeDistributionKeyForEC(b_ec);
+				DistributionKey *a_dk = makeDistributionKeyForEC(a_ec, opfamily);
+				DistributionKey *b_dk = makeDistributionKeyForEC(b_ec, opfamily);
 
 				a_distkeys = lappend(a_distkeys, a_dk);
 				b_distkeys = lappend(b_distkeys, b_dk);
@@ -1534,35 +1638,23 @@ cdbpath_dedup_fixup_unique(UniquePath *uniquePath, CdbpathDedupFixupContext *ctx
 		/* ctid? */
 		if (var->varattno == SelfItemPointerAttributeNumber)
 		{
-			/*
-			 * The tid type has a full set of comparison operators, but oddly
-			 * its "=" operator is not marked hashable.  So 'ctid' is directly
-			 * usable for sorted duplicate removal; but we cast it to 64-bit
-			 * integer for hashed duplicate removal.
-			 */
-			if (uniquePath->umethod == UNIQUE_PATH_HASH)
-			{
-				ctid_exprs = lappend(ctid_exprs,
-									 makeFuncExpr(CDB_PROC_TIDTOI8, INT8OID,
-												  list_make1(var),
-												  InvalidOid, InvalidOid,
-												  COERCE_EXPLICIT_CAST));
-				ctid_operators = lappend_oid(ctid_operators, Int8EqualOperator);
-			}
-			else
-			{
-				ctid_exprs = lappend(ctid_exprs, var);
-				ctid_operators = lappend_oid(ctid_operators, TIDEqualOperator);
-			}
+			Assert(var->vartype == TIDOID);
+
+			ctid_exprs = lappend(ctid_exprs, var);
+			ctid_operators = lappend_oid(ctid_operators, TIDEqualOperator);
 
 			/* Add to repartitioning key.  Can use tid type without coercion. */
 			if (uniquePath->must_repartition)
 			{
 				DistributionKey *cdistkey;
+				Oid			opfamily;
+
+				opfamily = get_compatible_hash_opfamily(TIDEqualOperator);
 
 				if (!eq)
 					eq = list_make1(makeString("="));
-				cdistkey = cdb_make_distkey_for_expr(ctx->root, (Node *) var, eq);
+				cdistkey = cdb_make_distkey_for_expr(ctx->root,_(Node *) var,
+													 opfamily, eq);
 				distkeys = lappend(distkeys, cdistkey);
 			}
 		}
@@ -1943,34 +2035,6 @@ cdbpath_contains_wts(Path *path)
 bool
 has_redistributable_clause(RestrictInfo *restrictinfo)
 {
-	Expr	   *clause = restrictinfo->clause;
-	Oid			opno;
-
-	/**
-	 * If this is a IS NOT FALSE boolean test, we can peek underneath.
-	 */
-	if (IsA(clause, BooleanTest))
-	{
-		BooleanTest *bt = (BooleanTest *) clause;
-
-		if (bt->booltesttype == IS_NOT_FALSE)
-		{
-			clause = bt->arg;
-		}
-	}
-
-	if (restrictinfo->pseudoconstant)
-		return false;
-	if (!is_opclause(clause))
-		return false;
-	if (list_length(((OpExpr *) clause)->args) != 2)
-		return false;
-
-	opno = ((OpExpr *) clause)->opno;
-
-	if (isGreenplumDbOprRedistributable(opno))
-		return true;
-	else
-		return false;
+	return restrictinfo->hashjoinoperator != InvalidOid;
 }
 

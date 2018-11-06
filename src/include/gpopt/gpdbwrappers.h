@@ -330,8 +330,8 @@ namespace gpdb {
 	// does an index exist with the given oid
 	bool IndexExists(Oid oid);
 
-	// check if given oid is hashable internally in Greenplum Database
-	bool IsGreenplumDbHashable(Oid typid);
+	// get the default hash opclass for type
+	Oid GetDefaultDistributionOpclassForType(Oid typid);
 
 	// append an element to a list
 	List *LAppend(List *list, void *datum);

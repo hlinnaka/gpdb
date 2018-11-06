@@ -45,11 +45,13 @@
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
 #include "rewrite/rewriteManip.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/selfuncs.h"
 
 #include "catalog/gp_segment_config.h"
 #include "catalog/pg_proc.h"
+#include "cdb/cdbhash.h"
 #include "cdb/cdbllize.h"
 #include "cdb/cdbmutate.h"		/* apply_shareinput */
 #include "cdb/cdbpartition.h"
@@ -1602,6 +1604,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	List	   *distinctExprs = NIL;
 	List	   *distinct_dist_pathkeys = NIL;
 	List	   *distinct_dist_exprs = NIL;
+	List	   *distinct_dist_opfamilies = NIL;
 	bool		must_gather;
 
 	double		motion_cost_per_row =
@@ -2450,7 +2453,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 			/* Add any Vars needed to compute the distribution key. */
 			window_tlist = add_to_flat_tlist_junk(window_tlist,
-												  result_plan->flow->hashExpr,
+												  result_plan->flow->hashExprs,
 												  true /* resjunk */);
 
 			/*
@@ -2491,12 +2494,14 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				{
 					List	   *partition_dist_pathkeys;
 					List	   *partition_dist_exprs;
+					List	   *partition_dist_opfamilies;
 
 					make_distribution_exprs_for_groupclause(root,
 															wc->partitionClause,
 															tlist,
 															&partition_dist_pathkeys,
-															&partition_dist_exprs);
+															&partition_dist_exprs,
+															&partition_dist_opfamilies);
 					if (!partition_dist_exprs)
 					{
 						/*
@@ -2537,7 +2542,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					else
 					{
 						result_plan = (Plan *) make_motion_hash(root, result_plan,
-																partition_dist_exprs);
+																partition_dist_exprs,
+																partition_dist_opfamilies);
 						result_plan->total_cost += motion_cost_per_row * result_plan->plan_rows;
 						current_pathkeys = NIL; /* no longer sorted */
 						Assert(result_plan->flow);
@@ -2546,9 +2552,22 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						 * Change current_locus based on the new distribution
 						 * pathkeys.
 						 */
-						current_locus = cdbpathlocus_from_exprs(root,
-																partition_dist_exprs,
-																CdbPathLocus_NumSegments(current_locus));
+						List *partition_dist_distkeys = NIL;
+						ListCell *lc;
+						ListCell *lc2;
+						forboth(lc, partition_dist_pathkeys, lc2, partition_dist_opfamilies)
+						{
+							PathKey	   *pk = (PathKey *) lfirst(lc);
+							Oid			opfamily = lfirst_oid(lc2);
+							DistributionKey *dk = makeNode(DistributionKey);
+
+							dk->dk_opfamily = opfamily;
+							dk->dk_eclass = pk->pk_eclass;
+							partition_dist_distkeys = lappend(partition_dist_distkeys, dk);
+						}
+
+						CdbPathLocus_MakeHashed(&current_locus, partition_dist_distkeys,
+												CdbPathLocus_NumSegments(current_locus));
 						need_gather_for_partitioning = false;
 					}
 				}
@@ -2784,7 +2803,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 												parse->distinctClause,
 												result_plan->targetlist,
 												&distinct_dist_pathkeys,
-												&distinct_dist_exprs);
+												&distinct_dist_exprs,
+												&distinct_dist_opfamilies);
 
 		distinctExprs = get_sortgrouplist_exprs(parse->distinctClause,
 												result_plan->targetlist);
@@ -2866,7 +2886,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				if (distinct_dist_exprs)
 				{
 					result_plan = (Plan *) make_motion_hash(root, result_plan,
-															distinct_dist_exprs);
+															distinct_dist_exprs,
+															distinct_dist_opfamilies);
 					current_pathkeys = NIL;		/* Any pre-existing order now lost. */
 				}
 				else
@@ -3123,6 +3144,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	{
 		bool		r;
 		List	   *exprList;
+		List	   *opfamilies;
+		ListCell   *lc;
 
 		/* Deal with the special case of SCATTER RANDOMLY */
 		if (list_length(parse->scatterClause) == 1 && linitial(parse->scatterClause) == NULL)
@@ -3130,11 +3153,23 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		else
 			exprList = parse->scatterClause;
 
+		// FIXME: should the SCATTER syntax allow passing opclasses?
+		opfamilies = NIL;
+		foreach(lc, exprList)
+		{
+			Node	   *expr = lfirst(lc);
+			Oid			opclass;
+
+			opclass = cdb_default_distribution_opclass_for_type(exprType(expr));
+			opfamilies = lappend_oid(opfamilies, get_opclass_family(opclass));
+		}
+
 		/*
 		 * Repartition the subquery plan based on our distribution
 		 * requirements
 		 */
-		r = repartitionPlan(result_plan, false, false, exprList,
+		r = repartitionPlan(result_plan, false, false,
+							exprList, opfamilies,
 							result_plan->flow->numsegments);
 		if (!r)
 		{

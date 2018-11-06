@@ -1654,7 +1654,7 @@ CTranslatorRelcacheToDXL::RetrieveType
 	// get array type mdid
 	CMDIdGPDB *mdid_type_array = GPOS_NEW(mp) CMDIdGPDB(gpdb::GetArrayType(oid_type));
 
-	BOOL is_redistributable = gpdb::IsGreenplumDbHashable(oid_type);
+	BOOL is_redistributable = gpdb::GetDefaultDistributionOpclassForType(oid_type);
 
 	mdid->AddRef();
 

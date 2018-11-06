@@ -1357,8 +1357,8 @@ typedef struct ReshuffleExprState
 {
 	ExprState xprstate;
 	ExprState  *arg;
-	List *hashKeys;
-	List *hashTypes;
+	List	   *hashKeys;		/* ExprState nodes */
+	Oid		   *hashFuncs;
 } ReshuffleExprState;
 
 /*
@@ -2953,7 +2953,7 @@ typedef struct MotionState
 
 	/* For motion send */
 	bool		sentEndOfStream;	/* set when end-of-stream has successfully been sent */
-	List	   *hashExpr;		/* state struct used for evaluating the hash expressions */
+	List	   *hashExprs;		/* state struct used for evaluating the hash expressions */
 	struct CdbHash *cdbhash;	/* hash api object */
 
 	/* For Motion recv */

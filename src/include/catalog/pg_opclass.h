@@ -143,6 +143,7 @@ DATA(insert OID = 3125 ( 403	numeric_ops PGNSP PGUID 1988 1700 t 0 ));
 #define NUMERIC_BTREE_OPS_OID 3125
 DATA(insert (	405		numeric_ops			PGNSP PGUID 1998 1700 t 0 ));
 DATA(insert (	403		complex_ops			PGNSP PGUID 6221 7198 t 0 ));
+DATA(insert (	405		complex_ops			PGNSP PGUID 6224 7198 t 0 ));
 DATA(insert OID = 1981 ( 403	oid_ops		PGNSP PGUID 1989   26 t 0 ));
 #define OID_BTREE_OPS_OID 1981
 DATA(insert (	405		oid_ops				PGNSP PGUID 1990   26 t 0 ));
@@ -281,5 +282,46 @@ DATA(insert (	7013	bpchar_pattern_ops	PGNSP PGUID 7044 1042 f 0 ));
 DATA(insert (	7013	money_ops			PGNSP PGUID 7046 790 t 0 ));
 DATA(insert (	7013	reltime_ops			PGNSP PGUID 7047 703 t 0 ));
 DATA(insert (	7013	tinterval_ops		PGNSP PGUID 7048 704 t 0 ));
+
+/* Hash opclasses to represent the legacy "cdbhash" function */
+DATA(insert (	405		cdbhash_int2_ops	PGNSP PGUID 7100 21 f 0 ));
+DATA(insert (	405		cdbhash_int4_ops	PGNSP PGUID 7100 23 f 0 ));
+DATA(insert (	405		cdbhash_int8_ops	PGNSP PGUID 7100 20 f 0 ));
+DATA(insert (	405		cdbhash_float4_ops	PGNSP PGUID 7101 700 f 0 ));
+DATA(insert (	405		cdbhash_float8_ops	PGNSP PGUID 7102 701 f 0 ));
+DATA(insert (	405		cdbhash_numeric_ops	PGNSP PGUID 7103 1700 f 0 ));
+DATA(insert (	405		cdbhash_char_ops	PGNSP PGUID 7104 18 f 0 ));
+DATA(insert (	405		cdbhash_text_ops	PGNSP PGUID 7105 25 f 0 ));
+DATA(insert (	405		cdbhash_varchar_ops	PGNSP PGUID 7105 1043 f 0 ));
+DATA(insert (	405		cdbhash_bpchar_ops	PGNSP PGUID 7105 1042 f 0 ));
+DATA(insert (	405		cdbhash_bytea_ops	PGNSP PGUID 7106 17 f 0 ));
+DATA(insert (	405		cdbhash_name_ops	PGNSP PGUID 7107 19 f 0 ));
+DATA(insert (	405		cdbhash_oid_ops		PGNSP PGUID 7108 26 f 0 ));
+DATA(insert (	405		cdbhash_tid_ops		PGNSP PGUID 7110 27 f 0 ));
+DATA(insert (	405		cdbhash_timestamp_ops	PGNSP PGUID 7111 1114 f 0 ));
+DATA(insert (	405		cdbhash_timestamptz_ops	PGNSP PGUID 7112 1184 f 0 ));
+DATA(insert (	405		cdbhash_date_ops	PGNSP PGUID 7113 1082 f 0 ));
+DATA(insert (	405		cdbhash_time_ops	PGNSP PGUID 7114 1083 f 0 ));
+DATA(insert (	405		cdbhash_timetz_ops	PGNSP PGUID 7115 1266 f 0 ));
+DATA(insert (	405		cdbhash_interval_ops	PGNSP PGUID 7116 1186 f 0 ));
+DATA(insert (	405		cdbhash_abstime_ops	PGNSP PGUID 7117 702 f 0 ));
+DATA(insert (	405		cdbhash_reltime_ops	PGNSP PGUID 7118 703 f 0 ));
+DATA(insert (	405		cdbhash_tinterval_ops	PGNSP PGUID 7119 704 f 0 ));
+DATA(insert (	405		cdbhash_inet_ops	PGNSP PGUID 7120 869 f 0 ));
+DATA(insert (	405		cdbhash_macaddr_ops	PGNSP PGUID 7122 829 f 0 ));
+DATA(insert (	405		cdbhash_bit_ops		PGNSP PGUID 7123 1560 f 0 ));
+DATA(insert (	405		cdbhash_varbit_ops	PGNSP PGUID 7124 1562 f 0 ));
+DATA(insert (	405		cdbhash_bool_ops	PGNSP PGUID 7125 16 f 0 ));
+DATA(insert (	405		cdbhash_array_ops	PGNSP PGUID 7126 2277 f 0 ));
+DATA(insert (	405		cdbhash_oidvector_ops	PGNSP PGUID 7127 30 f 0 ));
+DATA(insert (	405		cdbhash_cash_ops	PGNSP PGUID 7128 790 f 0 ));
+DATA(insert (	405		cdbhash_complex_ops	PGNSP PGUID 7129 7198 f 0 ));
+// FIXME uuid?
+// FIXME: anyrange?
+
+/* hash opclasses for bit and varbit */
+DATA(insert (	405		bit_ops	PGNSP PGUID 7131 1560 t 0 ));
+DATA(insert (	405		varbit_ops	PGNSP PGUID 7132 1562 t 0 ));
+
 
 #endif   /* PG_OPCLASS_H */

@@ -230,6 +230,7 @@ cdbpathlocus_from_baserel(struct PlannerInfo   *root,
 CdbPathLocus
 cdbpathlocus_from_exprs(struct PlannerInfo     *root,
                         List                   *hash_on_exprs,
+						List *hash_opclasses,
                         int                     numsegments);
 CdbPathLocus
 cdbpathlocus_from_subquery(struct PlannerInfo  *root,
@@ -249,10 +250,11 @@ cdbpathlocus_join(struct RelOptInfo *joinrel, JoinType jointype, CdbPathLocus a,
  * and uses only rels in the given set of relids.  Returns NIL if the
  * distkey cannot be expressed in terms of the given relids and targetlist.
  */
-List *
-cdbpathlocus_get_distkey_exprs(CdbPathLocus     locus,
-                               Bitmapset       *relids,
-                               List            *targetlist);
+extern void cdbpathlocus_get_distkey_exprs(CdbPathLocus locus,
+							   Bitmapset *relids,
+							   List *targetlist,
+							   List **exprs_p,
+							   List **opfamilies_p);
 
 /*
  * cdbpathlocus_pull_above_projection

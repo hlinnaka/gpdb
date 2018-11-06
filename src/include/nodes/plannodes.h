@@ -303,8 +303,9 @@ typedef struct Result
 {
 	Plan		plan;
 	Node	   *resconstantqual;
-	bool		hashFilter;
-	List	   *hashList;
+	int			numHashFilterAttrs;
+	AttrNumber *hashFilterAttrs;
+	Oid		   *hashFilterFuncs;
 } Result;
 
 /* ----------------
@@ -1267,8 +1268,8 @@ typedef struct Motion
 	int			motionID;			/* required by AMS  */
 
 	/* For Hash */
-	List		*hashExpr;			/* list of hash expressions */
-	List		*hashDataTypes;	    /* list of hash expr data type oids */
+	List		*hashExprs;			/* list of hash expressions */
+	Oid			*hashFuncs;			/* corersponding hash functions */
 
 	/* Output segments */
 	int 	  	numOutputSegs;		/* number of seg indexes in outputSegIdx array, 0 for broadcast */
@@ -1318,10 +1319,12 @@ typedef struct SplitUpdate
  */
 typedef struct Reshuffle
 {
-	Plan plan;
-	AttrNumber tupleSegIdx;
-	List *policyAttrs;
-	int oldSegs;
+	Plan		plan;
+	AttrNumber	tupleSegIdx;
+	int			numPolicyAttrs;
+	AttrNumber *policyAttrs;
+	Oid		   *policyHashFuncs;
+	int			oldSegs;
 	GpPolicyType ptype;
 } Reshuffle;
 

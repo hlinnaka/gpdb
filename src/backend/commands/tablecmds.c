@@ -14778,7 +14778,7 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 		if (ldistro)
 			change_policy = true;
 
-		if (ldistro && ldistro->ptype == POLICYTYPE_PARTITIONED && ldistro->keys == NIL)
+		if (ldistro && ldistro->ptype == POLICYTYPE_PARTITIONED && ldistro->keyCols == NIL)
 		{
 			rand_pol = true;
 
@@ -14905,15 +14905,19 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 		if (change_policy)
 		{
 			List	*policykeys = NIL;
+			List	*policyopclasses = NIL;
 
 			/* Step (a) */
 			if (!(rand_pol || rep_pol))
 			{
-				foreach(lc, ldistro->keys)
+				foreach(lc, ldistro->keyCols)
 				{
-					char	   *colName = strVal((Value *)lfirst(lc));
+					IndexElem  *ielem = (IndexElem *) lfirst(lc);
+					char	   *colName = ielem->name;
 					HeapTuple	tuple;
 					AttrNumber	attnum;
+					Form_pg_attribute attform;
+					Oid			opclass;
 
 					tuple = SearchSysCacheAttName(RelationGetRelid(rel), colName);
 
@@ -14924,7 +14928,8 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 										colName,
 										RelationGetRelationName(rel))));
 
-					attnum = ((Form_pg_attribute) GETSTRUCT(tuple))->attnum;
+					attform = (Form_pg_attribute) GETSTRUCT(tuple);
+					attnum = attform->attnum;
 
 					/* Prevent them from altering a system attribute */
 					if (attnum <= 0)
@@ -14933,7 +14938,17 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 								 errmsg("cannot distribute by system column \"%s\"",
 										colName)));
 
+					// FIXME: was there a isGreenplumhashable check here before? should
+					// there have been?
+
+					// FIXME: see comments in setQryDistributionPolicy
+					if (ielem->opclass)
+						opclass = GetIndexOpClass(ielem->opclass, attform->atttypid, "hash", HASH_AM_OID);
+					else
+						opclass = cdb_default_distribution_opclass_for_type(attform->atttypid);
+
 					policykeys = lappend_int(policykeys, attnum);
+					policyopclasses = lappend_oid(policyopclasses, opclass);
 
 					ReleaseSysCache(tuple);
 					cols = lappend(cols, lfirst(lc));
@@ -14941,6 +14956,7 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 
 				Assert(policykeys != NIL);
 				policy = createHashPartitionedPolicy(policykeys,
+													 policyopclasses,
 													 ldistro->numsegments);
 
 				/*
@@ -14961,37 +14977,37 @@ ATExecSetDistributedBy(Relation rel, Node *node, AlterTableCmd *cmd)
 							diff = true;
 							break;
 						}
+						if (policy->opclasses[i] != rel->rd_cdbpolicy->opclasses[i])
+						{
+							diff = true;
+							break;
+						}
 					}
 					if (!diff)
 					{
-						/*
-						 * This string length calculation relies on that we add
-						 * a comma after each column entry except the last one,
-						 * at which point the string should be NULL terminated
-						 * instead.
-						 */
-						char *dist = palloc(list_length(ldistro->keys) * (NAMEDATALEN + 1));
+						StringInfoData buf;
 
-						dist[0] = '\0';
-
-						foreach(lc, ldistro->keys)
+						initStringInfo(&buf);
+						foreach(lc, ldistro->keyCols)
 						{
-							if (lc != list_head(ldistro->keys))
-								strcat(dist, ",");
-							strcat(dist, strVal(lfirst(lc)));
+							IndexElem *ielem = (IndexElem *) lfirst(lc);
+
+							if (buf.len > 0)
+								appendStringInfo(&buf, ", ");
+							appendStringInfoString(&buf, ielem->name);
 						}
 						ereport(WARNING,
 							(errcode(ERRCODE_DUPLICATE_OBJECT),
 							 errmsg("distribution policy of relation \"%s\" "
 								"already set to (%s)",
 								RelationGetRelationName(rel),
-								dist),
+								buf.data),
 							 errhint("Use ALTER TABLE \"%s\" "
 								"SET WITH (REORGANIZE=TRUE) "
 								"DISTRIBUTED BY (%s) "
 								"to force redistribution",
 								RelationGetRelationName(rel),
-								dist)));
+								buf.data)));
 						heap_close(rel, NoLock);
 						/* Tell QEs to do nothing */
 						linitial(lprime) = NULL;
@@ -17167,43 +17183,61 @@ split_rows(Relation intoa, Relation intob, Relation temprel)
 DistributedBy *
 make_distributedby_for_rel(Relation rel)
 {
+	GpPolicy *policy = rel->rd_cdbpolicy;
 	int			i;
 	DistributedBy *dist;
-	List 		*distro = NIL;
 
 	dist = makeNode(DistributedBy);
 
-	Assert(rel->rd_cdbpolicy->ptype != POLICYTYPE_ENTRY);
+	Assert(policy->ptype != POLICYTYPE_ENTRY);
 
-	if (GpPolicyIsReplicated(rel->rd_cdbpolicy))
+	if (GpPolicyIsReplicated(policy))
 	{
 		/* must be random distribution */
 		dist->ptype = POLICYTYPE_REPLICATED;
-		dist->numsegments = rel->rd_cdbpolicy->numsegments;
-		dist->keys = NIL;
+		dist->numsegments = policy->numsegments;
+		dist->keyCols = NIL;
 	}
 	else
 	{
-		for (i = 0; i < rel->rd_cdbpolicy->nattrs; i++)
+		TupleDesc tupdesc = RelationGetDescr(rel);
+		List 		*keys = NIL;
+
+		for (i = 0; i < policy->nattrs; i++)
 		{
-			AttrNumber attno = rel->rd_cdbpolicy->attrs[i];
-			TupleDesc tupdesc = RelationGetDescr(rel);
-			Value *attstr;
-			NameData attname;
+			int			attno = policy->attrs[i];
+			Oid			opclassoid = policy->opclasses[i];
+			char	   *attname = pstrdup(NameStr(tupdesc->attrs[attno - 1]->attname));
+			IndexElem  *ielem;
+			HeapTuple	ht_opc;
+			Form_pg_opclass opcrec;
+			char	   *opcname;
+			char	   *nspname;
 
-			attname = tupdesc->attrs[attno - 1]->attname;
-			attstr = makeString(pstrdup(NameStr(attname)));
+			ht_opc = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclassoid));
+			if (!HeapTupleIsValid(ht_opc))
+				elog(ERROR, "cache lookup failed for opclass %u", opclassoid);
+			opcrec = (Form_pg_opclass) GETSTRUCT(ht_opc);
+			nspname = get_namespace_name(opcrec->opcnamespace);
+			opcname = pstrdup(NameStr(opcrec->opcname));
 
-			distro = lappend(distro, attstr);
+			ielem = makeNode(IndexElem);
+			ielem->name = attname;
+			ielem->opclass = list_make2(makeString(nspname), makeString(opcname));
+
+			keys = lappend(keys, ielem);
+
+			ReleaseSysCache(ht_opc);
 		}
 
 		dist->ptype = POLICYTYPE_PARTITIONED;
-		dist->numsegments = rel->rd_cdbpolicy->numsegments;
-		dist->keys = distro;
+		dist->numsegments = policy->numsegments;
+		dist->keyCols = keys;
 	}
 
 	return dist;
 }
+
 
 /*
  * Given a relation, get all column encodings for that relation as a list of

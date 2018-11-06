@@ -188,6 +188,7 @@ extern List *build_join_pathkeys(PlannerInfo *root,
 extern DistributionKey *
 cdb_make_distkey_for_expr(PlannerInfo  *root,
                           Node     *expr,
+						  Oid		opfamily,
                           List     *eqopname);
 extern DistributionKey *
 cdb_pull_up_distribution_key(PlannerInfo    *root,
@@ -208,7 +209,8 @@ extern List *make_pathkeys_for_sortclauses(PlannerInfo *root,
 							  List *tlist);
 extern void make_distribution_exprs_for_groupclause(PlannerInfo *root, List *groupclause, List *tlist,
 										List **partition_dist_pathkeys,
-										List **partition_dist_exprs);
+										List **partition_dist_exprs,
+										List **partition_dist_opfamilies);
 extern void initialize_mergeclause_eclasses(PlannerInfo *root,
 								RestrictInfo *restrictinfo);
 extern void update_mergeclause_eclasses(PlannerInfo *root,

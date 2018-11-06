@@ -58,6 +58,7 @@
 #include "utils/selfuncs.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
+#include "utils/typcache.h"
 #include "catalog/pg_aggregate.h"
 
 #include "cdb/cdbllize.h"
@@ -67,7 +68,7 @@
 #include "cdb/cdbpullup.h"
 #include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
-#include "cdb/cdbhash.h"		/* isGreenplumDbHashable() */
+#include "cdb/cdbhash.h"
 
 #include "cdb/cdbsetop.h"
 #include "cdb/cdbgroup.h"
@@ -787,17 +788,45 @@ cdb_grouping_planner(PlannerInfo *root,
 			if (!cdbpathlocus_collocates_expressions(root, plan_2p.input_locus, agg_costs->dqaArgs, false /* exact_match */ ))
 			{
 				DistributionKey *distinct_distkey;
-				List	   *l;
+				Node	   *expr;
+				Oid			opclass;
+				Oid			opfamily;
+				Oid			opcintype;
+				Oid			eqop;
+				List	   *mergeopfamilies;
+				EquivalenceClass *eclass;
 
-				distinct_distkey = cdb_make_distkey_for_expr(root,
-															 linitial(agg_costs->dqaArgs),
-															 list_make1(makeString("=")));
-				l = list_make1(distinct_distkey);
+				expr = linitial(agg_costs->dqaArgs);
+				opclass = cdb_default_distribution_opclass_for_type(exprType(expr));
+				opfamily = get_opclass_family(opclass);
+				opcintype = get_opclass_input_type(opclass);
+				eqop = get_opfamily_member(opfamily, opcintype, opcintype, 1);
+
+				/*
+				 * Get Oid of the sort operator that would be used for a sort-merge
+				 * equijoin on a pair of exprs of the same type.
+				 */
+				if (eqop == InvalidOid || !op_mergejoinable(eqop, opcintype))
+					elog(ERROR, "could not find mergejoinable = operator for type %u", opcintype);
+
+				mergeopfamilies = get_mergejoin_opfamilies(eqop);
+
+				eclass = get_eclass_for_sort_expr(root, (Expr *) expr,
+												  NULL, /* nullable_relids */ /* GPDB_94_MERGE_FIXME: is NULL ok here? */
+												  mergeopfamilies,
+												  opcintype,
+												  exprCollation((Node *) expr),
+												  0,
+												  NULL,
+												  true);
+
+				distinct_distkey = makeNode(DistributionKey);
+				distinct_distkey->dk_opfamily = opfamily;
+				distinct_distkey->dk_eclass = eclass;
 
 				plan_2p.group_prep = MPP_GRP_PREP_HASH_DISTINCT;
-				CdbPathLocus_MakeHashed(&plan_2p.input_locus, l,
+				CdbPathLocus_MakeHashed(&plan_2p.input_locus, list_make1(distinct_distkey),
 										CdbPathLocus_NumSegments(plan_2p.input_locus));
-				list_free(l);
 			}
 			else
 			{
@@ -1068,7 +1097,7 @@ make_one_stage_agg_plan(PlannerInfo *root,
 				groupExprs = lappend(groupExprs, copyObject(tle->expr));
 			}
 
-			result_plan = (Plan *) make_motion_hash(root, result_plan, groupExprs);
+			result_plan = (Plan *) make_motion_hash_exprs(root, result_plan, groupExprs);
 			result_plan->total_cost +=
 				incremental_motion_cost(result_plan->plan_rows,
 										result_plan->plan_rows);
@@ -1235,7 +1264,6 @@ make_two_stage_agg_plan(PlannerInfo *root,
 	List	   *prelim_tlist = NIL;
 	List	   *final_tlist = NIL;
 	List	   *final_qual = NIL;
-	List	   *distinctExpr = NIL;
 	List	   *groupExprs = NIL;
 	List	   *current_pathkeys;
 	Plan	   *result_plan;
@@ -1315,9 +1343,10 @@ make_two_stage_agg_plan(PlannerInfo *root,
 			Assert(ctx->agg_costs->dqaArgs != NIL);
 			if (!ctx->distinctkey_collocate)
 			{
-				distinctExpr = list_make1(linitial(ctx->agg_costs->dqaArgs));
-				distinctExpr = copyObject(distinctExpr);
-				result_plan = (Plan *) make_motion_hash(root, result_plan, distinctExpr);
+				List	   *distinctExpr;
+
+				distinctExpr = list_make1(copyObject(linitial(ctx->agg_costs->dqaArgs)));
+				result_plan = (Plan *) make_motion_hash_exprs(root, result_plan, distinctExpr);
 				result_plan->total_cost +=
 					incremental_motion_cost(result_plan->plan_rows,
 											result_plan->plan_rows);
@@ -1503,7 +1532,7 @@ make_two_stage_agg_plan(PlannerInfo *root,
 				tle = get_tle_by_resno(prelim_tlist, prelimGroupColIdx[i]);
 				groupExprs = lappend(groupExprs, copyObject(tle->expr));
 			}
-			result_plan = (Plan *) make_motion_hash(root, result_plan, groupExprs);
+			result_plan = (Plan *) make_motion_hash_exprs(root, result_plan, groupExprs);
 			result_plan->total_cost +=
 				incremental_motion_cost(result_plan->plan_rows,
 										result_plan->plan_rows);
@@ -2150,7 +2179,7 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 					tle = get_tle_by_resno(prelim_tlist, prelimGroupColIdx[i]);
 					groupExprs = lappend(groupExprs, copyObject(tle->expr));
 				}
-				result_plan = (Plan *) make_motion_hash(root, result_plan, groupExprs);
+				result_plan = (Plan *) make_motion_hash_exprs(root, result_plan, groupExprs);
 				result_plan->total_cost +=
 					incremental_motion_cost(result_plan->plan_rows,
 											result_plan->plan_rows);
@@ -2176,7 +2205,7 @@ make_plan_for_one_dqa(PlannerInfo *root, MppGroupContext *ctx, int dqa_index,
 				Assert(tle);
 				groupExprs = lappend(NIL, copyObject(tle->expr));
 
-				result_plan = (Plan *) make_motion_hash(root, result_plan, groupExprs);
+				result_plan = (Plan *) make_motion_hash_exprs(root, result_plan, groupExprs);
 				result_plan->total_cost +=
 					incremental_motion_cost(result_plan->plan_rows,
 											result_plan->plan_rows);
@@ -4725,24 +4754,7 @@ sorting_prefixes_grouping(PlannerInfo *root)
 static bool
 gp_hash_safe_grouping(PlannerInfo *root)
 {
-	List	   *grouptles;
-	List	   *sortops;
-	List	   *eqops;
-	ListCell   *glc;
-
-	get_sortgroupclauses_tles(root->parse->groupClause,
-							  root->parse->targetList,
-							  &grouptles, &sortops, &eqops);
-	foreach(glc, grouptles)
-	{
-		TargetEntry *tle = (TargetEntry *) lfirst(glc);
-		bool		canhash;
-
-		canhash = isGreenplumDbHashable(exprType((Node *) tle->expr));
-		if (!canhash)
-			return false;
-	}
-	return true;
+	return grouping_is_hashable(root->parse->groupClause);
 }
 
 /*
@@ -5701,13 +5713,15 @@ add_motion_to_dqa_child(Plan *plan, PlannerInfo *root, bool *motion_added)
 	List	   *pathkeys = make_pathkeys_for_groupclause(root, root->parse->groupClause, plan->targetlist);
 	CdbPathLocus locus = cdbpathlocus_from_flow(plan->flow);
 
-	if (CdbPathLocus_IsPartitioned(locus) && NIL != plan->flow->hashExpr)
+	if (CdbPathLocus_IsPartitioned(locus) && NIL != plan->flow->hashExprs)
 	{
 		/*
 		 * We want to create a locus to representing the exprs of the flow,
 		 * it must have the same numsegments with the flow.
 		 */
-		locus = cdbpathlocus_from_exprs(root, plan->flow->hashExpr,
+		locus = cdbpathlocus_from_exprs(root,
+										plan->flow->hashExprs,
+										plan->flow->hashOpfamilies,
 										plan->flow->numsegments);
 	}
 
@@ -5719,10 +5733,11 @@ add_motion_to_dqa_child(Plan *plan, PlannerInfo *root, bool *motion_added)
 		 * computing the group by only requires relaxed distribution
 		 * collocation
 		 */
-		List	   *groupExprs = get_sortgrouplist_exprs(root->parse->groupClause,
-														 plan->targetlist);
+		List	   *groupExprs;
 
-		result = (Plan *) make_motion_hash(root, plan, groupExprs);
+		groupExprs = get_sortgrouplist_exprs(root->parse->groupClause, plan->targetlist);
+
+		result = (Plan *) make_motion_hash_exprs(root, plan, groupExprs);
 		result->total_cost += incremental_motion_cost(plan->plan_rows, plan->plan_rows);
 		*motion_added = true;
 	}
@@ -5760,7 +5775,12 @@ areAllGreenplumDbHashable(List *exprs)
 
 	foreach (lc, exprs)
 	{
-		if (!isGreenplumDbHashable(exprType(lfirst(lc))))
+		Node	   *expr = lfirst(lc);
+		TypeCacheEntry *tcache;
+
+		tcache = lookup_type_cache(exprType(expr),
+								   TYPECACHE_HASH_OPFAMILY);
+		if (!tcache->hash_opf)
 			return false;
 	}
 	return true;

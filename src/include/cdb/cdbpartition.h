@@ -141,8 +141,8 @@ partition_policies_equal(GpPolicy *p, PartitionNode *pn);
 
 extern void 
 partition_get_policies_attrs(PartitionNode *pn,
-										 GpPolicy *master_policy,
-							             List **cols);
+							 GpPolicy *master_policy,
+							 List **cols, List **opclasses);
 
 /* RelationBuildPartitionDesc is built from get_parts */
 extern PartitionNode *get_parts(Oid relid, int16 level, Oid parent, bool inctemplate,

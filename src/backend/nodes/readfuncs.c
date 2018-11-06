@@ -2910,7 +2910,7 @@ _readReshuffleExpr(void)
 	READ_INT_FIELD(newSegs);
 	READ_INT_FIELD(oldSegs);
 	READ_NODE_FIELD(hashKeys);
-	READ_NODE_FIELD(hashTypes);
+	READ_NODE_FIELD(hashFuncs);
 	READ_INT_FIELD(ptype);
 
 	READ_DONE();
