@@ -530,16 +530,18 @@ cdbpathlocus_join(RelOptInfo *joinrel, JoinType jointype, CdbPathLocus a, CdbPat
 				return a;
 
 			/*
-			 * In some cases, however, we might have an equijoin predicate between two
-			 * different equivalence classes. That appens if one side of the join
-			 * predicate is "outerjoin delayed". Usually, outerjoin delayed predicates
-			 * occur with outer joins, by we can get here at least in some cases
-			 * involving EXISTS and IN clauses that have been converted to joins.
+			 * In some cases, however, we might have an equijoin predicate
+			 * between two different equivalence classes. That happens if one
+			 * side of the join predicate is "outerjoin delayed". Usually,
+			 * outerjoin delayed predicates occur with outer joins, by we can
+			 * get here at least in some cases involving EXISTS and IN clauses
+			 * that have been converted to joins.
 			 *
-			 * Try to choose the side that's more useful above the join, for matching
-			 * with other joins above this one, or for grouping/sorting. We do that
-			 * by looking at the EquivalenceClasses on both sides. If an EC refers to
-			 * relations outside this join rel, then that seems useful for joining with
+			 * Try to choose the side that's more useful above the join, for
+			 * matching with other joins above this one, or for
+			 * grouping/sorting. We do that by looking at the
+			 * EquivalenceClasses on both sides. If an EC refers to relations
+			 * outside this join rel, then that seems useful for joining with
 			 * those other relations, and we pick that EC.
 			 */
 			distkeys = NIL;
@@ -642,6 +644,7 @@ cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist,
 		foreach(distkeycell, locus.distkeys)
 		{
 			DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
+			EquivalenceClass *dk_eclass = distkey->dk_eclass;
 			bool		found = false;
 			ListCell   *i;
 
@@ -649,10 +652,13 @@ cdbpathlocus_is_hashed_on_exprs(CdbPathLocus locus, List *exprlist,
 
 			Assert(IsA(distkey, DistributionKey));
 
-			if (ignore_constants && CdbEquivClassIsConstant(distkey->dk_eclass))
+			while (dk_eclass->ec_merged != NULL)
+				dk_eclass = dk_eclass->ec_merged;
+
+			if (ignore_constants && CdbEquivClassIsConstant(dk_eclass))
 				continue;
 
-			foreach(i, distkey->dk_eclass->ec_members)
+			foreach(i, dk_eclass->ec_members)
 			{
 				EquivalenceMember *em = (EquivalenceMember *) lfirst(i);
 
@@ -771,7 +777,7 @@ cdbpathlocus_is_hashed_on_relids(CdbPathLocus locus, Bitmapset *relids)
 			{
 				EquivalenceMember *em = (EquivalenceMember *) lfirst(lc2);
 
-				if (IsA(em->em_expr, Var) &&bms_is_subset(em->em_relids, relids))
+				if (IsA(em->em_expr, Var) && bms_is_subset(em->em_relids, relids))
 				{
 					found = true;
 					break;

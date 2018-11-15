@@ -406,8 +406,12 @@ static bool
 cdbpath_match_preds_to_distkey_tail(CdbpathMatchPredsContext *ctx,
 									ListCell *distkeycell)
 {
+	DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
 	DistributionKey *codistkey;
 	ListCell   *rcell;
+
+	if (!CdbPathLocus_IsHashed(ctx->locus))
+		elog(ERROR, "unexpected locus type: %u", ctx->locus.locustype);
 
 	/*----------------
 	 * Is there a "<distkey item> = <constant expr>" predicate?
@@ -423,15 +427,9 @@ cdbpath_match_preds_to_distkey_tail(CdbpathMatchPredsContext *ctx,
 	 */
 	codistkey = NULL;
 
-	if (ctx->locus.locustype == CdbLocusType_Hashed)
-	{
-		DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
+	if (CdbDistributionKeyEqualsConstant(distkey))
+		codistkey = distkey;
 
-		if (CdbDistributionKeyEqualsConstant(distkey))
-			codistkey = distkey;
-	}
-	else
-		elog(ERROR, "unexpected locus type: %u", ctx->locus.locustype);
 	/* Look for an equijoin comparison to the distkey item. */
 	if (!codistkey)
 	{
@@ -456,22 +454,17 @@ cdbpath_match_preds_to_distkey_tail(CdbpathMatchPredsContext *ctx,
 				Assert(bms_is_subset(rinfo->left_relids, ctx->path->parent->relids));
 			}
 
-			if (CdbPathLocus_IsHashed(ctx->locus))
+			if (distkey->dk_eclass == a_ec)
 			{
-				DistributionKey *distkey = (DistributionKey *) lfirst(distkeycell);
-
-				if (distkey->dk_eclass == a_ec)
-					codistkey = makeDistributionKeyForEC(b_ec);
-			}
-
-			if (codistkey)
+				codistkey = makeDistributionKeyForEC(b_ec);
 				break;
+			}
 		}
-
-		/* Fail if didn't find a match for this distkey item. */
-		if (!codistkey)
-			return false;
 	}
+
+	/* Fail if didn't find a match for this distkey item. */
+	if (!codistkey)
+		return false;
 
 	/* Might need to build co-locus if locus is outer join source or result. */
 	if (codistkey != lfirst(distkeycell))
