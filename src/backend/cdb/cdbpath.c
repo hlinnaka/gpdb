@@ -994,7 +994,7 @@ cdbpath_motion_for_join(PlannerInfo    *root,
      */
     else if (cdbpath_match_preds_to_both_partkeys(root, redistribution_clauses,
                                                   outer.locus, inner.locus))
-        return cdbpathlocus_join(outer.locus, inner.locus);
+        return cdbpathlocus_join(jointype, outer.locus, inner.locus);
 
     /*
      * Kludge used internally for querying catalogs on segment dbs.
@@ -1116,7 +1116,7 @@ cdbpath_motion_for_join(PlannerInfo    *root,
     *p_inner_path = inner.path;
 
     /* Tell caller where the join will be done. */
-    return cdbpathlocus_join(outer.path->locus, inner.path->locus);
+    return cdbpathlocus_join(jointype, outer.path->locus, inner.path->locus);
 
 fail:                           /* can't do this join */
     CdbPathLocus_MakeNull(&outer.move_to);
