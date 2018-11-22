@@ -1815,6 +1815,10 @@ class GpTransferCommand(Command):
                         logger.error(self._dest_exception)
                     logger.info('Remaining %s of %s tables', remaining_tables, self._table_transfer_set_total)
 
+    # FIXME: Starting with GPDB6, could use the backend function,
+    # pg_get_table_distributedby(), for this.
+    # FIXME: refers to attrnums, not distkey, so this query works on GPDB5 but
+    # not on GPDB6. How to do version checks here?
     def _get_distributed_by(self):
         sql = '''SELECT attname
 FROM (

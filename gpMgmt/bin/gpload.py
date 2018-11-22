@@ -2636,6 +2636,9 @@ class gpload:
         return tblname
 
     def get_table_dist_key(self):
+        # FIXME: refers to attrnums, not distkey, so this query works on GPDB5 but
+        # not on GPDB6. How to do version checks here? Does this need to work against
+        # old servers?
 
         # NOTE: this query should be re-written better. the problem is that it is
         # not possible to perform a cast on a table name with spaces...

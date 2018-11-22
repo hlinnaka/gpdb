@@ -33,14 +33,6 @@
           </row>
           <row>
             <entry colname="col1">
-              <codeph id="ey142874">attrnums</codeph>
-            </entry>
-            <entry colname="col2">smallint[]</entry>
-            <entry colname="col3">pg_attribute.attnum</entry>
-            <entry colname="col4">The column number(s) of the distribution column(s).</entry>
-          </row>
-          <row>
-            <entry colname="col1">
               <codeph id="ey142874">policytype</codeph>
             </entry>
             <entry colname="col2">char</entry>
@@ -50,6 +42,14 @@
                 distribution policy.</li>
               <li><codeph>r</codeph> - The table has a replicated distribution
                 policy.</li></ul></entry>
+          </row>
+          <row>
+            <entry colname="col1">
+              <codeph id="ey142874">distkey</codeph>
+            </entry>
+            <entry colname="col2">int2vector</entry>
+            <entry colname="col3">pg_attribute.distkey</entry>
+            <entry colname="col4">The column number(s) of the distribution column(s).</entry>
           </row>
         </tbody>
       </tgroup>
