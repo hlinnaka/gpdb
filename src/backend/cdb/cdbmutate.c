@@ -271,8 +271,6 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 	switch (query->commandType)
 	{
 		case CMD_SELECT:
-			
-
 			if (query->intoClause)
 			{
 				List   *hashExpr;
@@ -410,36 +408,35 @@ apply_motion(PlannerInfo *root, Plan *plan, Query *query)
 						}
 					}
 					
-					if (query->intoPolicy == NULL)
+					/* If we deduced the policy from the query, give a NOTICE */
 					{
-						char * columns;
-						int i;
-						columns = palloc((NAMEDATALEN+3)*targetPolicy->nattrs+1);
-						columns[0] = '\0';
-						for (i=0;i<targetPolicy->nattrs;i++)
+						StringInfoData columnsbuf;
+						int			i;
+
+						initStringInfo(&columnsbuf);
+						for (i = 0; i < targetPolicy->nattrs; i++)
 						{
 							TargetEntry *target = get_tle_by_resno(plan->targetlist, targetPolicy->attrs[i]);
-							if (i>0)
-								strcat(columns, ", ");
+
+							if (i > 0)
+								appendStringInfoString(&columnsbuf, ", ");
 							if (target->resname)
-								strcat(columns, target->resname);
+								appendStringInfoString(&columnsbuf, target->resname);
 							else
-								strcat(columns, "???");
-						
+								appendStringInfoString(&columnsbuf, "???");
 						}
-					
 						ereport(NOTICE,
 								(errcode(ERRCODE_SUCCESSFUL_COMPLETION),
 								 errmsg("Table doesn't have 'DISTRIBUTED BY' clause -- Using column(s) "
-									    "named '%s' as the Greenplum Database data distribution key for this "
-									    "table. ", columns),
-							     errhint("The 'DISTRIBUTED BY' clause determines the distribution of data."
-							     		 " Make sure column(s) chosen are the optimal data distribution key to minimize skew.")));
+										"named '%s' as the Greenplum Database data distribution key for this "
+										"table. ", columnsbuf.data),
+								 errhint("The 'DISTRIBUTED BY' clause determines the distribution of data."
+										 " Make sure column(s) chosen are the optimal data distribution key to minimize skew.")));
 					}
 				}
-				
+
 				query->intoPolicy = targetPolicy;
-				
+
                 /*
 	             * Make sure the top level flow is partitioned on the
                  * partitioning key of the target relation.	Since this
