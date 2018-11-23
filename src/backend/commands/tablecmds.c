@@ -14589,8 +14589,8 @@ ReshuffleRelationData(Relation rel)
  * of tuples to be moved to be smaller than SCALE_THRESHOLD, we use the
  * reshuffle method, and CTAS method otherwise.
  *
- * All this assumes that the table is distributed by a has. On a randomly
- * distributed table, we don't need to move any tuples, as all the tuples
+ * A mandatory data movement is applied to a randomly distributed table to
+ * avoid data skew. Another choice is don't move any tuples, as all the tuples
  * can legitimately still reside on the old segments even after expanding.
  * To rebalance a randomly distributed table after expanding, you can use
  * WITH (REORGANIZE=TRUE), but that's a completely different codepath.
