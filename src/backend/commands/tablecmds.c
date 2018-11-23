@@ -282,8 +282,8 @@ struct DropRelationCallbackState
 #define		ATT_COMPOSITE_TYPE		0x0010
 #define		ATT_FOREIGN_TABLE		0x0020
 
-static void ATExecExpandTableCTAS(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd, PartStatus ps);
-static void ATExecExpandTableReshuffle(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd, PartStatus ps);
+static void ATExecExpandTableCTAS(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd);
+static void ATExecExpandTableReshuffle(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd);
 
 static void truncate_check_rel(Relation rel);
 static void MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel,
@@ -4657,18 +4657,10 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_ExpandTable:
 			if (!recursing)
 			{
-				Oid relid = RelationGetRelid(rel);
-				PartStatus ps = rel_part_status(relid);
+				Oid			relid = RelationGetRelid(rel);
+				PartStatus	ps = rel_part_status(relid);
 
 				ATExternalPartitionCheck(cmd->subtype, rel, recursing);
-
-				if (Gp_role == GP_ROLE_DISPATCH &&
-					rel->rd_cdbpolicy->numsegments == getgpsegmentCount())
-					ereport(ERROR,
-							(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-							 errmsg("cannot expand table \"%s\"",
-									RelationGetRelationName(rel)),
-							 errdetail("table has already been expanded")));
 
 				switch (ps)
 				{
@@ -14573,48 +14565,42 @@ ReshuffleRelationData(Relation rel)
 	return;
 }
 
-static void
-add_part_status_map(ExpandStmtSpec *spec, PartStatus ps, Oid relid)
-{
-	switch (ps)
-	{
-		case PART_STATUS_NONE:
-			spec->ps_none = bms_add_member(spec->ps_none, relid);
-			break;
-		case PART_STATUS_ROOT:
-			spec->ps_root = bms_add_member(spec->ps_root, relid);
-			break;
-		case PART_STATUS_INTERIOR:
-			spec->ps_interior = bms_add_member(spec->ps_interior, relid);
-			break;
-		case PART_STATUS_LEAF:
-			spec->ps_leaf = bms_add_member(spec->ps_leaf, relid);
-			break;
-	}
-}
-
-static PartStatus
-get_ps_from_map(ExpandStmtSpec *spec, Oid relid)
-{
-	PartStatus ps = PART_STATUS_NONE;
-
-	if (bms_is_member(relid, spec->ps_none))
-		ps = PART_STATUS_NONE;
-	else if (bms_is_member(relid, spec->ps_root))
-		ps = PART_STATUS_ROOT;
-	else if (bms_is_member(relid, spec->ps_interior))
-		ps = PART_STATUS_INTERIOR;
-	else if (bms_is_member(relid, spec->ps_leaf))
-		ps = PART_STATUS_LEAF;
-
-	return ps;
-}
-
+/*
+ * There are two ways we can perform EXPAND TABLE:
+ *
+ * 1. Create a whole new relation file, with the new 'numsegments', copy all
+ *    the data to the new reltion file, and swap it in place of the old one.
+ *    This is called the "CTAS method", because it uses a CREATE TABLE AS
+ *    command internally to create the new physical relation.
+ *
+ * 2. Scan all the data, and perform an UPDATE to move all rows that are in
+ *    wrong segment, according to the new 'numsegments' value. This is called
+ *    the "reshuffle method".
+ *
+ * The reshuffle method has the advantage that it only needs to move those
+ * tuples that are not already in the correct segment. With jump consistent
+ * hashing, if you expand the cluster by one segment, that is only 1/Nth of
+ * the data. However, it leaves behind dead tuples, and it updates indexes
+ * one row at a time, which can be much slower than rebuilding the index
+ * from scratch.
+ *
+ * We use a simple heuristic to decide which method to use. If the table
+ * is smaller than NTUPLES_THRESHOLD tuples, or if we estimate the fraction
+ * of tuples to be moved to be smaller than SCALE_THRESHOLD, we use the
+ * reshuffle method, and CTAS method otherwise.
+ *
+ * All this assumes that the table is distributed by a has. On a randomly
+ * distributed table, we don't need to move any tuples, as all the tuples
+ * can legitimately still reside on the old segments even after expanding.
+ * To rebalance a randomly distributed table after expanding, you can use
+ * WITH (REORGANIZE=TRUE), but that's a completely different codepath.
+ * (REORGANIZE currently always uses the CTAS method.)
+ */
 #define NTUPLES_THRESHOLD 10000.0
 #define SCALE_THRESHOLD	0.3
 
 static ExpandMethod
-get_expand_method(Relation rel, PartStatus ps, List **wqueue)
+get_expand_method(Relation rel, List **wqueue)
 {
 	ListCell	*ltab;
 	float4		reltuples = 0;
@@ -14625,6 +14611,10 @@ get_expand_method(Relation rel, PartStatus ps, List **wqueue)
 
 	Assert(cluster_size >= table_size);
 
+	/*
+	 * Estimate the number of tuples currently in the table, and the number
+	 * of tuples that need to be moved.
+	 */
 	foreach(ltab, *wqueue)
 	{
 		AlteredTableInfo *tab = (AlteredTableInfo *) lfirst(ltab);
@@ -14635,6 +14625,7 @@ get_expand_method(Relation rel, PartStatus ps, List **wqueue)
 		relation_close(rel, NoLock);
 	}
 
+	/* Estimate the fraction of tuples that we'll need to move */
 	scale = (cluster_size - table_size) / cluster_size;
 	min_ntuples_move = reltuples * scale;
 
@@ -14651,18 +14642,22 @@ get_expand_method(Relation rel, PartStatus ps, List **wqueue)
 	return EXPANDMETHOD_CTAS;
 }
 
+/*
+ * ALTER TABLE EXPAND TABLE
+ *
+ * Update a table's "numsegments" value to current cluster size, and move
+ * data as needed to the new segments.
+ */
 static void
 ATExecExpandTable(List **wqueue, Relation rel, AlterTableCmd *cmd)
 {
-	ExpandStmtSpec		*spec;
-	AlteredTableInfo	*tab;
-	AlterTableCmd		*rootCmd;
-	MemoryContext		oldContext;
-	ExpandMethod		method = EXPANDMETHOD_NONE;
-	PartStatus			ps = PART_STATUS_NONE;
-	Oid					relid = RelationGetRelid(rel);
-	GpPolicy			*newPolicy;
-	GpPolicy			*policy = rel->rd_cdbpolicy;
+	ExpandStmtSpec *spec;
+	AlteredTableInfo *tab;
+	AlterTableCmd *rootCmd;
+	ExpandMethod method = EXPANDMETHOD_NONE;
+	Oid			relid = RelationGetRelid(rel);
+	GpPolicy   *policy = rel->rd_cdbpolicy;
+	GpPolicy   *newPolicy;
 
 	if (Gp_role == GP_ROLE_UTILITY)
 		ereport(ERROR,
@@ -14680,51 +14675,70 @@ ATExecExpandTable(List **wqueue, Relation rel, AlterTableCmd *cmd)
 			(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 			errmsg("permission denied: \"%s\" is a system catalog", RelationGetRelationName(rel))));
 
-	oldContext = MemoryContextSwitchTo(GetMemoryChunkContext(rel));
+	if (rel->rd_cdbpolicy->numsegments == getgpsegmentCount())
+	{
+		/*
+		 * Table is already fully expanded. Nothing to do, just report success.
+		 *
+		 * The caller expects us to close the relation, so do that.
+		 */
+		relation_close(rel, NoLock);
+		return;
+	}
+
+	/* make a modifiable copy of the policy */
 	newPolicy = GpPolicyCopy(policy);
-	MemoryContextSwitchTo(oldContext);
 
 	tab = linitial(*wqueue);
-	rootCmd = (AlterTableCmd *)linitial(tab->subcmds[AT_PASS_MISC]);
+	rootCmd = (AlterTableCmd *) linitial(tab->subcmds[AT_PASS_MISC]);
 
+	/*
+	 * In QD mode, decide which method we'll use to perform the expansion.
+	 * For a partitioned table, make the decision only once, for the partitioned
+	 * table as whole. Copy the chosen method to the AlterTableCmds of every
+	 * partition, so that we use the same method for all subcommands.
+	 *
+	 * XXX: Why do we have to use the same method for all subcommands?
+	 */
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
-		ps = rel_part_status(relid);
-
-		/* only rootCmd is dispatched to QE, we can store */
 		if (rootCmd == cmd)
-			rootCmd->def = (Node*)makeNode(ExpandStmtSpec);
-		spec = (ExpandStmtSpec *)rootCmd->def;
-		Assert(spec);
-		/*
-		 * pg_partition and pg_partitions are empty on QEs,
-		 * so pass partition status info to QEs.
-		 */
-		add_part_status_map(spec, ps, relid);
+		{
+			/* Decide which method to use. */
+			method = get_expand_method(rel, wqueue);
 
-		/* pass method to QEs */
-		if (rootCmd == cmd)
-			spec->method = get_expand_method(rel, ps, wqueue);
-
-		/* make sure each sub command use the same method */
-		method = spec->method;
+			/*
+			 * Store the decision in the command, so that it's passed to the
+			 * QEs. (Only the rootCmd is dispatched.)
+			 */
+			spec = (ExpandStmtSpec *) makeNode(ExpandStmtSpec);
+			spec->method = method;
+			rootCmd->def = (Node *) spec;
+		}
+		else
+		{
+			/* use the method we chose for the rootCmd. */
+			spec = (ExpandStmtSpec *) rootCmd->def;
+			method = spec->method;
+			Assert(spec);
+		}
 	}
 	else if (Gp_role == GP_ROLE_EXECUTE)
 	{
-		spec = (ExpandStmtSpec *)rootCmd->def;
+		/* use the method that the QD chose. */
+		spec = (ExpandStmtSpec *) rootCmd->def;
 		Assert(spec);
-		ps = get_ps_from_map(spec, relid);
 		method = spec->method;
 	}
 
 	Assert(method == EXPANDMETHOD_CTAS || method == EXPANDMETHOD_RESHUFFLE);
 
-	/* two ways to move data */
+	/* Move the data, using the method we chose. */
 	if (method == EXPANDMETHOD_CTAS)
-		ATExecExpandTableCTAS(rootCmd, rel, cmd, ps);	
+		ATExecExpandTableCTAS(rootCmd, rel, cmd);
 	else if (method == EXPANDMETHOD_RESHUFFLE)
 	{
-		ATExecExpandTableReshuffle(rootCmd, rel, cmd, ps);
+		ATExecExpandTableReshuffle(rootCmd, rel, cmd);
 		/*
 		 * little bit tricky here,
 		 * ATExecExpandTableCTAS() close the relation temporarily,
@@ -14745,7 +14759,7 @@ ATExecExpandTable(List **wqueue, Relation rel, AlterTableCmd *cmd)
 }
 
 static void
-ATExecExpandTableReshuffle(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd, PartStatus ps)
+ATExecExpandTableReshuffle(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd)
 {
 	/* only QD drive the real data movement */
 	if (Gp_role != GP_ROLE_DISPATCH)
@@ -14759,14 +14773,14 @@ ATExecExpandTableReshuffle(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *
 }
 
 static void
-ATExecExpandTableCTAS(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd, PartStatus ps)
+ATExecExpandTableCTAS(AlterTableCmd *rootCmd, Relation rel, AlterTableCmd *cmd)
 {
-	RangeVar			*tmprv;
-	Datum				newOptions;
-	Oid					tmprelid;
-	Oid					relid = RelationGetRelid(rel);
-	char				relstorage = rel->rd_rel->relstorage;
-	ExpandStmtSpec		*spec = (ExpandStmtSpec *)rootCmd->def;
+	RangeVar   *tmprv;
+	Datum		newOptions;
+	Oid			tmprelid;
+	Oid			relid = RelationGetRelid(rel);
+	char		relstorage = rel->rd_rel->relstorage;
+	ExpandStmtSpec *spec = (ExpandStmtSpec *)rootCmd->def;
 
 	/*--
 	 * a) Ensure that the proposed policy is sensible

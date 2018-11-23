@@ -3092,10 +3092,6 @@ _outExpandStmtSpec(StringInfo str, const ExpandStmtSpec *node)
 {
 	WRITE_NODE_TYPE("EXPANDSTMTSPEC");
 	WRITE_ENUM_FIELD(method, ExpandMethod);
-	WRITE_BITMAPSET_FIELD(ps_none);
-	WRITE_BITMAPSET_FIELD(ps_root);
-	WRITE_BITMAPSET_FIELD(ps_interior);
-	WRITE_BITMAPSET_FIELD(ps_leaf);
 	WRITE_OID_FIELD(backendId);
 }
 

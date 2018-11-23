@@ -1017,3 +1017,9 @@ DETAIL:  drop cascades to table inherit_t1_p2
 drop cascades to table inherit_t1_p4
 drop cascades to table inherit_t1_p3
 drop cascades to table inherit_t1_p5
+--
+-- Test EXPAND, on a table that doesn't need expanding. Should be a no-op.
+--
+CREATE TABLE expand_noop(i int) distributed by (i);
+ALTER TABLE expand_noop EXPAND TABLE;
+ALTER TABLE expand_noop EXPAND TABLE;

@@ -3617,10 +3617,6 @@ _copyExpandStmtSpec(const ExpandStmtSpec *from)
 	ExpandStmtSpec *newnode = makeNode(ExpandStmtSpec);
 
 	COPY_SCALAR_FIELD(method);
-	COPY_BITMAPSET_FIELD(ps_none);
-	COPY_BITMAPSET_FIELD(ps_root);
-	COPY_BITMAPSET_FIELD(ps_interior);
-	COPY_BITMAPSET_FIELD(ps_leaf);
 	COPY_SCALAR_FIELD(backendId);
 
 	return newnode;

@@ -417,3 +417,10 @@ alter table inherit_t1_p1 expand table;
 select count(*) > 0 from inherit_t1_p1 where gp_segment_id = 2;
 
 DROP TABLE inherit_t1_p1 CASCADE;
+
+--
+-- Test EXPAND, on a table that doesn't need expanding. Should be a no-op.
+--
+CREATE TABLE expand_noop(i int) distributed by (i);
+ALTER TABLE expand_noop EXPAND TABLE;
+ALTER TABLE expand_noop EXPAND TABLE;

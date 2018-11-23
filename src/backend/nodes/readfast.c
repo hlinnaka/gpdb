@@ -1228,10 +1228,6 @@ _readExpandStmtSpec(void)
 	READ_LOCALS(ExpandStmtSpec);
 
 	READ_ENUM_FIELD(method, ExpandMethod);
-	READ_BITMAPSET_FIELD(ps_none);
-	READ_BITMAPSET_FIELD(ps_root);
-	READ_BITMAPSET_FIELD(ps_interior);
-	READ_BITMAPSET_FIELD(ps_leaf);
 	READ_OID_FIELD(backendId);
 
 	READ_DONE();

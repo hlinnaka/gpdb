@@ -2124,15 +2124,7 @@ typedef struct ExpandStmtSpec
 	NodeTag				type;
 	/* method to move data internal */
 	ExpandMethod		method;
-	/*
-	 * QEs has empty pg_partition and pg_partitions
-	 * so we need to pass necessary partition related
-	 * info to QEs.
-	 */
-	Bitmapset			*ps_none;
-	Bitmapset			*ps_root;
-	Bitmapset			*ps_interior;
-	Bitmapset			*ps_leaf;
+
 	/* for ctas method */
 	Oid					backendId;
 } ExpandStmtSpec;
