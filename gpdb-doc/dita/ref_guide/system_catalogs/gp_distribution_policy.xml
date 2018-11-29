@@ -25,7 +25,7 @@
         <tbody>
           <row>
             <entry colname="col1">
-              <codeph id="ey142864">localoid</codeph>
+              <codeph>localoid</codeph>
             </entry>
             <entry colname="col2">oid</entry>
             <entry colname="col3">pg_class.oid</entry>
@@ -33,19 +33,18 @@
           </row>
           <row>
             <entry colname="col1">
-              <codeph id="ey142874">policytype</codeph>
+              <codeph>policytype</codeph>
             </entry>
             <entry colname="col2">char</entry>
-            <entry colname="col3"></entry>
+            <entry colname="col3"/>
             <entry colname="col4">The table distribution policy:<ul>
-              <li><codeph>p</codeph> - The table has a partitioned
-                distribution policy.</li>
-              <li><codeph>r</codeph> - The table has a replicated distribution
-                policy.</li></ul></entry>
+                <li><codeph>p</codeph> - The table has a partitioned distribution policy.</li>
+                <li><codeph>r</codeph> - The table has a replicated distribution policy.</li>
+              </ul></entry>
           </row>
           <row>
             <entry colname="col1">
-              <codeph id="ey142874">distkey</codeph>
+              <codeph>distkey</codeph>
             </entry>
             <entry colname="col2">int2vector</entry>
             <entry colname="col3">pg_attribute.distkey</entry>
@@ -53,11 +52,12 @@
           </row>
           <row>
             <entry colname="col1">
-              <codeph id="ey142874">distclass</codeph>
+              <codeph>distclass</codeph>
             </entry>
             <entry colname="col2">oidvector</entry>
             <entry colname="col3">pg_attribute.distclass</entry>
-            <entry colname="col4">The operator class identifier(s) of the distribution column(s).</entry>
+            <entry colname="col4">The operator class identifier(s) of the distribution
+              column(s).</entry>
           </row>
         </tbody>
       </tgroup>
