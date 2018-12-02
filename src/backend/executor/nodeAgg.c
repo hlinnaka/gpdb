@@ -2998,9 +2998,15 @@ ExecEagerFreeAgg(AggState *node)
 
 	/* Make sure we have closed any open tuplesorts */
 	if (node->sort_in)
+	{
 		tuplesort_end(node->sort_in);
+		node->sort_in = NULL;
+	}
 	if (node->sort_out)
+	{
 		tuplesort_end(node->sort_out);
+		node->sort_out = NULL;
+	}
 
 	for (aggno = 0; aggno < node->numaggs; aggno++)
 	{

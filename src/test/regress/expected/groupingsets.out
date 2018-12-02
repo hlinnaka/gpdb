@@ -233,8 +233,6 @@ select a, d, grouping(a,b,c)
 (4 rows)
 
 -- simple rescan tests
--- start_ignore
--- GPDB_93_MERGE_FIXME: re-enable these once we have LATERAL support
 select a, b, sum(v.x)
   from (values (1),(2)) v(x), gstest_data(v.x)
  group by rollup (a,b);
@@ -257,7 +255,6 @@ select *
 ERROR:  aggregate functions are not allowed in FROM clause of their own query level
 LINE 3:        lateral (select a, b, sum(v.x) from gstest_data(v.x) ...
                                      ^
--- end_ignore
 -- min max optimisation should still work with GROUP BY ()
 explain (costs off)
   select min(unique1) from tenk1 GROUP BY ();
@@ -267,9 +264,9 @@ explain (costs off)
    InitPlan 1 (returns $0)  (slice2)
      ->  Limit
            ->  Gather Motion 3:1  (slice1; segments: 3)
-                 Merge Key: public.tenk1.unique1
+                 Merge Key: tenk1.unique1
                  ->  Index Only Scan using tenk1_unique1 on tenk1
-                       Index Cond: unique1 IS NOT NULL
+                       Index Cond: (unique1 IS NOT NULL)
  Optimizer: legacy query optimizer
 (8 rows)
 
@@ -280,8 +277,12 @@ NOTICE:  view "gstest_view" will be a temporary view
 select pg_get_viewdef('gstest_view'::regclass, true);
                                 pg_get_viewdef                                 
 -------------------------------------------------------------------------------
-  SELECT gstest2.a, gstest2.b, GROUPING(gstest2.a, gstest2.b) AS "grouping",  +
-     sum(gstest2.c) AS sum, count(*) AS count, max(gstest2.c) AS max          +
+  SELECT gstest2.a,                                                           +
+     gstest2.b,                                                               +
+     GROUPING(gstest2.a, gstest2.b) AS "grouping",                            +
+     sum(gstest2.c) AS sum,                                                   +
+     count(*) AS count,                                                       +
+     max(gstest2.c) AS max                                                    +
     FROM gstest2                                                              +
    GROUP BY ROLLUP((gstest2.a, gstest2.b, gstest2.c), (gstest2.c, gstest2.d));
 (1 row)
@@ -418,8 +419,6 @@ select a, b, sum(c) from (values (1,1,10),(1,1,11),(1,2,12),(1,2,13),(1,3,14),(2
    |   | 145
 (12 rows)
 
--- start_ignore
--- GPDB_93_MERGE_FIXME: re-enable these once we have LATERAL support
 select a, b, sum(v.x)
   from (values (1),(2)) v(x), gstest_data(v.x)
  group by cube (a,b) order by a,b;
@@ -439,7 +438,6 @@ select a, b, sum(v.x)
    |   |   9
 (12 rows)
 
--- end_ignore
 -- Agg level check. This query should error out.
 select (select grouping(a,b) from gstest2) from gstest2 group by a,b;
 ERROR:  arguments to GROUPING must be grouping expressions of the associated query level
@@ -511,8 +509,6 @@ group by rollup(ten);
 (11 rows)
 
 -- More rescan tests
--- start_ignore
--- GPDB_93_MERGE_FIXME: re-enable these once we have LATERAL support
 select * from (values (1),(2)) v(a) left join lateral (select v.a, four, ten, count(*) from onek group by cube(four,ten)) s on true order by v.a,four,ten;
  a | a | four | ten | count 
 ---+---+------+-----+-------
@@ -588,7 +584,6 @@ select * from (values (1),(2)) v(a) left join lateral (select v.a, four, ten, co
  2 | 2 |      |     |  1000
 (70 rows)
 
--- end_ignore
 select array(select row(v.a,s1.*) from (select two,four, count(*) from onek group by cube(two,four) order by two,four) s1) from (values (1),(2)) v(a);
                                                                         array                                                                         
 ------------------------------------------------------------------------------------------------------------------------------------------------------
