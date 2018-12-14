@@ -124,6 +124,7 @@
 #include "cdb/cdbvars.h"
 #include "cdb/cdbrelsize.h"
 #include "cdb/cdboidsync.h"
+#include "executor/execDML.h"
 
 /*
  * ON COMMIT action list
@@ -17235,7 +17236,7 @@ split_rows(Relation intoa, Relation intob, Relation temprel)
 		 * Map attributes from origin to target.  We should consider dropped
 		 * columns in the origin.
 		 */
-		targetSlot = reconstructMatchingTupleSlot(slotT, targetRelInfo);
+		targetSlot = reconstructMatchingTupleSlot(slotT, targetRelInfo, targetRelInfo->ri_partInsertMap);
 
 		/* insert into the target table */
 		if (RelationIsHeap(targetRelation))

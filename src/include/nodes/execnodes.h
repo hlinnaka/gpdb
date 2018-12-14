@@ -334,7 +334,6 @@ typedef void *RelationDeleteDesc;
  *		ConstraintExprs			array of constraint-checking expr states
  *		junkFilter				for removing junk attributes from tuples
  *		projectReturning		for computing a RETURNING list
- *		tupdesc_match			???
  *		mt_bind					???
  *		aoInsertDesc			context for appendonly relation buffered INSERT.
  *		aoDeleteDesc			context for appendonly relation buffered DELETE.
@@ -366,7 +365,6 @@ typedef struct ResultRelInfo
 	List	  **ri_ConstraintExprs;
 	JunkFilter *ri_junkFilter;
 	ProjectionInfo *ri_projectReturning;
-	int			tupdesc_match;
 	struct MemTupleBinding *mt_bind;
 
 	struct AppendOnlyInsertDescData *ri_aoInsertDesc;
