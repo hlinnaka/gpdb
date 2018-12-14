@@ -501,6 +501,8 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid, bool isCommit)
 			/* Clear the subtransaction-XID cache too while holding the lock */
 			pgxact->nxids = 0;
 			pgxact->overflowed = false;
+
+			proc->localDistribXactData.state = LOCALDISTRIBXACT_STATE_NONE;
 		}
 
 		/* Also advance global latestCompletedXid while holding the lock */
@@ -536,6 +538,8 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid, bool isCommit)
 
 		Assert(pgxact->nxids == 0);
 		Assert(pgxact->overflowed == false);
+
+		proc->localDistribXactData.state = LOCALDISTRIBXACT_STATE_NONE;
 	}
 
 	return needNotifyCommittedDtxTransaction;
