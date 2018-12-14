@@ -133,6 +133,7 @@ bool		gp_crash_recovery_abort_suppress_fatal = false;
 bool		Debug_bitmap_print_insert = false;
 bool		Test_appendonly_override = false;
 bool		Test_print_direct_dispatch_info = false;
+bool		Test_copy_qd_qe_split = false;
 bool		gp_test_orientation_override = false;
 bool		gp_permit_relation_node_change = false;
 int			Test_compresslevel_override = 0;
@@ -1627,6 +1628,17 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_SUPERUSER_ONLY | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
 		},
 		&Test_print_direct_dispatch_info,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"test_copy_qd_qe_split", PGC_SUSET, DEVELOPER_OPTIONS,
+			gettext_noop("For testing purposes, print information about which columns are parsed in QD and which in QE."),
+			NULL,
+			GUC_SUPERUSER_ONLY | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&Test_copy_qd_qe_split,
 		false,
 		NULL, NULL, NULL
 	},
