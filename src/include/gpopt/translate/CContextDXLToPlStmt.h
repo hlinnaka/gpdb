@@ -19,6 +19,7 @@
 
 #include "gpopt/translate/CDXLTranslateContext.h"
 #include "gpopt/translate/CDXLTranslateContextBaseTable.h"
+#include "gpopt/translate/CTranslatorUtils.h"
 #include "gpos/base.h"
 
 #include "naucrates/dxl/gpdb_types.h"
@@ -105,6 +106,9 @@ namespace gpdxl
 			// counter for generating unique param ids
 			CIdGenerator *m_param_id_counter;
 
+			// What operator classes to use for distribution keys?
+			DistributionHashOpsKind m_distribution_hashops;
+
 			// list of all rtable entries
 			List **m_rtable_entries_list;
 
@@ -129,13 +133,6 @@ namespace gpdxl
 			// CTAS distribution policy
 			GpPolicy  *m_distribution_policy;
 
-			enum
-			{
-				DistrHashOpsNotDeterminedYet,
-				DistrUseDefaultHashOps,
-				DistrUseLegacyHashOps
-			}  m_distribution_hashops;
-
 		public:
 			// ctor/dtor
 			CContextDXLToPlStmt
@@ -144,6 +141,7 @@ namespace gpdxl
 						CIdGenerator *plan_id_counter,
 						CIdGenerator *motion_id_counter,
 						CIdGenerator *param_id_counter,
+						DistributionHashOpsKind distribution_hashops,
 						List **rtable_entries_list,
 						List **subplan_entries_list
 						)

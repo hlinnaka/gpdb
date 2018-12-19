@@ -43,6 +43,7 @@ CContextDXLToPlStmt::CContextDXLToPlStmt
 	CIdGenerator *plan_id_counter,
 	CIdGenerator *motion_id_counter,
 	CIdGenerator *param_id_counter,
+	DistributionHashOpsKind distribution_hashops,
 	List **rtable_entries_list,
 	List **subplan_entries_list
 	)
@@ -51,6 +52,7 @@ CContextDXLToPlStmt::CContextDXLToPlStmt
 	m_plan_id_counter(plan_id_counter),
 	m_motion_id_counter(motion_id_counter),
 	m_param_id_counter(param_id_counter),
+	m_distribution_hashops(distribution_hashops),
 	m_rtable_entries_list(rtable_entries_list),
 	m_partitioned_tables_list(NULL),
 	m_num_partition_selectors_array(NULL),
@@ -61,7 +63,6 @@ CContextDXLToPlStmt::CContextDXLToPlStmt
 {
 	m_cte_consumer_info = GPOS_NEW(m_mp) HMUlCTEConsumerInfo(m_mp);
 	m_num_partition_selectors_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
-	m_distribution_hashops = DistrHashOpsNotDeterminedYet;
 }
 
 //---------------------------------------------------------------------------
@@ -259,85 +260,6 @@ CContextDXLToPlStmt::AddRTE
 		GPOS_ASSERT(0 == m_result_relation_index && "Only one result relation supported");
 		rte->inFromCl = false;
 		m_result_relation_index = gpdb::ListLength(*(m_rtable_entries_list));
-	}
-
-	// What opclasses are being used in the distribution policy?
-	// We categorize them into three categories:
-	//
-	// 1. Default opclasses for the datatype
-	// 2. Legacy cdbhash opclasses for the datatype
-	// 3. Any other opclasses
-	//
-	// ORCA doesn't know about hash opclasses attached to distribution
-	// keys. So if a query involves two tables, with e.g. integer
-	// datatype as distribution key, but with different opclasses,
-	// ORCA doesn'thinks they're nevertheless compatible, and will
-	// merrily create a join between them without a Redistribute
-	// Motion. To avoid incorrect plans like that, we keep track of the
-	// opclasses used in the distribution keys of all the tables
-	// being referenced in the plan.  As long the all use the default
-	// opclasses, or the legacy ones, ORCA will produce a valid plan.
-	// But if we see mixed use, or non-default opclasses, throw an error.
-	//
-	// This conservative, there are many cases that we bail out on,
-	// for which the ORCA-generated plan would in fact be OK, but
-	// we have to play it safe. When converting the DXL plan to
-	// a Plan tree, we will use the default opclasses, or the legacy
-	// ones, for all hashing within the query.
-	if (rte->rtekind == RTE_RELATION)
-	{
-		Relation rel = gpdb::GetRelation(rte->relid);
-		GpPolicy *policy = rel->rd_cdbpolicy;
-		TupleDesc desc = rel->rd_att;
-		bool contains_default_hashops = false;
-		bool contains_legacy_hashops = false;
-		bool contains_nondefault_hashops = false;
-
-		for (int i = 0; i < policy->nattrs; i++)
-		{
-			AttrNumber attnum = policy->attrs[i];
-			Oid typeoid = desc->attrs[attnum - 1]->atttypid;
-			Oid opfamily;
-			Oid hashfunc;
-
-			opfamily = gpdb::GetOpclassFamily(policy->opclasses[i]);
-			hashfunc = gpdb::GetHashProcInOpfamily(opfamily, typeoid);
-
-			if (gpdb::IsLegacyCdbHashFunction(hashfunc))
-			{
-				contains_legacy_hashops = true;
-			}
-			else
-			{
-				Oid default_opclass = gpdb::GetDefaultDistributionOpclassForType(typeoid);
-
-				if (policy->opclasses[i] == default_opclass)
-					contains_default_hashops = true;
-				else
-					contains_nondefault_hashops = true;
-			}
-		}
-		gpdb::CloseRelation(rel);
-
-		if (contains_nondefault_hashops)
-		{
-			/* have to fall back */
-			GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("Query contains relations with non-default hash opclasses"));
-		}
-		if (contains_default_hashops &&
-		    m_distribution_hashops != DistrUseDefaultHashOps)
-		{
-			if (m_distribution_hashops != DistrHashOpsNotDeterminedYet)
-				GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("Query contains relations with a mix of default and legacy hash opclasses"));
-			m_distribution_hashops = DistrUseDefaultHashOps;
-		}
-		if (contains_legacy_hashops &&
-		    m_distribution_hashops != DistrUseLegacyHashOps)
-		{
-			if (m_distribution_hashops != DistrHashOpsNotDeterminedYet)
-				GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("Query contains relations with a mix of default and legacy hash opclasses"));
-			m_distribution_hashops = DistrUseLegacyHashOps;
-		}
 	}
 }
 
