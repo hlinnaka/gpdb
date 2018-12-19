@@ -32,6 +32,19 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+/*
+ * GUC to enable use of legacy hash opclasses by default. If set,
+ * and a CREATE TABLE command doesn't specify opclasses for distribution
+ * keys, the legacy hash opclasses are used instead of the default
+ * PostgreSQL hash opclasses. If a datatype doesn't have legacy hash
+ * opclasses, the normal defaults are still used.
+ *
+ * This is normally set as a database-level setting, on databases
+ * that have been pg_upgraded from a previous version. But it can also be
+ * handy to set it with SET or in postgresql.conf for testing purposes.
+ */
+bool gp_use_legacy_hashops = false;
+
 /* Fast mod using a bit mask, assuming that y is a power of 2 */
 #define FASTMOD(x,y)		((x) & ((y)-1))
 
@@ -296,35 +309,26 @@ cdbhashrandomseg(int numsegs)
  * to determine the operator class to use.
  *
  * Mostly the same as GetIndexOpClass(), but this knows about the
- * "cdbhash_legacy_ops" alias, and gives a slightly more appropriate
+ * gp_use_legacy_hashops GUC, and gives a slightly more appropriate
  * error message if no opclass is found.
  */
 Oid
 cdb_get_opclass_for_column_def(List *opclassName, Oid attrType)
 {
-	Oid			opclass;
+	Oid			opclass = InvalidOid;
 
 	if (opclassName)
 	{
-		/*
-		 * "cdbhash_legacy_ops" is accepted as an alias, to mean the legacy
-		 * cdbhash operator class for this datatype. This makes pg_dump's
-		 * work a little bit easier, when dumping an old server for binary
-		 * upgrade, as it doesn't need to know the exact name of every legacy
-		 * opclass.
-		 */
-		if (list_length(opclassName) == 1 &&
-			strcmp(strVal(linitial(opclassName)), "cdbhash_legacy_ops") == 0)
-		{
-			opclass = get_legacy_cdbhash_opclass_for_base_type(attrType);
-		}
-		else
-			opclass = GetIndexOpClass(opclassName, attrType,
-									  "hash", HASH_AM_OID);
+		opclass = GetIndexOpClass(opclassName, attrType,
+								  "hash", HASH_AM_OID);
 	}
 	else
 	{
-		opclass = cdb_default_distribution_opclass_for_type(attrType);
+		if (gp_use_legacy_hashops)
+			opclass = get_legacy_cdbhash_opclass_for_base_type(attrType);
+
+		if (!opclass)
+			opclass = cdb_default_distribution_opclass_for_type(attrType);
 
 		/*
 		 * Same error message as in GetIndexOpClass, except for the hint, for

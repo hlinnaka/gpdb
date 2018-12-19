@@ -16919,16 +16919,6 @@ addDistributedByOld(Archive *fout, PQExpBuffer q, TableInfo *tbinfo, int actual_
 
 				appendPQExpBuffer(q, "%s",
 								  fmtId(tbinfo->attnames[atoi(policycol) - 1]));
-
-				/*
-				 * Earlier versions didn't use opclasses. Use the default
-				 * hash opclass. Except in binary upgrade mode, use the
-				 * compatibility opclasses.
-				 */
-				if (binary_upgrade)
-				{
-					appendPQExpBuffer(q, " cdbhash_legacy_ops");
-				}
 			}
 			appendPQExpBufferChar(q, ')');
 		}

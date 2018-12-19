@@ -17,6 +17,9 @@
 
 #include "utils/rel.h"
 
+/* GUC */
+extern bool gp_use_legacy_hashops;
+
 /*
  * reduction methods.
  */

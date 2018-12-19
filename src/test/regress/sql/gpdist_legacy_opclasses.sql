@@ -4,6 +4,7 @@
 
 -- Basic sanity check of all the legacy hash opclasses. Create a table that
 -- uses all of them in the distribution key, and insert a value.
+set gp_use_legacy_hashops=on;
 create table all_legacy_types(
   int2_col int2,
   int4_col int4,
@@ -38,39 +39,43 @@ create table all_legacy_types(
   --uuid_col uuid,
   complex_col complex
 ) distributed by (
-  int2_col cdbhash_legacy_ops,
-  int4_col cdbhash_legacy_ops,
-  int8_col cdbhash_legacy_ops,
-  float4_col cdbhash_legacy_ops,
-  float8_col cdbhash_legacy_ops,
-  numeric_col cdbhash_legacy_ops,
-  char_col cdbhash_legacy_ops,
-  bpchar_col cdbhash_legacy_ops,
-  text_col cdbhash_legacy_ops,
-  varchar_col cdbhash_legacy_ops,
-  bytea_col cdbhash_legacy_ops,
-  name_col cdbhash_legacy_ops,
-  oid_col cdbhash_legacy_ops,
-  tid_col cdbhash_legacy_ops,
-  timestamp_col cdbhash_legacy_ops,
-  timestamptz_col cdbhash_legacy_ops,
-  date_col cdbhash_legacy_ops,
-  time_col cdbhash_legacy_ops,
-  timetz_col cdbhash_legacy_ops,
-  interval_col cdbhash_legacy_ops,
-  abstime_col cdbhash_legacy_ops,
-  tinterval_col cdbhash_legacy_ops,
-  inet_col cdbhash_legacy_ops,
-  cidr_col cdbhash_legacy_ops,
-  macaddr_col cdbhash_legacy_ops,
-  bit_col cdbhash_legacy_ops,
-  varbit_col cdbhash_legacy_ops,
-  bool_col cdbhash_legacy_ops,
-  oidvector_col cdbhash_legacy_ops,
-  money_col cdbhash_legacy_ops,
-  --uuid_col cdbhash_legacy_ops,
-  complex_col cdbhash_legacy_ops
+  int2_col,
+  int4_col,
+  int8_col,
+  float4_col,
+  float8_col,
+  numeric_col,
+  char_col,
+  bpchar_col,
+  text_col,
+  varchar_col,
+  bytea_col,
+  name_col,
+  oid_col,
+  tid_col,
+  timestamp_col,
+  timestamptz_col,
+  date_col,
+  time_col,
+  timetz_col,
+  interval_col,
+  abstime_col,
+  tinterval_col,
+  inet_col,
+  cidr_col,
+  macaddr_col,
+  bit_col,
+  varbit_col,
+  bool_col,
+  oidvector_col,
+  money_col,
+  --uuid_col,
+  complex_col
 );
+
+-- Verify that all columns are using the legacy hashops
+select distkey, distclass from gp_distribution_policy where localoid='all_legacy_types'::regclass;
+
 insert into all_legacy_types values (
   '12345',          -- int2
   '12345678',       -- int4
@@ -105,6 +110,8 @@ insert into all_legacy_types values (
   --uuid_col         -- uuid,
   '5 + 3i'         -- complex
 );
+
+set gp_use_legacy_hashops=off;
 
 
 --

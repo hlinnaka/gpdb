@@ -67,6 +67,7 @@
 #include "utils/typcache.h"
 #include "utils/xml.h"
 
+#include "cdb/cdbhash.h"
 #include "cdb/cdbpartition.h"
 #include "catalog/pg_partition.h"
 #include "catalog/pg_partition_rule.h"
@@ -9414,6 +9415,53 @@ get_opclass_name(Oid opclass, Oid actual_datatype,
 }
 
 /*
+ * Like get_opclass_name(), but with special treatment for gp_use_legacy_hashops=on
+ */
+static void
+get_opclass_name_for_distribution_key(Oid opclass, Oid actual_datatype,
+									  StringInfo buf)
+{
+	Oid		legacy_opclass;
+
+	Assert(OidIsValid(actual_datatype));
+
+	/* With gp_use_legacy_hashops=off, use the normal rules. */
+	if (!gp_use_legacy_hashops)
+	{
+		get_opclass_name(opclass, actual_datatype, buf);
+		return;
+	}
+
+	/*
+	 * Otherwise, treat the legacy opclasses as the default, and refrain
+	 * from outputting them.
+	 */
+	legacy_opclass = get_legacy_cdbhash_opclass_for_base_type(actual_datatype);
+
+	if (legacy_opclass == InvalidOid)
+	{
+		/*
+		 * No legacy opclass for this datatype. Then treat the usual default
+		 * as the default like usual.
+		 */
+		get_opclass_name(opclass, actual_datatype, buf);
+	}
+	else if (opclass != legacy_opclass)
+	{
+		/*
+		 * This is not the legacy opclass. Force printing it, by
+		 * passing InvalidOid as the 'actual_datatype' to get_opclass_name.
+		 */
+		get_opclass_name(opclass, InvalidOid, buf);
+	}
+	else
+	{
+		/* it is the legacy opclass. Don't print it */
+	}
+}
+
+
+/*
  * processIndirection - take care of array and subfield assignment
  *
  * We strip any top-level FieldStore or assignment ArrayRef nodes that
@@ -11424,7 +11472,7 @@ pg_get_table_distributedby(PG_FUNCTION_ARGS)
 
 				/* Add the operator class name, if not default */
 				keycoltype = get_atttype(relid, attnum);
-				get_opclass_name(opclass, keycoltype, &buf);
+				get_opclass_name_for_distribution_key(opclass, keycoltype, &buf);
 			}
 			appendStringInfoChar(&buf, ')');
 		}

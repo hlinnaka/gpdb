@@ -264,10 +264,7 @@ get_legacy_cdbhash_opclass_for_base_type(Oid orig_typid)
 	}
 
 	if (!opclass_name)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("data type %s has no legacy cdbhash operator class",
-						format_type_be(orig_typid))));
+		return InvalidOid;
 
 	return get_opclass_oid(HASH_AM_OID,
 						   list_make2(makeString("pg_catalog"),
