@@ -14362,7 +14362,9 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		 * Dump distributed by clause.
 		 */
 		if (dumpPolicy && tbinfo->relkind != RELKIND_FOREIGN_TABLE)
+		{
 			addDistributedBy(fout, q, tbinfo, actual_atts);
+		}
 
 		/*
 		 * If GP partitioning is supported add the partitioning constraints to
@@ -16917,6 +16919,16 @@ addDistributedByOld(Archive *fout, PQExpBuffer q, TableInfo *tbinfo, int actual_
 
 				appendPQExpBuffer(q, "%s",
 								  fmtId(tbinfo->attnames[atoi(policycol) - 1]));
+
+				/*
+				 * Earlier versions didn't use opclasses. Use the default
+				 * hash opclass. Except in binary upgrade mode, use the
+				 * compatibility opclasses.
+				 */
+				if (binary_upgrade)
+				{
+					appendPQExpBuffer(q, " cdbhash_legacy_ops");
+				}
 			}
 			appendPQExpBufferChar(q, ')');
 		}

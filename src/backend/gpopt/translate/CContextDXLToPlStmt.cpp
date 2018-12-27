@@ -19,10 +19,14 @@
 #include "postgres.h"
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
+#include "utils/rel.h"
 
 #include "gpopt/translate/CContextDXLToPlStmt.h"
 #include "gpopt/gpdbwrappers.h"
 #include "gpos/base.h"
+
+#include "naucrates/exception.h"
+
 using namespace gpdxl;
 
 //---------------------------------------------------------------------------
@@ -57,6 +61,7 @@ CContextDXLToPlStmt::CContextDXLToPlStmt
 {
 	m_cte_consumer_info = GPOS_NEW(m_mp) HMUlCTEConsumerInfo(m_mp);
 	m_num_partition_selectors_array = GPOS_NEW(m_mp) ULongPtrArray(m_mp);
+	m_distribution_hashops = DistrHashOpsNotDeterminedYet;
 }
 
 //---------------------------------------------------------------------------
@@ -255,6 +260,85 @@ CContextDXLToPlStmt::AddRTE
 		rte->inFromCl = false;
 		m_result_relation_index = gpdb::ListLength(*(m_rtable_entries_list));
 	}
+
+	// What opclasses are being used in the distribution policy?
+	// We categorize them into three categories:
+	//
+	// 1. Default opclasses for the datatype
+	// 2. Legacy cdbhash opclasses for the datatype
+	// 3. Any other opclasses
+	//
+	// ORCA doesn't know about hash opclasses attached to distribution
+	// keys. So if a query involves two tables, with e.g. integer
+	// datatype as distribution key, but with different opclasses,
+	// ORCA doesn'thinks they're nevertheless compatible, and will
+	// merrily create a join between them without a Redistribute
+	// Motion. To avoid incorrect plans like that, we keep track of the
+	// opclasses used in the distribution keys of all the tables
+	// being referenced in the plan.  As long the all use the default
+	// opclasses, or the legacy ones, ORCA will produce a valid plan.
+	// But if we see mixed use, or non-default opclasses, throw an error.
+	//
+	// This conservative, there are many cases that we bail out on,
+	// for which the ORCA-generated plan would in fact be OK, but
+	// we have to play it safe. When converting the DXL plan to
+	// a Plan tree, we will use the default opclasses, or the legacy
+	// ones, for all hashing within the query.
+	if (rte->rtekind == RTE_RELATION)
+	{
+		Relation rel = gpdb::GetRelation(rte->relid);
+		GpPolicy *policy = rel->rd_cdbpolicy;
+		TupleDesc desc = rel->rd_att;
+		bool contains_default_hashops = false;
+		bool contains_legacy_hashops = false;
+		bool contains_nondefault_hashops = false;
+
+		for (int i = 0; i < policy->nattrs; i++)
+		{
+			AttrNumber attnum = policy->attrs[i];
+			Oid typeoid = desc->attrs[attnum - 1]->atttypid;
+			Oid opfamily;
+			Oid hashfunc;
+
+			opfamily = gpdb::GetOpclassFamily(policy->opclasses[i]);
+			hashfunc = gpdb::GetHashProcInOpfamily(opfamily, typeoid);
+
+			if (gpdb::IsLegacyCdbHashFunction(hashfunc))
+			{
+				contains_legacy_hashops = true;
+			}
+			else
+			{
+				Oid default_opclass = gpdb::GetDefaultDistributionOpclassForType(typeoid);
+
+				if (policy->opclasses[i] == default_opclass)
+					contains_default_hashops = true;
+				else
+					contains_nondefault_hashops = true;
+			}
+		}
+		gpdb::CloseRelation(rel);
+
+		if (contains_nondefault_hashops)
+		{
+			/* have to fall back */
+			GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("Query contains relations with non-default hash opclasses"));
+		}
+		if (contains_default_hashops &&
+		    m_distribution_hashops != DistrUseDefaultHashOps)
+		{
+			if (m_distribution_hashops != DistrHashOpsNotDeterminedYet)
+				GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("Query contains relations with a mix of default and legacy hash opclasses"));
+			m_distribution_hashops = DistrUseDefaultHashOps;
+		}
+		if (contains_legacy_hashops &&
+		    m_distribution_hashops != DistrUseLegacyHashOps)
+		{
+			if (m_distribution_hashops != DistrHashOpsNotDeterminedYet)
+				GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("Query contains relations with a mix of default and legacy hash opclasses"));
+			m_distribution_hashops = DistrUseLegacyHashOps;
+		}
+	}
 }
 
 //---------------------------------------------------------------------------
@@ -361,6 +445,93 @@ CContextDXLToPlStmt::AddCtasInfo
 	
 	m_into_clause = into_clause;
 	m_distribution_policy = distribution_policy;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CContextDXLToPlStmt::GetDistributionHashOpclassForType
+//
+//	@doc:
+//		Return a hash operator class to use for computing
+//		distribution key values for the given datatype.
+//
+//		This returns either the default opclass, or the legacy
+//		opclass of the type, depending on what opclasses we have
+//		seen being used in tables so far.
+//---------------------------------------------------------------------------
+Oid
+CContextDXLToPlStmt::GetDistributionHashOpclassForType(Oid typid)
+{
+	Oid opclass = InvalidOid;
+
+	switch (m_distribution_hashops)
+	{
+		case DistrUseDefaultHashOps:
+			opclass = gpdb::GetDefaultDistributionOpclassForType(typid);
+			break;
+
+		case DistrUseLegacyHashOps:
+			opclass = gpdb::GetLegacyCdbHashOpclassForBaseType(typid);
+			break;
+
+		case DistrHashOpsNotDeterminedYet:
+			// None of the tables we have seen so far have been
+			// hash distributed, so we haven't made up our mind
+			// on which opclasses to use yet. But we have to
+			// pick something now.
+			//
+			// FIXME: It's quite unoptimal that this ever happens.
+			// To avoid this we should make a pass over the tree to
+			// determine the opclasses, before translating
+			// anything. But there is no convenient way to "walk"
+			// the DXL representation AFAIK.
+			//
+			// Example query where this happens:
+			// select * from dd_singlecol_1 t1,
+			//               generate_series(1,10) g
+			// where t1.a=g.g and t1.a=1 ;
+			//
+			// The ORCA plan consists of a join between
+			// Result+FunctionScan and TableScan. The
+			// Result+FunctionScan side is processed first, and
+			// this gets called to generate a "hash filter" for
+			// it Result. The TableScan is encountered and
+			// added to the range table only later. If it uses
+			// legacy ops, we have already decided to use default
+			// ops here, and we fall back unnecessarily.
+			m_distribution_hashops = DistrUseDefaultHashOps;
+			opclass = gpdb::GetDefaultDistributionOpclassForType(typid);
+			break;
+	}
+
+	return opclass;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CContextDXLToPlStmt::GetDistributionHashFuncForType
+//
+//	@doc:
+//		Return a hash function to use for computing distribution key
+//		values for the given datatype.
+//
+//		This returns the hash function either from the default
+//		opclass, or the legacy opclass of the type, depending on
+//		what opclasses we have seen being used in tables so far.
+//---------------------------------------------------------------------------
+Oid
+CContextDXLToPlStmt::GetDistributionHashFuncForType(Oid typid)
+{
+	Oid opclass;
+	Oid opfamily;
+	Oid hashproc;
+
+	opclass = GetDistributionHashOpclassForType(typid);
+
+	opfamily = gpdb::GetOpclassFamily(opclass);
+	hashproc = gpdb::GetHashProcInOpfamily(opfamily, typid);
+
+	return hashproc;
 }
 
 // EOF

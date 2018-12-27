@@ -128,7 +128,14 @@ namespace gpdxl
 			
 			// CTAS distribution policy
 			GpPolicy  *m_distribution_policy;
-			
+
+			enum
+			{
+				DistrHashOpsNotDeterminedYet,
+				DistrUseDefaultHashOps,
+				DistrUseLegacyHashOps
+			}  m_distribution_hashops;
+
 		public:
 			// ctor/dtor
 			CContextDXLToPlStmt
@@ -212,6 +219,10 @@ namespace gpdxl
 				return m_distribution_policy;
 			}
 
+			// Get the hash opclass or hash function for given datatype,
+			// based on decision made by DetermineDistributionHashOpclasses()
+			Oid GetDistributionHashOpclassForType(Oid typid);
+			Oid GetDistributionHashFuncForType(Oid typid);
 	};
 
 	}

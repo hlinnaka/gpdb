@@ -11375,11 +11375,12 @@ pg_get_table_distributedby(PG_FUNCTION_ARGS)
 	{
 		appendStringInfo(&buf, "DISTRIBUTED REPLICATED");
 	}
-	else if (policyform->policytype == POLICYTYPE_PARTITIONED)
+	else if (policyform->policytype == SYM_POLICYTYPE_PARTITIONED)
 	{
 		int			nkeys;
 		bool		isNull;
 		int2vector *distkey;
+		oidvector  *distclass;
 
 		/*
 		 * Get the attributes on which to partition.
@@ -11398,12 +11399,21 @@ pg_get_table_distributedby(PG_FUNCTION_ARGS)
 			int			keyno;
 			char	   *sep;
 
+			distclass = (oidvector *) DatumGetPointer(
+				SysCacheGetAttr(GPPOLICYID, gp_policy_tuple,
+								Anum_gp_policy_distclass,
+								&isNull));
+			Assert(!isNull);
+			Assert(distclass->dim1 == nkeys);
+
 			appendStringInfoString(&buf, "DISTRIBUTED BY (");
 
 			sep = "";
 			for (keyno = 0; keyno < nkeys; keyno++)
 			{
 				AttrNumber	attnum = distkey->values[keyno];
+				Oid			opclass = distclass->values[keyno];
+				Oid			keycoltype;
 				char	   *attname;
 
 				appendStringInfoString(&buf, sep);
@@ -11411,6 +11421,10 @@ pg_get_table_distributedby(PG_FUNCTION_ARGS)
 
 				attname = get_relid_attribute_name(relid, attnum);
 				appendStringInfoString(&buf, quote_identifier(attname));
+
+				/* Add the operator class name, if not default */
+				keycoltype = get_atttype(relid, attnum);
+				get_opclass_name(opclass, keycoltype, &buf);
 			}
 			appendStringInfoChar(&buf, ')');
 		}

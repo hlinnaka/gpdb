@@ -15,7 +15,7 @@ ALTER TABLE <varname>name</varname> SET SCHEMA <varname>new_schema</varname>
 
 ALTER TABLE [ONLY] <varname>name</varname> SET 
      WITH (REORGANIZE=true|false)
-   | DISTRIBUTED BY (<varname>column</varname>, [ ... ] ) 
+   | DISTRIBUTED BY (<varname>column</varname> [<varname>opclass</varname>], [ ... ] )
    | DISTRIBUTED RANDOMLY
    | DISTRIBUTED REPLICATED 
  
@@ -432,7 +432,7 @@ ALTER TABLE <varname>name</varname>
                                                 100 is the default.</pd>
                                 </plentry>
                                 <plentry>
-                                        <pt>DISTRIBUTED BY (<varname>column</varname>) | DISTRIBUTED
+                                        <pt>DISTRIBUTED BY (<varname>column</varname> [<varname>opclass</varname>]) | DISTRIBUTED
                                                 RANDOMLY | DISTRIBUTED REPLICATED</pt>
                                         <pd>Specifies the distribution policy for a table. Changing
                                                 a hash distribution policy causes the table data to
