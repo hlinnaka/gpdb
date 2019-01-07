@@ -476,10 +476,14 @@ select * from atsdb;
 alter table atsdb set distributed by (c2);
 select * from atsdb;
 
-
 --
--- Test changing datatype of distributed by column with ALTER TABLE.
+-- ALTER TABLE SET DATA TYPE tests, where the column is part of the
+-- distribution key.
 --
+CREATE TABLE distpol_typechange (i int2) DISTRIBUTED BY (i);
+INSERT INTO distpol_typechange values (123);
+ALTER TABLE distpol_typechange ALTER COLUMN i SET DATA TYPE int4;
+DROP TABLE distpol_typechange;
 CREATE TABLE distpol_typechange (p text) DISTRIBUTED BY (p);
 
 -- This should throw an error, you can't change the datatype of a distribution

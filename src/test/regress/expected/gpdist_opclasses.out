@@ -230,18 +230,3 @@ HINT:  You must specify an operator class or define a default operator class for
 CREATE TABLE dist_by_point4(p point) DISTRIBUTED BY (p point_hash_ops);
 ALTER TABLE dist_by_point4 SET DISTRIBUTED RANDOMLY;
 ALTER TABLE dist_by_point4 SET DISTRIBUTED BY (p point_hash_ops);
---
--- ALTER TABLE SET DATA TYPE tests, where the column is part of the
--- distribution key.
---
-CREATE TABLE distpol_typechange (i int2) DISTRIBUTED BY (i);
-INSERT INTO distpol_typechange values (123);
-ALTER TABLE distpol_typechange ALTER COLUMN i SET DATA TYPE int4;
-DROP TABLE distpol_typechange;
--- In this scenario, the new datatype is not hashable.
--- The current behavior is that this is allowed, as long as the table
--- is completely empty. The table is turned into randomly distributed
--- in that case. If there is any data, then altering a column that's
--- part of the distribution key is not allowed.
-CREATE TABLE distpol_typechange (p text) DISTRIBUTED BY (p);
-ALTER TABLE distpol_typechange ALTER COLUMN p SET DATA TYPE point USING p::point;
