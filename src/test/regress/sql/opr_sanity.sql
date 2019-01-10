@@ -1246,6 +1246,13 @@ WHERE p1.amopfamily = p2.amopfamily AND
     p2.amopmethod = (SELECT oid FROM pg_am WHERE amname = 'hash') AND
     p1.amopstrategy = 1 AND p2.amopstrategy = 1 AND
     p1.amoplefttype != p2.amoplefttype AND
+
+    -- GPDB: Make an exception for legacy cdbhash_text_ops. It uess the same,
+    -- compatible hashing for text and bpchar, so we could create a cross-type
+    -- equality operator between them. But we don't want to add that, to avoid
+    -- messing with the normal text casting rules.
+    p1.amopfamily <> 7105 AND
+
     NOT EXISTS(SELECT 1 FROM pg_amop p3 WHERE
                  p3.amopfamily = p1.amopfamily AND
                  p3.amoplefttype = p1.amoplefttype AND
