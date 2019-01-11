@@ -688,7 +688,7 @@ void check_hash_partition_usage(void);
 void new_gpdb5_0_invalidate_indexes(void);
 void new_gpdb_invalidate_bitmap_indexes(void);
 Oid *get_numeric_types(PGconn *conn);
-void old_GPDB5_check_for_abstime_reltime_tinterval_distribution_keys(void);
+void old_GPDB5_check_for_unsupported_distribution_key_data_types(void);
 
 /* check_gp.c */
 
