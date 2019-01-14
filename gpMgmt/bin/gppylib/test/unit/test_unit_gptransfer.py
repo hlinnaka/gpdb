@@ -240,55 +240,6 @@ class GpTransfer(GpTestCase):
         self.assertIn("gpfdist logs are present in %s on all hosts in the source", warnings)
 
     @patch('gptransfer.TableValidatorFactory', return_value=Mock())
-    def test__get_distributed_by_quotes_column_name(self, mock1):
-        gptransfer = self.subject
-        cmd_args = self.GpTransferCommand_args
-
-        src_args = ('src', 'public', 'foo', False)
-        dest_args = ('dest', 'public', 'foo', False)
-        source_table = gptransfer.GpTransferTable(*src_args)
-        dest_table = gptransfer.GpTransferTable(*dest_args)
-        cmd_args['table_pair'] = gptransfer.GpTransferTablePair(source_table, dest_table)
-        side_effect = CursorSideEffect()
-        side_effect.append_regexp_key(cursor_keys['attname'], [['escaped_string']])
-        self.cursor.side_effect = side_effect.cursor_side_effect
-        table_validator = gptransfer.GpTransferCommand(**cmd_args)
-        expected_distribution = '''DISTRIBUTED BY ("escaped_string")'''
-
-        self.assertEqual(expected_distribution, table_validator._get_distributed_by())
-
-    @patch('gptransfer.TableValidatorFactory', return_value=Mock())
-    def test__get_distributed_by_quotes_multiple_column_names(self, mock1):
-        gptransfer = self.subject
-        cmd_args = self.GpTransferCommand_args
-
-        src_args = ('src', 'public', 'foo', False)
-        dest_args = ('dest', 'public', 'foo', False)
-        source_table = gptransfer.GpTransferTable(*src_args)
-        dest_table = gptransfer.GpTransferTable(*dest_args)
-        cmd_args['table_pair'] = gptransfer.GpTransferTablePair(source_table, dest_table)
-        side_effect = CursorSideEffect()
-        side_effect.append_regexp_key(cursor_keys['attname'], [['first_escaped_value'], ['second_escaped_value']])
-        self.cursor.side_effect = side_effect.cursor_side_effect
-        table_validator = gptransfer.GpTransferCommand(**cmd_args)
-        expected_distribution = '''DISTRIBUTED BY ("first_escaped_value", "second_escaped_value")'''
-
-        self.assertEqual(expected_distribution, table_validator._get_distributed_by())
-
-    @patch('gptransfer.TableValidatorFactory', return_value=Mock())
-    def test__get_distributed_randomly_when_no_distribution_keys(self, mock1):
-        side_effect = CursorSideEffect()
-        side_effect.append_regexp_key(cursor_keys['attname'], [])
-        self.cursor.side_effect = side_effect.cursor_side_effect
-        table_validator = self._get_gptransfer_command()
-        expected_distribution = '''DISTRIBUTED RANDOMLY'''
-
-        result_distribution = table_validator._get_distributed_by()
-
-        self.assertEqual(0, len(self.subject.logger.method_calls))
-        self.assertEqual(expected_distribution, result_distribution)
-
-    @patch('gptransfer.TableValidatorFactory', return_value=Mock())
     def test_get_distributed_randomly_handles_exception(self, mock1):
         self.cursor.side_effect = ""
         table_validator = self._get_gptransfer_command()
