@@ -1815,35 +1815,21 @@ class GpTransferCommand(Command):
                         logger.error(self._dest_exception)
                     logger.info('Remaining %s of %s tables', remaining_tables, self._table_transfer_set_total)
 
-    # FIXME: Starting with GPDB6, could use the backend function,
-    # pg_get_table_distributedby(), for this.
-    # FIXME: refers to attrnums, not distkey, so this query works on GPDB5 but
-    # not on GPDB6. How to do version checks here?
     def _get_distributed_by(self):
-        sql = '''SELECT attname
-FROM (
-      SELECT localoid, UNNEST(attrnums) AS colnum, GENERATE_SERIES(1, ARRAY_UPPER(attrnums, 1)) AS colorder
-      FROM gp_distribution_policy
- ) d
- JOIN pg_attribute a ON (d.localoid = a.attrelid AND d.colnum = a.attnum)
- JOIN pg_class c ON (d.localoid = c.oid)
- JOIN pg_namespace n ON (c.relnamespace = n.oid)
- WHERE nspname = '%s'
- AND relname = '%s'
- ORDER BY colorder;''' % (self._table_pair.source.schema,
-                           self._table_pair.source.table)
+        sql = '''
+SELECT oid
+FROM (SELECT oid, relname, relnamespace FROM pg_class) c
+JOIN pg_namespace n ON (c.relnamespace = n.oid)
+WHERE nspname = '%s' AND relname = '%s';''' % (self._table_pair.source.schema, self._table_pair.source.table)
         try:
             cur = execSQL(self._src_conn, sql)
-            attnames = cur.fetchall()
+            table_oid = cur.fetchone()
             cur.close()
-            if len(attnames) == 0:
-                return 'DISTRIBUTED RANDOMLY'
-
-            # NOTE: ideally, we can use pg.escape_identifier for this part, but
-            # that is introduced in pygresql 4.1 and we are in 4.0
-            escaped_attnames = [escapeDoubleQuoteInSQLString(attname[0]) for attname in attnames]
-            distributed_by = ", ".join(escaped_attnames)
-            return '''DISTRIBUTED BY (%s)''' % distributed_by
+            sql2 = '''SELECT pg_get_table_distributedby(%s);''' % table_oid[0]
+            cur2 = execSQL(self._src_conn, sql2)
+            distributed_by = cur2.fetchone()
+            cur2.close()
+            return distributed_by[0]
         except Exception as e:
             logger.warn('Unable to determine distribution policy for "%s". Using '
                         'distributed randomly instead.\nmessage: %s' % (self._table_pair.dest, str(e)))
