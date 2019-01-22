@@ -450,6 +450,11 @@ CContextDXLToPlStmt::GetDistributionHashFuncForType(Oid typid)
 
 	opclass = GetDistributionHashOpclassForType(typid);
 
+	if (opclass == InvalidOid)
+	{
+		GPOS_RAISE(gpdxl::ExmaMD, gpdxl::ExmiMDObjUnsupported, GPOS_WSZ_LIT("no default hash opclasses found"));
+	}
+
 	opfamily = gpdb::GetOpclassFamily(opclass);
 	hashproc = gpdb::GetHashProcInOpfamily(opfamily, typid);
 
