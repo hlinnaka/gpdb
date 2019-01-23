@@ -261,7 +261,7 @@ explain (costs off) select * from legacy_enum a inner join legacy_enum b on a.co
 --------------------------------------------------------------
  Gather Motion 3:1  (slice1; segments: 3)
    ->  Hash Join
-         Hash Cond: (legacy_enum.color = legacy_enum_1.color)
+         Hash Cond: (((legacy_enum.color)::anyenum = (legacy_enum_1.color)::anyenum) AND ((legacy_enum.color)::anyenum = (legacy_enum_1.color)::anyenum))
          ->  Seq Scan on legacy_enum
          ->  Hash
                ->  Seq Scan on legacy_enum legacy_enum_1
