@@ -364,7 +364,7 @@ new_gpdb5_0_invalidate_indexes(void)
 /*
  * old_GPDB5_check_for_unsupported_distribution_key_data_types()
  *
- *	abstime, reltime, tinterval, and money datatypes don't have hash opclasses
+ *	abstime, reltime, tinterval, money and anyarray datatypes don't have hash opclasses
  *	in GPDB 6, so they are not supported as distribution keys anymore.
  */
 void
@@ -402,7 +402,8 @@ old_GPDB5_check_for_unsupported_distribution_key_data_types(void)
 								"       a.atttypid in ('pg_catalog.abstime'::regtype, "
 								"                      'pg_catalog.reltime'::regtype, "
 								"                      'pg_catalog.tinterval'::regtype, "
-								"                      'pg_catalog.money'::regtype) AND "
+								"                      'pg_catalog.money'::regtype, "
+								"                      'pg_catalog.anyarray'::regtype) AND "
 								"       attnum = any (p.distkey::int2[]) AND "
 								"       c.relnamespace = n.oid AND "
 		/* exclude possible orphaned temp tables */
@@ -441,7 +442,7 @@ old_GPDB5_check_for_unsupported_distribution_key_data_types(void)
 	{
 		pg_log(PG_REPORT, "fatal\n");
 		pg_fatal("Your installation contains a user table, that uses a 'abstime',\n"
-				 "'reltime', 'tinterval', or 'money' type as a distribution key column. Using\n"
+				 "'reltime', 'tinterval', 'money' or 'anyarray' type as a distribution key column. Using\n"
 				 "these datatypes as distribution keys is no longer supported. You can use\n"
 				 "ALTER TABLE ... SET DISTRIBUTED RANDOMLY to change the distribution keys,\n"
 				 "and restart the upgrade.  A list of the problem columns is in the file:\n"
