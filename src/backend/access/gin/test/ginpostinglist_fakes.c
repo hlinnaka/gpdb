@@ -4,14 +4,14 @@
 #include <stdlib.h>
 
 /*
-*
-* ginpostlist Fakes
-*
-*/
+ *
+ * ginpostlist Fakes
+ *
+ */
 
 /*
-* Ensure that assertions will trigger
-*/
+ * Ensure that assertions will trigger
+ */
 bool		assert_enabled = true;
 
 
@@ -29,30 +29,30 @@ ExceptionalCondition(const char *conditionName, const char *errorType, const cha
 
 
 /*
-* Fake memory allocation methods
-*/
+ * Fake memory allocation methods
+ */
 void *
 palloc(Size size)
 {
 	return calloc(1, size);
-};
+}
 
 
 void
 pfree(void *pointer)
 {
 	free(pointer);
-};
+}
 
 
 /*
-* not used.
-*/
+ * not used.
+ */
 void
 tbm_add_tuples(TIDBitmap *tbm, const ItemPointer tids, int ntids, bool recheck)
 {
 	fprintf(stderr, "tbm_add_tuples: actually used and is not expected.");
-};
+}
 
 
 void *
@@ -60,4 +60,4 @@ repalloc(void *pointer, Size size)
 {
 	fprintf(stderr, "repalloc: actually used and is not expected.");
 	return NULL;
-};
+}
