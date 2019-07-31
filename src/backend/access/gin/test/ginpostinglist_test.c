@@ -128,6 +128,8 @@ main(int argc, char *argv[])
 		unit_test(test_compress_gin_posting_list_with_item_pointer_with_offset_larger_than_eleven_bits),
 		unit_test(test_compress_gin_posting_list_with_multiple_item_pointers)
 	};
-	
+
+	MemoryContextInit();
+
 	return run_tests(tests);
 }

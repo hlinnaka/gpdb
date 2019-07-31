@@ -1,23 +1,10 @@
-top_builddir=../../../../..
 subdir=src/backend/access/gin
+top_builddir=../../../../..
 
 include $(top_builddir)/src/Makefile.global
-include $(top_srcdir)/src/Makefile.mock
-
 
 TARGETS=ginpostinglist
 
-ginpostinglist.t: $(top_srcdir)/$(subdir)/ginpostinglist.o
-	$(CC) $(CFLAGS) $(LDFLAGS) $(CMOCKERY_OBJS) $(CPPFLAGS) \
-		$(top_srcdir)/$(subdir)/ginpostinglist.o \
-		ginpostinglist_fakes.c \
-		ginpostinglist_test.c \
-		-o ginpostinglist.t
+include $(top_builddir)/src/backend/mock.mk
 
-
-check: ginpostinglist.t
-	./ginpostinglist.t
-
-
-clean:
-	@rm -f *.o *.t
+ginpostinglist.t: $(top_builddir)/src/backend/access/gin/ginpostinglist.o
