@@ -7,9 +7,7 @@ include $(top_srcdir)/src/Makefile.mock
 
 TARGETS=ginpostinglist
 
-
 ginpostinglist.t: $(top_srcdir)/$(subdir)/ginpostinglist.o
-	make -C $(top_srcdir)/$(subdir)/ && \
 	$(CC) $(CFLAGS) $(LDFLAGS) $(CMOCKERY_OBJS) $(CPPFLAGS) \
 		$(top_srcdir)/$(subdir)/ginpostinglist.o \
 		ginpostinglist_fakes.c \
