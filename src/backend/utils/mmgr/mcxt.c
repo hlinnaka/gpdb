@@ -454,9 +454,9 @@ GetMemoryChunkSpace(void *pointer)
 	header = (StandardChunkHeader *)
 		((char *) pointer - STANDARDCHUNKHEADERSIZE);
 
-	AssertArg(MemoryContextIsValid(header->sharedHeader->context));
+	AssertArg(MemoryContextIsValid(header->context));
 
-	return (*header->sharedHeader->context->methods.get_chunk_space) (header->sharedHeader->context,
+	return (*header->context->methods.get_chunk_space) (header->context,
 														 pointer);
 }
 
@@ -484,9 +484,9 @@ GetMemoryChunkContext(void *pointer)
 	header = (StandardChunkHeader *)
 		((char *) pointer - STANDARDCHUNKHEADERSIZE);
 
-	AssertArg(MemoryContextIsValid(header->sharedHeader->context));
+	AssertArg(MemoryContextIsValid(header->context));
 
-	return header->sharedHeader->context;
+	return header->context;
 }
 
 /*
@@ -1031,10 +1031,7 @@ MemoryContextContains(MemoryContext context, void *pointer)
 	 */
 	header = (StandardChunkHeader *)
 		((char *) pointer - STANDARDCHUNKHEADERSIZE);
-
-	SharedChunkHeader *sharedHeader = (SharedChunkHeader *)header->sharedHeader;
-
-	return sharedHeader->context == context;
+	return header->context == context;
 }
 
 /*
@@ -1072,11 +1069,7 @@ MemoryContextContainsGenericAllocation(MemoryContext context, void *pointer)
 	header = (StandardChunkHeader *)
 		((char *) pointer - STANDARDCHUNKHEADERSIZE);
 
-	AllocSet set = (AllocSet)context;
-
-	if (header->sharedHeader == set->sharedHeaderList ||
-			(set->sharedHeaderList != NULL && set->sharedHeaderList->next == header->sharedHeader) ||
-			(set->sharedHeaderList != NULL && set->sharedHeaderList->next != NULL && set->sharedHeaderList->next->next == header->sharedHeader))
+	if (header->context == context)
 	{
 		/*
 		 * At this point we know that one of the sharedHeader pointers of the
@@ -1517,9 +1510,8 @@ pfree(void *pointer)
 	/*
 	 * OK, it's probably safe to look at the chunk header.
 	 */
-	StandardChunkHeader* header = (StandardChunkHeader *)
-		((char *) pointer - STANDARDCHUNKHEADERSIZE);
-	context = header->sharedHeader->context;
+	context = ((StandardChunkHeader *)
+			   ((char *) pointer - STANDARDCHUNKHEADERSIZE))->context;
 
 	AssertArg(MemoryContextIsValid(context));
 
@@ -1538,10 +1530,8 @@ pfree(void *pointer)
 	header->sharedHeader->context->callerLine = sline;
 #endif
 
-	if (context->methods.free_p)
-		(*context->methods.free_p) (context, pointer);
-	else
-		Assert(header);   /* this assert never fails. Just here so we can set breakpoint in debugger. */
+	(*context->methods.free_p) (context, pointer);
+
 	VALGRIND_MEMPOOL_FREE(context, pointer);
 }
 
@@ -1552,7 +1542,6 @@ pfree(void *pointer)
 void *
 repalloc(void *pointer, Size size)
 {
-	StandardChunkHeader *header;
 	MemoryContext context;
 	void	   *ret;
 
@@ -1567,9 +1556,9 @@ repalloc(void *pointer, Size size)
 	/*
 	 * OK, it's probably safe to look at the chunk header.
 	 */
-	header = (StandardChunkHeader *)
-		((char *) pointer - STANDARDCHUNKHEADERSIZE);
-	context = header->sharedHeader->context;
+	context = ((StandardChunkHeader *)
+			   ((char *) pointer - STANDARDCHUNKHEADERSIZE))->context;
+
 	AssertArg(MemoryContextIsValid(context));
 
 	if (!AllocSizeIsValid(size))
@@ -1655,7 +1644,6 @@ MemoryContextAllocHuge(MemoryContext context, Size size)
 void *
 repalloc_huge(void *pointer, Size size)
 {
-	StandardChunkHeader *header;
 	MemoryContext context;
 	void	   *ret;
 
@@ -1673,9 +1661,8 @@ repalloc_huge(void *pointer, Size size)
 	/*
 	 * OK, it's probably safe to look at the chunk header.
 	 */
-	header = (StandardChunkHeader *)
-		((char *) pointer - STANDARDCHUNKHEADERSIZE);
-	context = header->sharedHeader->context;
+	context = ((StandardChunkHeader *)
+			   ((char *) pointer - STANDARDCHUNKHEADERSIZE))->context;
 
 	AssertArg(MemoryContextIsValid(context));
 

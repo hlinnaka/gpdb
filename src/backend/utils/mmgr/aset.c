@@ -171,11 +171,47 @@
 	(offsetof(AllocChunkData, size) + sizeof(Size))
 #endif
 
+typedef struct AllocBlockData *AllocBlock;		/* forward reference */
+typedef struct AllocChunkData *AllocChunk;
+
 /*
  * AllocPointer
  *		Aligned pointer which may be a member of an allocation set.
  */
 typedef void *AllocPointer;
+
+/*
+ * AllocSetContext is our standard implementation of MemoryContext.
+ *
+ * Note: header.isReset means there is nothing for AllocSetReset to do.
+ * This is different from the aset being physically empty (empty blocks list)
+ * because we may still have a keeper block.  It's also different from the set
+ * being logically empty, because we don't attempt to detect pfree'ing the
+ * last active chunk.
+ */
+typedef struct AllocSetContext
+{
+	MemoryContextData header;	/* Standard memory-context fields */
+	/* Info about storage allocated in this context: */
+	AllocBlock	blocks;			/* head of list of blocks in this set */
+	AllocChunk	freelist[ALLOCSET_NUM_FREELISTS];		/* free chunk lists */
+	/* Allocation parameters for this context: */
+	Size		initBlockSize;	/* initial block size */
+	Size		maxBlockSize;	/* maximum block size */
+	Size		nextBlockSize;	/* next block size to allocate */
+	Size		allocChunkLimit;	/* effective chunk size limit */
+	AllocBlock	keeper;			/* if not NULL, keep this block over resets */
+
+#ifdef CDB_PALLOC_TAGS
+	/*
+	 * allocList maintains a list of chunks (double linked list) that are
+	 * currently allocated.
+	 */
+	AllocChunk  allocList;
+#endif
+} AllocSetContext;
+
+typedef AllocSetContext *AllocSet;
 
 /*
  * AllocBlock
@@ -195,6 +231,7 @@ typedef struct AllocBlockData
 	AllocBlock	prev;			/* prev block in aset's blocks list, if any */
 	AllocBlock	next;			/* next block in aset's blocks list, if any */
 	char	   *freeptr;		/* start of free space in this block */
+	char	   *endptr;			/* end of space in this block */
 }	AllocBlockData;
 
 /*
@@ -205,15 +242,10 @@ typedef struct AllocBlockData
  */
 typedef struct AllocChunkData
 {
-	/*
-	 * SharedChunkHeader stores all the "shared" details among multiple chunks,
-	 * such as memoryAccount to charge, generation of memory account, memory
-	 * context that owns this chunk etc. However, in case of a free chunk, this
-	 * pointer actually refers to the next chunk in the free list.
-	 */
-	struct SharedChunkHeader* sharedHeader;
-
-	Size		size;			/* size of data space allocated in chunk */
+	/* aset is the owning aset if allocated, or the freelist link if free */
+	void	   *aset;
+	/* size is always the size of the usable space in the chunk */
+	Size		size;
 
 	/*
 	 * The "requested size" of the chunk. This is the intended allocation
@@ -255,9 +287,7 @@ typedef struct AllocChunkData
  * These functions implement the MemoryContext API for AllocSet contexts.
  */
 static void *AllocSetAlloc(MemoryContext context, Size size);
-static void *AllocSetAllocHeader(MemoryContext context, Size size);
 static void AllocSetFree(MemoryContext context, void *pointer);
-static void AllocSetFreeHeader(MemoryContext context, void *pointer);
 static void *AllocSetRealloc(MemoryContext context, void *pointer, Size size);
 static void AllocSetInit(MemoryContext context);
 static void AllocSetReset(MemoryContext context);
@@ -266,13 +296,6 @@ static Size AllocSetGetChunkSpace(MemoryContext context, void *pointer);
 static bool AllocSetIsEmpty(MemoryContext context);
 static void AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
 		uint64 *currentAvailable, uint64 *allAllocated, uint64 *allFreed, uint64 *maxHeld);
-static void AllocSetReleaseAccountingForAllAllocatedChunks(MemoryContext context);
-
-static void dump_allocset_block(FILE *file, AllocBlock block);
-static void dump_allocset_blocks(FILE *file, AllocBlock blocks);
-static void dump_allocset_freelist(FILE *file, AllocSet set);
-static void dump_mc_for(FILE *file, MemoryContext mc);
-void dump_mc(const char *fname, MemoryContext mc);
 
 #ifdef MEMORY_CONTEXT_CHECKING
 static void AllocSetCheck(MemoryContext context);
@@ -290,8 +313,7 @@ static MemoryContextMethods AllocSetMethods = {
 	AllocSetDelete,
 	AllocSetGetChunkSpace,
 	AllocSetIsEmpty,
-	AllocSet_GetStats,
-	AllocSetReleaseAccountingForAllAllocatedChunks
+	AllocSet_GetStats
 #ifdef MEMORY_CONTEXT_CHECKING
 	,AllocSetCheck
 #endif
@@ -309,93 +331,21 @@ static const unsigned char LogTable256[256] =
 	LT16(8), LT16(8), LT16(8), LT16(8), LT16(8), LT16(8), LT16(8), LT16(8)
 };
 
-
-static void dump_allocset_block(FILE *file, AllocBlock block)
-{
-	// block start/free/end pointer
-	fprintf(file, "\t%p|%p|%p\n", block, block->freeptr, UserPtr_GetEndPtr(block));
-
-	AllocChunk chunk = (AllocChunk) (((char *)block) + ALLOC_BLOCKHDRSZ);
-	while ((char *) chunk < (char *) block->freeptr)
-	{
-		fprintf(file, "\t\tchunk|%p|%ld", chunk, chunk->size);
-
-#ifdef MEMORY_CONTEXT_CHECKING
-		fprintf(file, "|%ld", chunk->requested_size);
+/* ----------
+ * Debug macros
+ * ----------
+ */
+#ifdef HAVE_ALLOCINFO
+#define AllocFreeInfo(_cxt, _chunk) \
+			fprintf(stderr, "AllocFree: %s: %p, %d\n", \
+				(_cxt)->header.name, (_chunk), (_chunk)->size)
+#define AllocAllocInfo(_cxt, _chunk) \
+			fprintf(stderr, "AllocAlloc: %s: %p, %d\n", \
+				(_cxt)->header.name, (_chunk), (_chunk)->size)
+#else
+#define AllocFreeInfo(_cxt, _chunk)
+#define AllocAllocInfo(_cxt, _chunk)
 #endif
-
-		fprintf(file, "\n");
-
-		chunk = (AllocChunk) ((char *) chunk + chunk->size + ALLOC_CHUNKHDRSZ);
-	}
-}
-
-static void dump_allocset_blocks(FILE *file, AllocBlock blocks)
-{
-	AllocBlock block = blocks;
-	while (block != NULL)
-	{
-		dump_allocset_block(file, block);
-		block = block->next;
-	}
-}
-
-static void dump_allocset_freelist(FILE *file, AllocSet set)
-{
-	if (set == NULL)
-		return;
-
-	int size = 8;
-
-	for (int i = 0; i < ALLOCSET_NUM_FREELISTS; i++)
-	{
-		AllocChunk chunk = set->freelist[i];
-
-		while (chunk != NULL)
-		{
-			fprintf(file, "\t\tfreelist_%d|%p|%ld", size << i, chunk, chunk->size);
-
-#ifdef MEMORY_CONTEXT_CHECKING
-			fprintf(file, "|%ld", chunk->requested_size);
-#endif
-
-			fprintf(file, "\n");
-
-			chunk = (AllocChunk) chunk->sharedHeader;
-		}
-	}
-}
-
-static void dump_mc_for(FILE *file, MemoryContext mc)
-{
-	if (mc == NULL)
-		return;
-
-	AllocSet set = (AllocSet) mc;
-	fprintf(file, "%p|%p|%d|%s|"UINT64_FORMAT"|"UINT64_FORMAT"|%zu|%zu|%zu|%zu", mc, mc->parent, mc->type, mc->name,
-			mc->allBytesAlloc, mc->allBytesFreed, mc->maxBytesHeld,
-			set->initBlockSize, set->maxBlockSize, set->nextBlockSize);
-
-#ifdef CDB_PALLOC_CALLER_ID
-	fprintf(file, "|%s|%d", (mc->callerFile == NULL ? "NA" : mc->callerFile), mc->callerLine);
-#endif
-
-	fprintf(file, "\n");
-
-	dump_allocset_blocks(file, set->blocks);
-	dump_allocset_freelist(file, set);
-
-	dump_mc_for(file, mc->nextchild);
-	dump_mc_for(file, mc->firstchild);
-}
-
-void dump_mc(const char *fname, MemoryContext mc)
-{
-	FILE *ofile = fopen(fname, "w+");
-	dump_mc_for(ofile, mc);
-	fclose(ofile);
-}
-
 
 /* ----------
  * Debug macros
@@ -434,263 +384,6 @@ void dump_memory_allocation_ctxt(FILE *ofile, void *ctxt)
 	}
 }
 #endif
-
-inline void
-AllocFreeInfo(AllocSet set, AllocChunk chunk, bool isHeader) __attribute__((always_inline));
-
-inline void
-AllocAllocInfo(AllocSet set, AllocChunk chunk, bool isHeader) __attribute__((always_inline));
-
-/*
- * AllocFreeInfo
- *		Internal function to remove a chunk from the "used" chunks list.
- *		Also, updates the memory accounting of the chunk.
- *
- * set: allocation set that the chunk is part of
- * chunk: the chunk that is being freed
- * isHeader: whether the chunk was hosting a shared header for some chunks
- */
-void
-AllocFreeInfo(AllocSet set, AllocChunk chunk, bool isHeader)
-{
-#ifdef MEMORY_CONTEXT_CHECKING
-	Assert(chunk->requested_size != 0xFFFFFFFF); /* This chunk must be in-use. */
-#endif
-
-	/* A header chunk should never have any sharedHeader */
-	Assert((isHeader && chunk->sharedHeader == NULL) || (!isHeader && chunk->sharedHeader != NULL));
-
-	if (!isHeader)
-	{
-		chunk->sharedHeader->balance -= (chunk->size + ALLOC_CHUNKHDRSZ);
-
-		Assert(chunk->sharedHeader->balance >= 0);
-
-		/*
-		 * Some chunks don't use memory accounting. E.g., any chunks allocated before
-		 * memory accounting is setup will get undefined owner. Chunks without memory
-		 * account do not need any accounting adjustment.
-		 */
-		if (chunk->sharedHeader->memoryAccountId != MEMORY_OWNER_TYPE_Undefined)
-		{
-			MemoryAccounting_Free(chunk->sharedHeader->memoryAccountId, chunk->size + ALLOC_CHUNKHDRSZ);
-
-			if (chunk->sharedHeader->balance == 0)
-			{
-				/* No chunk is sharing this header, so remove it from the sharedHeaderList */
-				Assert(set->sharedHeaderList != NULL &&
-						(set->sharedHeaderList->next != NULL || set->sharedHeaderList == chunk->sharedHeader));
-				SharedChunkHeader *prevSharedHeader = chunk->sharedHeader->prev;
-				SharedChunkHeader *nextSharedHeader = chunk->sharedHeader->next;
-
-				if (prevSharedHeader != NULL)
-				{
-					prevSharedHeader->next = chunk->sharedHeader->next;
-				}
-				else
-				{
-					Assert(set->sharedHeaderList == chunk->sharedHeader);
-					set->sharedHeaderList = nextSharedHeader;
-				}
-
-				if (nextSharedHeader != NULL)
-				{
-					nextSharedHeader->prev = prevSharedHeader;
-				}
-
-				/* Free the memory held by the header */
-				AllocSetFreeHeader((MemoryContext) set, chunk->sharedHeader);
-			}
-		}
-		else
-		{
-			/*
-			 * nullAccountHeader assertion. Note: we have already released the shared header balance.
-			 * Also note: we don't try to free nullAccountHeader, even if the balance reaches 0 (MPP-22566).
-			 */
-
-			Assert(chunk->sharedHeader == set->nullAccountHeader);
-		}
-	}
-	else
-	{
-		/*
-		 * At this point, we have already freed the chunks that were using this
-		 * SharedChunkHeader and the chunk's shared header had a memory account
-		 * (otherwise we don't call AllocSetFreeHeader()). So, the header should
-		 * reduce the balance of SharedChunkHeadersMemoryAccount. Note, if we
-		 * decide to fix MPP-22566 (the nullAccountHeader releasing), we need
-		 * to check if we are releasing nullAccountHeader, as that header is not
-		 * charged against SharedChunkMemoryAccount, and that result in a
-		 * negative balance for SharedChunkMemoryAccount.
-		 */
-		MemoryAccounting_Free(MEMORY_OWNER_TYPE_SharedChunkHeader, chunk->size + ALLOC_CHUNKHDRSZ);
-	}
-
-#ifdef CDB_PALLOC_TAGS
-	AllocChunk prev = chunk->prev_chunk;
-	AllocChunk next = chunk->next_chunk;
-
-	if(prev != NULL)
-	{
-		prev->next_chunk = next;
-	}
-	else
-	{
-		Assert(set->allocList == chunk);
-		set->allocList = next;
-	}
-
-	if(next != NULL)
-	{
-		next->prev_chunk = prev;
-	}
-#endif
-}
-
-/*
- * AllocAllocInfo
- *		Internal function to add a "newly used" (may be already allocated) chunk
- *		into the "used" chunks list.
- *		Also, updates the memory accounting of the chunk.
- *
- * set: allocation set that the chunk is part of
- * chunk: the chunk that is being freed
- * isHeader: whether the chunk will be used to host a shared header for another chunk
- */
-void
-AllocAllocInfo(AllocSet set, AllocChunk chunk, bool isHeader)
-{
-	if (!isHeader)
-	{
-		/*
-		 * We only start tallying memory after the initial setup is done.
-		 * We may not keep accounting for some chunk's memory: e.g., TopMemoryContext
-		 * or MemoryAccountMemoryContext gets allocated even before we start assigning
-		 * accounts to any chunks.
-		 */
-		if (ActiveMemoryAccountId != MEMORY_OWNER_TYPE_Undefined)
-		{
-			SharedChunkHeader *desiredHeader = set->sharedHeaderList;
-
-			/* Try to look-ahead in the sharedHeaderList to find the desiredHeader */
-			if (set->sharedHeaderList != NULL && set->sharedHeaderList->memoryAccountId == ActiveMemoryAccountId)
-			{
-				/* Do nothing, we already assigned sharedHeaderList to desiredHeader */
-			}
-			else if (set->sharedHeaderList != NULL && set->sharedHeaderList->next != NULL &&
-					set->sharedHeaderList->next->memoryAccountId == ActiveMemoryAccountId)
-			{
-				desiredHeader = set->sharedHeaderList->next;
-			}
-			else if (set->sharedHeaderList != NULL && set->sharedHeaderList->next != NULL &&
-					set->sharedHeaderList->next->next != NULL &&
-					set->sharedHeaderList->next->next->memoryAccountId == ActiveMemoryAccountId)
-			{
-				desiredHeader = set->sharedHeaderList->next->next;
-			}
-			else
-			{
-				/* The last 3 headers are not suitable for next chunk, so we need a new shared header */
-
-				desiredHeader = AllocSetAllocHeader((MemoryContext) set, sizeof(SharedChunkHeader));
-
-				desiredHeader->context = (MemoryContext) set;
-				desiredHeader->memoryAccountId = ActiveMemoryAccountId;
-				desiredHeader->balance = 0;
-
-				desiredHeader->next = set->sharedHeaderList;
-				if (desiredHeader->next != NULL)
-				{
-					desiredHeader->next->prev = desiredHeader;
-				}
-				desiredHeader->prev = NULL;
-
-				set->sharedHeaderList = desiredHeader;
-			}
-
-			desiredHeader->balance += (chunk->size + ALLOC_CHUNKHDRSZ);
-			chunk->sharedHeader = desiredHeader;
-
-			MemoryAccounting_Allocate(ActiveMemoryAccountId, chunk->size + ALLOC_CHUNKHDRSZ);
-		}
-		else
-		{
-			/* We have NULL ActiveMemoryAccount, so use nullAccountHeader */
-
-			if (set->nullAccountHeader == NULL)
-			{
-				/*
-				 * SharedChunkHeadersMemoryAccount comes to life first. So, if
-				 * ActiveMemoryAccount is NULL, so should be the SharedChunkHeadersMemoryAccount
-				 */
-				Assert(ActiveMemoryAccountId == MEMORY_OWNER_TYPE_Undefined && NULL == SharedChunkHeadersMemoryAccount);
-
-				/* We initialize nullAccountHeader only if necessary */
-				SharedChunkHeader *desiredHeader = AllocSetAllocHeader((MemoryContext) set, sizeof(SharedChunkHeader));
-				desiredHeader->context = (MemoryContext) set;
-				desiredHeader->memoryAccountId = MEMORY_OWNER_TYPE_Undefined;
-				desiredHeader->balance = 0;
-
-				set->nullAccountHeader = desiredHeader;
-
-				/*
-				 * No need to charge SharedChunkHeadersMemoryAccount for
-				 * the nullAccountHeader as a null ActiveMemoryAccount
-				 * automatically implies a null SharedChunkHeadersMemoryAccount
-				 */
-			}
-
-			chunk->sharedHeader = set->nullAccountHeader;
-			set->nullAccountHeader->balance += (chunk->size + ALLOC_CHUNKHDRSZ);
-		}
-	}
-	else
-	{
-		/*
-		 * At this point we still may have NULL SharedChunksHeadersMemoryAccount.
-		 * Note: this is only possible if the ActiveMemoryAccount and
-		 * SharedChunksHeadersMemoryAccount both are null, and we are
-		 * trying to create a nullAccountHeader
-		 */
-		if (SharedChunkHeadersMemoryAccount != NULL)
-		{
-			MemoryAccounting_Allocate(MEMORY_OWNER_TYPE_SharedChunkHeader, chunk->size + ALLOC_CHUNKHDRSZ);
-		}
-
-		/*
-		 * The only reason a sharedChunkHeader can be NULL is the chunk
-		 * is allocated (not part of the freelist), and it is being used
-		 * to store shared header for other chunks
-		 */
-		chunk->sharedHeader = NULL;
-	}
-
-#ifdef CDB_PALLOC_TAGS
-	chunk->prev_chunk = NULL;
-
-	/*
-	 * We are not double-calling AllocAllocInfo where chunk is the only chunk in the allocList.
-	 * Note: the double call is only detectable if allocList is currently pointing to this chunk
-	 * (i.e., this chunk is the head). To detect generic case, we need another flag, which we
-	 * are avoiding here. Also note, if chunk is the head, then it will create a circular linked
-	 * list, otherwise we might just corrupt the linked list
-	 */
-	Assert(!chunk->next_chunk || chunk != set->allocList);
-
-	chunk->next_chunk = set->allocList;
-
-	if(set->allocList)
-	{
-		set->allocList->prev_chunk = chunk;
-	}
-
-	set->allocList = chunk;
-
-	chunk->alloc_tag = set->header.callerFile;
-	chunk->alloc_n = set->header.callerLine;
-#endif
-}
 
 /* ----------
  * AllocSetFreeIndex -
@@ -850,8 +543,6 @@ AllocSetContextCreate(MemoryContext parent,
 	set->maxBlockSize = maxBlockSize;
 	set->nextBlockSize = initBlockSize;
 
-	set->sharedHeaderList = NULL;
-
 #ifdef CDB_PALLOC_TAGS
 	set->allocList = NULL;
 #endif
@@ -896,6 +587,7 @@ AllocSetContextCreate(MemoryContext parent,
 						 (unsigned long)blksize);
 		block->aset = set;
 		block->freeptr = ((char *) block) + ALLOC_BLOCKHDRSZ;
+		block->endptr = ((char *) block) + blksize;
 		block->prev = NULL;
 		block->next = set->blocks;
 		if (block->next)
@@ -917,8 +609,6 @@ AllocSetContextCreate(MemoryContext parent,
 		VALGRIND_MAKE_MEM_NOACCESS(block->freeptr,
 								   blksize - ALLOC_BLOCKHDRSZ);
 	}
-
-	set->nullAccountHeader = NULL;
 
 	return (MemoryContext) set;
 }
@@ -944,59 +634,6 @@ AllocSetInit(MemoryContext context)
 	 */
 }
 
-
-/*
- * AllocSetReleaseAccountingForAllAllocatedChunks
- * 		Iterates through all the shared headers in the sharedHeaderList
- * 		and release their accounting information using the correct MemoryAccount.
- *
- * This is called by AllocSetReset() or AllocSetDelete(). In other words, any time we
- * bulk release all the chunks that are in-use, we want to update the corresponding
- * accounting information.
- *
- * This is also part of the function pointers of MemoryContextMethods. During the
- * memory accounting reset, this is called to release all the chunk accounting
- * in MemoryAccountMemoryContext without actually deletion the chunks.
- *
- * This method can be called multiple times during a memory context reset process
- * without any harm. It correctly removes all the shared headers from the sharedHeaderList
- * on the first use. So, on subsequent use we do not "double" free the memory accounts.
- */
-static void AllocSetReleaseAccountingForAllAllocatedChunks(MemoryContext context)
-{
-	AllocSet set = (AllocSet) context;
-
-	/* The memory consumed by the shared headers themselves */
-	uint64 sharedHeaderMemoryOverhead = 0;
-
-	for (SharedChunkHeader* curHeader = set->sharedHeaderList; curHeader != NULL;
-			curHeader = curHeader->next)
-	{
-		Assert(curHeader->balance > 0);
-		MemoryAccounting_Free(curHeader->memoryAccountId, curHeader->balance);
-
-		AllocChunk chunk = AllocPointerGetChunk(curHeader);
-
-		sharedHeaderMemoryOverhead += (chunk->size + ALLOC_CHUNKHDRSZ);
-	}
-
-	/*
-	 * In addition to releasing accounting for the chunks, we also need
-	 * to release accounting for the shared headers
-	 */
-	MemoryAccounting_Free(MEMORY_OWNER_TYPE_SharedChunkHeader, sharedHeaderMemoryOverhead);
-
-	/*
-	 * Wipe off the sharedHeaderList. We don't free any memory here,
-	 * as this method is only supposed to be called during reset
-	 */
-	set->sharedHeaderList = NULL;
-
-#ifdef CDB_PALLOC_TAGS
-	set->allocList = NULL;
-#endif
-}
-
 /*
  * AllocSetReset
  *		Frees all memory which is allocated in the given set.
@@ -1020,12 +657,6 @@ AllocSetReset(MemoryContext context)
 	/* Check for corruption and leaks before freeing */
 	AllocSetCheck(context);
 #endif
-
-	/* Before we wipe off the allocList, we must ensure that the MemoryAccounts
-	 * who holds the allocation accounting for the chunks now release these
-	 * allocation accounting.
-	 */
-	AllocSetReleaseAccountingForAllAllocatedChunks(context);
 
 	/* Clear chunk freelists */
 	MemSetAligned(set->freelist, 0, sizeof(set->freelist));
@@ -1071,8 +702,6 @@ AllocSetReset(MemoryContext context)
 
 	/* Reset block size allocation sequence, too */
 	set->nextBlockSize = set->initBlockSize;
-
-	set->nullAccountHeader = NULL;
 }
 
 /*
@@ -1096,8 +725,6 @@ AllocSetDelete(MemoryContext context)
 	AllocSetCheck(context);
 #endif
 
-	AllocSetReleaseAccountingForAllAllocatedChunks(context);
-
 	/* Make it look empty, just in case... */
 	MemSetAligned(set->freelist, 0, sizeof(set->freelist));
 	set->blocks = NULL;
@@ -1115,29 +742,19 @@ AllocSetDelete(MemoryContext context)
 		gp_free(block);
 		block = next;
 	}
-
-	set->sharedHeaderList = NULL;
-	set->nullAccountHeader = NULL;
 }
 
 /*
- * AllocSetAllocImpl
+ * AllocSetAlloc
  *		Returns pointer to allocated memory of given size; memory is added
  *		to the set.
- *
- * Parameters:
- *		context: the context under which the memory was allocated
- *		size: size of the memory to allocate
- *		isHeader: whether the memory will be hosting a shared header
- *
- * Returns the pointer to the memory region.
  *
  * No request may exceed:
  *		MAXALIGN_DOWN(SIZE_MAX) - ALLOC_BLOCKHDRSZ - ALLOC_CHUNKHDRSZ
  * All callers use a much-lower limit.
  */
 static void *
-AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
+AllocSetAlloc(MemoryContext context, Size size)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
@@ -1170,16 +787,15 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 		if (block == NULL)
 			return NULL;
 		block->aset = set;
-		block->freeptr = UserPtr_GetEndPtr(block);
+		block->freeptr = block->endptr = ((char *) block) + blksize;
 
 		chunk = (AllocChunk) (((char *) block) + ALLOC_BLOCKHDRSZ);
+		chunk->aset = set;
 		chunk->size = chunk_size;
-		/* We use malloc internally, which may not 0 out the memory. */
-		chunk->sharedHeader = NULL;
-		/* set mark to catch clobber of "unused" space */
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Valgrind: Will be made NOACCESS below. */
 		chunk->requested_size = size;
+		/* set mark to catch clobber of "unused" space */
 		if (size < chunk_size)
 			set_sentinel(AllocChunkGetPointer(chunk), size);
 #endif
@@ -1209,7 +825,7 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 
         MemoryContextNoteAlloc(&set->header, blksize);              /*CDB*/
 
-		AllocAllocInfo(set, chunk, isHeader);
+		AllocAllocInfo(set, chunk);
 
 		/*
 		 * Chunk header public fields remain DEFINED.  The requested
@@ -1235,15 +851,9 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 	{
 		Assert(chunk->size >= size);
 
-		set->freelist[fidx] = (AllocChunk) chunk->sharedHeader;
+		set->freelist[fidx] = (AllocChunk) chunk->aset;
 
-		/*
-		 * The sharedHeader pointer until now was pointing to
-		 * the next free chunk in this freelist. As this chunk
-		 * is just removed from freelist, it no longer points
-		 * to the next free chunk in this freelist
-		 */
-		chunk->sharedHeader = NULL;
+		chunk->aset = (void *) set;
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Valgrind: Free list requested_size should be DEFINED. */
@@ -1259,7 +869,7 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 		randomize_mem((char *) AllocChunkGetPointer(chunk), size);
 #endif
 
-		AllocAllocInfo(set, chunk, isHeader);
+		AllocAllocInfo(set, chunk);
 		return AllocChunkGetPointer(chunk);
 	}
 
@@ -1275,7 +885,7 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 	 */
 	if ((block = set->blocks) != NULL)
 	{
-		Size		availspace = (char*)UserPtr_GetEndPtr(block) - block->freeptr;
+		Size		availspace = block->endptr - block->freeptr;
 
 		if (availspace < (chunk_size + ALLOC_CHUNKHDRSZ))
 		{
@@ -1318,9 +928,9 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 
 				chunk->size = availchunk;
 #ifdef MEMORY_CONTEXT_CHECKING
-				chunk->requested_size = 0xFFFFFFFF;	/* mark it free */
+				chunk->requested_size = 0;	/* mark it free */
 #endif
-				chunk->sharedHeader = (void *) set->freelist[a_fidx];
+				chunk->aset = (void *) set->freelist[a_fidx];
 				set->freelist[a_fidx] = chunk;
 			}
 
@@ -1373,6 +983,7 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 
 		block->aset = set;
 		block->freeptr = ((char *) block) + ALLOC_BLOCKHDRSZ;
+		block->endptr = ((char *) block) + blksize;
 
 		/*
 		 * If this is the first block of the set, make it the "keeper" block.
@@ -1407,9 +1018,9 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 	VALGRIND_MAKE_MEM_UNDEFINED(chunk, ALLOC_CHUNK_USED);
 
 	block->freeptr += (chunk_size + ALLOC_CHUNKHDRSZ);
-	Assert(block->freeptr <= ((char *)UserPtr_GetEndPtr(block)));
+	Assert(block->freeptr <= block->endptr);
 
-	chunk->sharedHeader = NULL;
+	chunk->aset = (void *) set;
 	chunk->size = chunk_size;
 #ifdef MEMORY_CONTEXT_CHECKING
 	chunk->requested_size = size;
@@ -1428,36 +1039,13 @@ AllocSetAllocImpl(MemoryContext context, Size size, bool isHeader)
 	randomize_mem((char *) AllocChunkGetPointer(chunk), size);
 #endif
 
-	AllocAllocInfo(set, chunk, isHeader);
+	AllocAllocInfo(set, chunk);
 
 	return AllocChunkGetPointer(chunk);
 }
 
-
 /*
- * AllocSetAlloc
- *		Returns pointer to an allocated memory of given size; memory is added
- *		to the set.
- */
-static void *
-AllocSetAlloc(MemoryContext context, Size size)
-{
-	return AllocSetAllocImpl(context, size, false);
-}
-
-/*
- * AllocSetAllocHeader
- *		Returns pointer to an allocated memory of a given size
- *		that will be used to host a shared header for other chunks
- */
-static void *
-AllocSetAllocHeader(MemoryContext context, Size size)
-{
-	return AllocSetAllocImpl(context, size, true);
-}
-
-/*
- * AllocSetFreeImpl
+ * AllocSetFree
  *		Frees allocated memory; memory is removed from the set.
  *
  * Parameters:
@@ -1466,13 +1054,13 @@ AllocSetAllocHeader(MemoryContext context, Size size)
  *		isHeader: whether the memory was hosting a shared header
  */
 static void
-AllocSetFreeImpl(MemoryContext context, void *pointer, bool isHeader)
+AllocSetFree(MemoryContext context, void *pointer)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocChunk	chunk = AllocPointerGetChunk(pointer);
 
 	Assert(chunk->size > 0);
-	AllocFreeInfo(set, chunk, isHeader);
+	AllocFreeInfo(set, chunk);
 
 #ifdef USE_ASSERT_CHECKING
 	/*
@@ -1516,7 +1104,7 @@ AllocSetFreeImpl(MemoryContext context, void *pointer, bool isHeader)
 		 * just past the chunk.
 		 */
 		if (block->aset != set ||
-			block->freeptr != UserPtr_GetEndPtr(block) ||
+			block->freeptr != block->endptr ||
 			block->freeptr != ((char *) block) +
 			(chunk->size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ))
 			elog(ERROR, "could not find block containing chunk %p", chunk);
@@ -1541,7 +1129,7 @@ AllocSetFreeImpl(MemoryContext context, void *pointer, bool isHeader)
 		/* Normal case, put the chunk into appropriate freelist */
 		int			fidx = AllocSetFreeIndex(chunk->size);
 
-		chunk->sharedHeader = (void *) set->freelist[fidx];
+		chunk->aset = (void *) set->freelist[fidx];
 
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(pointer, chunk->size);
@@ -1549,33 +1137,12 @@ AllocSetFreeImpl(MemoryContext context, void *pointer, bool isHeader)
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Reset requested_size to 0 in chunks that are on freelist */
-		chunk->requested_size = 0xFFFFFFFF;
+		chunk->requested_size = 0;
 #endif
 		set->freelist[fidx] = chunk;
-                Assert(chunk->size > 0);
 	}
 }
 
-/*
- * AllocSetFree
- *		Frees allocated memory; memory is removed from the set.
- */
-static void
-AllocSetFree(MemoryContext context, void *pointer)
-{
-	AllocSetFreeImpl(context, pointer, false);
-}
-
-/*
- * AllocSetFreeHeader
- *		Frees an allocated memory that was hosting a shared header
- *		for other chunks
- */
-static void
-AllocSetFreeHeader(MemoryContext context, void *pointer)
-{
-	AllocSetFreeImpl(context, pointer, true);
-}
 /*
  * AllocSetRealloc
  *		Returns new pointer to allocated memory of given size or NULL if
@@ -1625,7 +1192,7 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 	if (oldsize >= size)
 	{
 		/* isHeader is set to false as we should never require realloc for shared header */
-		AllocFreeInfo(set, chunk, false);
+		AllocFreeInfo(set, chunk);
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		Size		oldrequest = chunk->requested_size;
@@ -1668,7 +1235,7 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 #endif
 
 		/* isHeader is set to false as we should never require realloc for shared header */
-		AllocAllocInfo(set, chunk, false);
+		AllocAllocInfo(set, chunk);
 
 		return pointer;
 	}
@@ -1691,13 +1258,10 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		 * just past the chunk.
 		 */
 		if (block->aset != set ||
-			block->freeptr != UserPtr_GetEndPtr(block) ||
+			block->freeptr != block->endptr ||
 			block->freeptr != ((char *) block) +
 			(chunk->size + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ))
 			elog(ERROR, "could not find block containing chunk %p", chunk);
-
-		/* isHeader is set to false as we should never require realloc for shared header */
-		AllocFreeInfo(set, chunk, false);
 
 		/* Do the realloc */
         oldblksize = UserPtr_GetUserPtrSize(block);
@@ -1705,12 +1269,8 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 		blksize = chksize + ALLOC_BLOCKHDRSZ + ALLOC_CHUNKHDRSZ;
 		block = (AllocBlock) gp_realloc(block, blksize);
 		if (block == NULL)
-		{
-			/* we need to set chunk info back*/
-			AllocAllocInfo(set, chunk, false);
 			return NULL;
-		}
-		block->freeptr = UserPtr_GetEndPtr(block);
+		block->freeptr = block->endptr = ((char *) block) + blksize;
 
 		/* Update pointers since block has likely been moved */
 		chunk = (AllocChunk) (((char *) block) + ALLOC_BLOCKHDRSZ);
@@ -1757,8 +1317,6 @@ AllocSetRealloc(MemoryContext context, void *pointer, Size size)
 
 		/* Make any trailing alignment padding NOACCESS. */
 		VALGRIND_MAKE_MEM_NOACCESS((char *) pointer + size, chksize - size);
-
-		AllocAllocInfo(set, chunk, false /* We should never require realloc for shared header */);
 
 		MemoryContextNoteAlloc(&set->header, blksize - oldblksize); /*CDB*/
 		return pointer;
@@ -1894,19 +1452,20 @@ AllocSet_GetStats(MemoryContext context, uint64 *nBlocks, uint64 *nChunks,
     if (set->blocks)
     {
     	*nChunks = *nChunks + 1;
-    	*currentAvailable += (char*)UserPtr_GetEndPtr(set->blocks) - set->blocks->freeptr;
+    	*currentAvailable += set->blocks->endptr - set->blocks->freeptr;
     }
 
     /* Freelists.  Count usable space only, not chunk headers. */
 	for (fidx = 0; fidx < ALLOCSET_NUM_FREELISTS; fidx++)
 	{
 		for (chunk = set->freelist[fidx]; chunk != NULL;
-			 chunk = (AllocChunk) chunk->sharedHeader)
+			 chunk = (AllocChunk) chunk->aset)
 		{
 			*nChunks = *nChunks + 1;
 			*currentAvailable += chunk->size;
 		}
 	}
+
 }
 
 #ifdef MEMORY_CONTEXT_CHECKING
@@ -1955,7 +1514,7 @@ AllocSetCheck(MemoryContext context)
 		if (block->aset != set ||
 			block->prev != prevblock ||
 			block->freeptr < bpoz ||
-			block->freeptr > (char *) UserPtr_GetEndPtr(block))
+			block->freeptr > block->endptr)
 			elog(WARNING, "problem in alloc set %s: corrupt header in block %p",
 				 name, block);
 
@@ -2007,7 +1566,7 @@ AllocSetCheck(MemoryContext context)
 			 * free, the aset is the freelist pointer, which we can't check as
 			 * easily...)
 			 */
-			if (dsize != 0xFFFFFFFF && chunk->sharedHeader != NULL && chunk->sharedHeader->context != (void *) set)
+			if (dsize > 0 && chunk->aset != (void *) set)
 			{
 				Assert(!"Memory context error");
 				elog(WARNING, "problem in alloc set %s: bogus aset link in block %p, chunk %p (%s:%d)",

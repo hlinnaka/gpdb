@@ -3188,6 +3188,8 @@ gpdb::MDCacheNeedsReset
 	return true;
 }
 
+extern MemoryContext orca_context;
+
 // Functions for ORCA's memory consumption to be tracked by GPDB
 void *
 gpdb::OptimizerAlloc
@@ -3195,13 +3197,11 @@ gpdb::OptimizerAlloc
 			size_t size
 		)
 {
-	GP_WRAP_START;
-	{
-		return Ext_OptimizerAlloc(size);
-	}
-	GP_WRAP_END;
-
-	return NULL;
+  void *result;
+  START_CRIT_SECTION();
+  result = MemoryContextAlloc(orca_context, size);
+  END_CRIT_SECTION();
+  return result;
 }
 
 void
@@ -3212,7 +3212,7 @@ gpdb::OptimizerFree
 {
 	GP_WRAP_START;
 	{
-		Ext_OptimizerFree(ptr);
+	  pfree(ptr);
 	}
 	GP_WRAP_END;
 }

@@ -677,7 +677,7 @@ COptTasks::OptimizeTask
 
 
 	// load search strategy
-	CSearchStageArray *search_strategy_arr = LoadSearchStrategy(mp, optimizer_search_strategy_path);
+	CSearchStageArray *search_strategy_arr = NULL; //LoadSearchStrategy(mp, optimizer_search_strategy_path);
 
 	CBitSet *trace_flags = NULL;
 	CBitSet *enabled_trace_flags = NULL;

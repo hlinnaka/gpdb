@@ -24,6 +24,7 @@
 
 #include "naucrates/exception.h"
 #include "utils/guc.h"
+#include "utils/memutils.h"
 
 extern MemoryContext MessageContext;
 
@@ -156,6 +157,7 @@ CGPOptimizer::SerializeDXLPlan
 //		Initialize GPTOPT and dependent libraries
 //
 //---------------------------------------------------------------------------
+
 void
 CGPOptimizer::InitGPOPT ()
 {
@@ -165,7 +167,8 @@ CGPOptimizer::InitGPOPT ()
   if (optimizer_use_gpdb_allocators)
   {
 	gpos_alloc = gpdb::OptimizerAlloc;
-	gpos_free = gpdb::OptimizerFree;
+	//gpos_free = gpdb::OptimizerFree;
+	gpos_free = pfree;
   }
   struct gpos_init_params params =
 	{gpos_alloc, gpos_free, gpdb::IsAbortRequested};
