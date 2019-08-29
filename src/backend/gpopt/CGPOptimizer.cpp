@@ -15,6 +15,7 @@
 
 #include "gpopt/CGPOptimizer.h"
 #include "gpopt/utils/COptTasks.h"
+#include "gpopt/utils/CMemoryContextPoolManager.h"
 
 // the following headers are needed to reference optimizer library initializers
 #include "naucrates/init.h"
@@ -162,16 +163,13 @@ void
 CGPOptimizer::InitGPOPT ()
 {
   // Use GPORCA's default allocators
-  void *(*gpos_alloc)(size_t) = NULL;
-  void (*gpos_free)(void *) = NULL;
+  void *gpos_memorypool_manager = NULL;
   if (optimizer_use_gpdb_allocators)
   {
-	gpos_alloc = gpdb::OptimizerAlloc;
-	//gpos_free = gpdb::OptimizerFree;
-	gpos_free = pfree;
+	gpos_memorypool_manager = new CMemoryContextPoolManager();
   }
   struct gpos_init_params params =
-	{gpos_alloc, gpos_free, gpdb::IsAbortRequested};
+	{gpos_memorypool_manager, gpdb::IsAbortRequested};
   gpos_init(&params);
   gpdxl_init();
   gpopt_init();

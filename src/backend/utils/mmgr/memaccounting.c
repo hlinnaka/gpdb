@@ -22,7 +22,6 @@
 #include "miscadmin.h"
 #include "nodes/memnodes.h"
 #include "nodes/plannodes.h"
-#include "utils/ext_alloc.h"
 #include "utils/gp_alloc.h"
 #include "utils/memaccounting_private.h"
 #include "utils/memutils.h"
@@ -724,8 +723,8 @@ InitializeMemoryAccount(MemoryAccount *newAccount, long maxLimit, MemoryOwnerTyp
 	 */
 	if (ownerType == MEMORY_OWNER_TYPE_Optimizer)
 	{
-		elog(DEBUG2, "Rolling over previous outstanding Optimizer allocated memory %lu", GetOptimizerOutstandingMemoryBalance());
-		newAccount->allocated = GetOptimizerOutstandingMemoryBalance();
+		//elog(DEBUG2, "Rolling over previous outstanding Optimizer allocated memory %lu", GetOptimizerOutstandingMemoryBalance());
+		//newAccount->allocated = GetOptimizerOutstandingMemoryBalance();
 	}
 	newAccount->freed = 0;
 	newAccount->peak = 0;

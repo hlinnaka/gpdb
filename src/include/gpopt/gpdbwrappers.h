@@ -650,11 +650,6 @@ namespace gpdb {
 	// table has been changed?)
 	bool MDCacheNeedsReset(void);
 
-	// functions for tracking ORCA memory consumption
-	void *OptimizerAlloc(size_t size);
-
-	void OptimizerFree(void *ptr);
-
 	// returns true if a query cancel is requested in GPDB
 	bool IsAbortRequested(void);
 

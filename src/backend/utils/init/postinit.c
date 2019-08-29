@@ -616,8 +616,6 @@ static void check_superuser_connection_limit()
  * --------------------------------
  */
 
-MemoryContext orca_context;
-
 void
 InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 			 Oid useroid, char *out_dbname)
@@ -645,9 +643,6 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	/* Initialize GPOPT */
 	START_MEMORY_ACCOUNT(MemoryAccounting_CreateAccount(0, MEMORY_OWNER_TYPE_Optimizer));
 	{
-		orca_context = AllocSetContextCreate(TopMemoryContext,
-											 "GPORCA Memory Context",
-											 ALLOCSET_DEFAULT_SIZES);
 		InitGPOPT();
 	}
 	END_MEMORY_ACCOUNT();
