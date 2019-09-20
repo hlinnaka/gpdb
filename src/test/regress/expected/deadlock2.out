@@ -13,7 +13,7 @@
 --                ->  Redistribute Motion 3:3  (slice2; segments: 3)
 --                      Hash Key: t_inner.c2
 --                      ->  Seq Scan on t_inner
---          SubPlan 1
+--          SubPlan 1  (slice4; segments: 3)
 --            ->  Result
 --                  Filter: (t_subplan.c2 = t_outer.c1)
 --                  ->  Materialize

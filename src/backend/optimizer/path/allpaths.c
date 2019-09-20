@@ -47,6 +47,7 @@
 
 #include "cdb/cdbmutate.h"		/* cdbmutate_warn_ctid_without_segid */
 #include "cdb/cdbpath.h"		/* cdbpath_rows() */
+#include "cdb/cdbutil.h"
 
 // TODO: these planner gucs need to be refactored into PlannerConfig.
 bool		gp_enable_sort_limit = FALSE;
@@ -383,6 +384,49 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 	Assert(rel->rows > 0 || IS_DUMMY_REL(rel));
 }
 
+static void
+bring_to_upper(PlannerInfo *root, RelOptInfo *rel)
+{
+	List	   *origpathlist;
+	ListCell   *lc;
+
+	origpathlist = rel->pathlist;
+	rel->cheapest_startup_path = NULL;
+	rel->cheapest_total_path = NULL;
+	rel->cheapest_unique_path = NULL;
+	rel->cheapest_parameterized_paths = NIL;
+	rel->pathlist = NIL;
+
+	foreach(lc, origpathlist)
+	{
+		Path	   *origpath = (Path *) lfirst(lc);
+		Path	   *path;
+		CdbPathLocus upper_locus;
+
+		if (!CdbPathLocus_IsUpper(origpath->locus))
+		{
+
+			CdbPathLocus_MakeUpper(&upper_locus, origpath->locus.numsegments);
+
+			path = cdbpath_create_motion_path(root,
+											  origpath,
+											  NIL, // DESTROY pathkeys
+											  false,
+											  upper_locus);
+
+			path = (Path *) create_projection_path_with_quals(root,
+															  rel,
+															  path,
+															  path->parent->reltargetlist,
+															  rel->upperrestrictinfo);
+		}
+		else
+			path = origpath;
+		add_path(rel, path);
+	}
+	set_cheapest(rel);
+}
+
 /*
  * set_rel_pathlist
  *	  Build access paths for a base relation
@@ -451,6 +495,9 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	if (set_rel_pathlist_hook)
 		(*set_rel_pathlist_hook) (root, rel, rti, rte);
+
+	if (rel->upperrestrictinfo)
+		bring_to_upper(root, rel);
 
 	/* Now find the cheapest of the paths for this rel */
 	set_cheapest(rel);
@@ -535,16 +582,12 @@ set_plain_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 			return;
 	}
 
-	/* TODO: this might have been too ambitious of a re-ordering */
-	/* If an indexscan is not allowed, don't bother making paths */
-	if(!(root->is_correlated_subplan && GpPolicyIsPartitioned(rel->cdbpolicy)))
-	{
-		/* Consider index and bitmap scans */
-		create_index_paths(root, rel);
+	/* Consider index and bitmap scans */
+	create_index_paths(root, rel);
 
-		if (rel->relstorage == RELSTORAGE_HEAP)
-			create_tidscan_paths(root, rel);
-	}
+	if (rel->relstorage == RELSTORAGE_HEAP)
+		create_tidscan_paths(root, rel);
+
 	/* we can add the seqscan path now */
 	add_path(rel, seqpath);
 }
@@ -1978,7 +2021,14 @@ make_rel_from_joinlist(PlannerInfo *root, List *joinlist)
 		/*
 		 * Single joinlist node, so we're done.
 		 */
-		return (RelOptInfo *) linitial(initial_rels);
+		RelOptInfo *rel = (RelOptInfo *) linitial(initial_rels);
+
+		if (bms_equal(rel->relids, root->all_baserels) && root->is_correlated_subplan)
+		{
+			bring_to_upper(root, rel);
+		}
+
+		return rel;
 	}
 	else
 	{
@@ -2071,6 +2121,11 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 		foreach(lc, root->join_rel_level[lev])
 		{
 			rel = (RelOptInfo *) lfirst(lc);
+
+			if (bms_equal(rel->relids, root->all_baserels) && root->is_correlated_subplan)
+			{
+				bring_to_upper(root, rel);
+			}
 
 			/* Find and save the cheapest paths for this rel */
 			set_cheapest(rel);

@@ -41,8 +41,10 @@
 #include "utils/syscache.h"
 
 #include "cdb/cdbmutate.h"
+#include "cdb/cdbsetop.h"
 #include "cdb/cdbsubselect.h"
 #include "cdb/cdbvars.h"
+#include "optimizer/placeholder.h"
 
 typedef struct convert_testexpr_context
 {
@@ -677,7 +679,6 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	if (Gp_role == GP_ROLE_DISPATCH)
 		config->is_under_subplan = true;
 
-
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		config->gp_cte_sharing = IsSubqueryCorrelated(subquery) ||
@@ -1019,21 +1020,51 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 		 * is false, then the user does not want us to materialize anything
 		 * unnecessarily, so we don't.
 		 */
-#if 0
+#if 1
 		/*
 		 * In GPDB, don't add a MATERIAL node here. We'll most likely add one
 		 * later anyway, when the SubPlan reference is "parallelized" in
 		 * ParallelizeCorrelatedSubPlan.
 		 */
-		else if (splan->parParam == NIL && enable_material &&
+		else if (splan->parParam == NIL && /* enable_material && */
 				 !ExecMaterializesOutput(nodeTag(plan)))
-			plan = materialize_finished_plan(plan);
+			plan = materialize_finished_plan(root, plan);
 #endif
 
 		result = (Node *) splan;
 	}
 
 	AssertEquivalent(splan->is_initplan, !splan->is_multirow && splan->parParam == NIL);
+
+	// GPDB_96_MERGE_FIXME: this is done in motion_to_final_destination now
+	if (splan->is_initplan ||
+		splan->parParam == NIL)
+	{
+		/*
+		 *
+		 */
+		while (IsA(plan, Material))
+		{
+			Plan	   *subplan = plan->lefttree;
+
+			if (plan->initPlan)
+				break;
+			//subplan->initPlan = list_concat(subplan->initPlan, plan->initPlan);
+			plan = subplan;
+		}
+
+		/* The result of an InitPlan needs to be brought to the QD. */
+		if (plan->flow->locustype == CdbLocusType_General ||
+			plan->flow->locustype == CdbLocusType_Entry ||
+			plan->flow->locustype == CdbLocusType_SingleQE ||
+			plan->flow->locustype == CdbLocusType_Upper)
+		{
+		}
+		else
+		{
+			plan = (Plan *) make_motion_gather_to_QD(subroot, plan, NIL);
+		}
+	}
 
 	/*
 	 * Add the subplan and its PlannerInfo to the global lists.

@@ -2161,6 +2161,14 @@ match_clause_to_index(IndexOptInfo *index,
 {
 	int			indexcol;
 
+	if (rinfo->contain_outer_query_references &&
+		(GpPolicyIsPartitioned(index->rel->cdbpolicy) ||
+		 GpPolicyIsReplicated(index->rel->cdbpolicy)))
+	{
+		/* Don't allow pushing down XXX */
+		return;
+	}
+
 	for (indexcol = 0; indexcol < index->ncolumns; indexcol++)
 	{
 		if (match_clause_to_indexcol(index,

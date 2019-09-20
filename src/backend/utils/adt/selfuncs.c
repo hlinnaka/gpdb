@@ -4667,7 +4667,8 @@ examine_simple_variable(PlannerInfo *root, Var *var,
 		 * If gp_statistics_pullup_from_child_partition is set, we attempt to pull up statistics from
 		 * the largest child partition in an inherited or a partitioned table.
 		 */
-		if (gp_statistics_pullup_from_child_partition  &&
+		if (false &&
+			gp_statistics_pullup_from_child_partition  &&
 			rel->cheapest_total_path != NULL)
 		{
 			RelOptInfo *childrel = largest_child_relation(root, rel);

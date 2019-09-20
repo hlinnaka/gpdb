@@ -32,6 +32,7 @@
 #include "cdb/cdbpath.h"        /* cdbpath_rows() */
 #include "cdb/cdbutil.h"
 #include "cdb/cdbvars.h"
+#include "nodes/makefuncs.h"
 #include "optimizer/cost.h"
 
 

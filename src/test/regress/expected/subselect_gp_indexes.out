@@ -134,16 +134,24 @@ select (select id1 from (select * from choose_indexscan_t2) foo where id2=choose
   21
 (20 rows)
 
+-- start_ignore
+-- GPDB_96_MERGE_FIXME: we no longer choose an index scan here, because the planner cannot
+-- easily determine that it's safe. See https://github.com/greenplum-db/gpdb/issues/8648.
+-- I hope we can get that back with the 9.6 upper planner pathification.
+-- end_ignore
 explain select (select id1 from (select * from choose_indexscan_t2) foo where id2=choose_indexscan_t1.id2) from choose_indexscan_t1;
-                                                   QUERY PLAN                                                    
------------------------------------------------------------------------------------------------------------------
- Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..46.40 rows=20 width=4)
-   ->  Seq Scan on choose_indexscan_t1  (cost=0.00..46.40 rows=7 width=4)
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..93.20 rows=20 width=4)
+   ->  Seq Scan on choose_indexscan_t1  (cost=0.00..93.20 rows=7 width=4)
          SubPlan 1
-           ->  Index Scan using choose_indexscan_t2_idx on choose_indexscan_t2  (cost=0.14..2.16 rows=1 width=4)
-                 Index Cond: (id2 = choose_indexscan_t1.id2)
+           ->  Result  (cost=0.00..4.50 rows=100 width=8)
+                 Filter: (choose_indexscan_t2.id2 = choose_indexscan_t1.id2)
+                 ->  Materialize  (cost=0.00..4.50 rows=100 width=8)
+                       ->  Broadcast Motion 1:3  (slice2; segments: 1)  (cost=0.00..4.00 rows=100 width=8)
+                             ->  Seq Scan on choose_indexscan_t2  (cost=0.00..2.00 rows=100 width=8)
  Optimizer: Postgres query optimizer
-(6 rows)
+(9 rows)
 
 -- then an indexscan is chosen because it is correct to do this on a replicated table since no motion is required
 -- start_ignore

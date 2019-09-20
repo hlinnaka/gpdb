@@ -41,7 +41,8 @@ typedef enum CdbLocusType
                                  * self-contained in the query plan or
                                  * generally available in any qExec or qDisp) */
     CdbLocusType_SegmentGeneral,/* generally available in any qExec, but not
-				 * available in qDisp */
+								 * available in qDisp */
+	CdbLocusType_Upper,
     CdbLocusType_Replicated,    /* replicated over all qExecs of an N-gang */
     CdbLocusType_Hashed,        /* hash partitioned over all qExecs of N-gang */
     CdbLocusType_HashedOJ,      /* result of hash partitioned outer join, NULLs can be anywhere */
@@ -165,6 +166,7 @@ typedef struct CdbPathLocus
  */
 #define CdbPathLocus_IsBottleneck(locus)        \
             (CdbPathLocus_IsEntry(locus) ||     \
+			 CdbPathLocus_IsUpper(locus) ||     \
              CdbPathLocus_IsSingleQE(locus))
 
 /*
@@ -196,6 +198,8 @@ typedef struct CdbPathLocus
             ((locus).locustype == CdbLocusType_Strewn)
 #define CdbPathLocus_IsSegmentGeneral(locus)        \
             ((locus).locustype == CdbLocusType_SegmentGeneral)
+#define CdbPathLocus_IsUpper(locus)        \
+            ((locus).locustype == CdbLocusType_Upper)
 
 #define CdbPathLocus_MakeSimple(plocus, _locustype, numsegments_) \
     do {                                                \
@@ -235,6 +239,10 @@ typedef struct CdbPathLocus
     } while (0)
 #define CdbPathLocus_MakeStrewn(plocus, numsegments_)                 \
             CdbPathLocus_MakeSimple((plocus), CdbLocusType_Strewn, (numsegments_))
+
+// GPDB_96_MERGE_FIXME numsegments doens't really make sense here
+#define CdbPathLocus_MakeUpper(plocus, numsegments_)                 \
+	CdbPathLocus_MakeSimple((plocus), CdbLocusType_Upper, (numsegments_))
 
 /************************************************************************/
 
