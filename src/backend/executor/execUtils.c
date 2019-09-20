@@ -1262,7 +1262,6 @@ InitSliceTable(EState *estate, int nMotions, int nSubplans)
 	table->nMotions = nMotions;
 	table->nInitPlans = nSubplans;
 	table->slices = NIL;
-	table->instrument_options = INSTRUMENT_NONE;
 
 	/* Each slice table has a unique-id. */
 	table->ic_instance_id = ++gp_interconnect_id;

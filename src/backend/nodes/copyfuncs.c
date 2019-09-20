@@ -143,6 +143,7 @@ _copyQueryDispatchDesc(const QueryDispatchDesc *from)
 {
 	QueryDispatchDesc *newnode = makeNode(QueryDispatchDesc);
 
+	COPY_SCALAR_FIELD(instrument_options);
 	COPY_NODE_FIELD(sliceTable);
 	COPY_NODE_FIELD(oidAssignments);
 	COPY_NODE_FIELD(cursorPositions);
@@ -5074,7 +5075,6 @@ _copySliceTable(const SliceTable *from)
 	COPY_SCALAR_FIELD(nInitPlans);
 	COPY_SCALAR_FIELD(localSlice);
 	COPY_NODE_FIELD(slices);
-	COPY_SCALAR_FIELD(instrument_options);
 	COPY_SCALAR_FIELD(ic_instance_id);
 
 	return newnode;

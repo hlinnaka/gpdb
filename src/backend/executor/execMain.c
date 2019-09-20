@@ -528,7 +528,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		}
 
 		/* Pass EXPLAIN ANALYZE flag to qExecs. */
-		estate->es_sliceTable->instrument_options = queryDesc->instrument_options;
+		queryDesc->ddesc->instrument_options = queryDesc->instrument_options;
 
 		/* set our global sliceid variable for elog. */
 		currentSliceId = LocallyExecutingSliceIndex(estate);
@@ -582,10 +582,13 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
 			/* set our global sliceid variable for elog. */
 			currentSliceId = LocallyExecutingSliceIndex(estate);
+		}
 
+		if (ddesc)
+		{
 			/* Should we collect statistics for EXPLAIN ANALYZE? */
-			estate->es_instrument = sliceTable->instrument_options;
-			queryDesc->instrument_options = sliceTable->instrument_options;
+			estate->es_instrument = ddesc->instrument_options;
+			queryDesc->instrument_options = ddesc->instrument_options;
 		}
 
 		/* InitPlan() will acquire locks by walking the entire plan
@@ -1047,9 +1050,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	PG_CATCH();
 	{
         /* If EXPLAIN ANALYZE, let qExec try to return stats to qDisp. */
-        if (estate->es_sliceTable &&
-            estate->es_sliceTable->instrument_options &&
-            (estate->es_sliceTable->instrument_options & INSTRUMENT_CDB) &&
+        if ((estate->es_instrument & INSTRUMENT_CDB) != 0 &&
             Gp_role == GP_ROLE_EXECUTE)
         {
             PG_TRY();
@@ -1255,9 +1256,7 @@ standard_ExecutorEnd(QueryDesc *queryDesc)
     /*
      * If EXPLAIN ANALYZE, qExec returns stats to qDisp now.
      */
-    if (estate->es_sliceTable &&
-        estate->es_sliceTable->instrument_options &&
-        (estate->es_sliceTable->instrument_options & INSTRUMENT_CDB) &&
+    if ((estate->es_instrument & INSTRUMENT_CDB) != 0 &&
         Gp_role == GP_ROLE_EXECUTE)
         cdbexplain_sendExecStats(queryDesc);
 

@@ -129,7 +129,6 @@ typedef struct SliceTable
 	int			nInitPlans;		/* The number of initplan slices allocated */
 	int			localSlice;		/* Index of the slice to execute. */
 	List	   *slices;			/* List of slices */
-	int			instrument_options;	/* OR of InstrumentOption flags */
 	uint32		ic_instance_id;
 } SliceTable;
 
@@ -159,6 +158,8 @@ typedef struct CursorPosInfo
 typedef struct QueryDispatchDesc
 {
 	NodeTag		type;
+
+	int			instrument_options;		/* OR of InstrumentOption flags */
 
 	/*
 	 * For a SELECT INTO statement, this stores the tablespace to use for the

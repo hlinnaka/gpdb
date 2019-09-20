@@ -331,6 +331,7 @@ _outQueryDispatchDesc(StringInfo str, const QueryDispatchDesc *node)
 {
 	WRITE_NODE_TYPE("QUERYDISPATCHDESC");
 
+	WRITE_INT_FIELD(instrument_options);
 	WRITE_STRING_FIELD(intoTableSpaceName);
 	WRITE_NODE_FIELD(oidAssignments);
 	WRITE_NODE_FIELD(sliceTable);
@@ -4636,7 +4637,6 @@ _outSliceTable(StringInfo str, const SliceTable *node)
 	WRITE_INT_FIELD(nInitPlans);
 	WRITE_INT_FIELD(localSlice);
 	WRITE_NODE_FIELD(slices); /* List of int */
-	WRITE_INT_FIELD(instrument_options);
 	WRITE_INT_FIELD(ic_instance_id);
 }
 
