@@ -188,10 +188,6 @@ CreateExecutorState(void)
 
 	estate->dispatcherState = NULL;
 
-	estate->currentSliceIdInPlan = 0;
-	estate->currentExecutingSliceId = 0;
-	estate->currentSubplanLevel = 0;
-	estate->rootSliceId = 0;
 	estate->eliminateAliens = false;
 
 	/*
@@ -1224,9 +1220,7 @@ ExecPrefetchJoinQual(JoinState *node)
 bool
 ShouldPrefetchJoinQual(EState *estate, Join *join)
 {
-	return (join->prefetch_joinqual &&
-			findSenderMotion(estate->es_plannedstmt,
-							 estate->currentSliceIdInPlan));
+	return join->prefetch_joinqual;
 }
 
 /* ----------------------------------------------------------------

@@ -207,35 +207,6 @@ MemoryAccounting_CreateExecutorAccountWithType(bool isAlienPlanNode,
 		}
 }
 
-/*
- * setSubplanSliceId
- *	 Set the slice id info for the given subplan.
- */
-static void
-setSubplanSliceId(SubPlan *subplan, EState *estate)
-{
-	Assert(subplan != NULL && IsA(subplan, SubPlan) &&estate != NULL);
-
-	estate->currentSliceIdInPlan = subplan->qDispSliceId;
-
-	/*
-	 * The slice that the initPlan will be running is the same as the root
-	 * slice. Depending on the location of InitPlan in the plan, the root
-	 * slice is the root slice of the whole plan, or the root slice of the
-	 * parent subplan of this InitPlan.
-	 */
-	if (Gp_role == GP_ROLE_DISPATCH)
-	{
-		estate->currentExecutingSliceId = RootSliceIndex(estate);
-	}
-	else
-	{
-		estate->currentExecutingSliceId = estate->rootSliceId;
-	}
-}
-
-
-
 /* ------------------------------------------------------------------------
  *		ExecInitNode
  *
@@ -264,9 +235,6 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		return NULL;
 
 	Assert(estate != NULL);
-	int			origSliceIdInPlan = estate->currentSliceIdInPlan;
-	int			origExecutingSliceId = estate->currentExecutingSliceId;
-
 	MemoryAccountIdType curMemoryAccountId;
 
 
@@ -839,9 +807,6 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			break;
 	}
 
-	estate->currentSliceIdInPlan = origSliceIdInPlan;
-	estate->currentExecutingSliceId = origExecutingSliceId;
-
 	/*
 	 * Initialize any initPlans present in this node.  The planner put them in
 	 * a separate list for us.
@@ -854,16 +819,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 		Assert(IsA(subplan, SubPlan));
 
-		setSubplanSliceId(subplan, estate);
-
 		sstate = ExecInitSubPlan(subplan, result);
 		subps = lappend(subps, sstate);
 	}
 	if (result != NULL)
 		result->initPlan = subps;
-
-	estate->currentSliceIdInPlan = origSliceIdInPlan;
-	estate->currentExecutingSliceId = origExecutingSliceId;
 
 	/* Set up instrumentation for this node if requested */
 	if (estate->es_instrument && result != NULL)
@@ -1322,11 +1282,6 @@ ExecEndNode(PlanState *node)
 	EState	   *estate = node->state;
 
 	Assert(estate != NULL);
-	int			origSliceIdInPlan = estate->currentSliceIdInPlan;
-	int			origExecutingSliceId = estate->currentExecutingSliceId;
-
-	estate->currentSliceIdInPlan = origSliceIdInPlan;
-	estate->currentExecutingSliceId = origExecutingSliceId;
 
 	if (node->chgParam != NULL)
 	{
@@ -1557,9 +1512,6 @@ ExecEndNode(PlanState *node)
 	/* GPDB hook for collecting query info */
 	if (query_info_collect_hook)
 		(*query_info_collect_hook)(METRICS_PLAN_NODE_FINISHED, node);
-
-	estate->currentSliceIdInPlan = origSliceIdInPlan;
-	estate->currentExecutingSliceId = origExecutingSliceId;
 }
 
 

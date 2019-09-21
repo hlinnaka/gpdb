@@ -886,9 +886,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	Assert(node->motionID > 0);
 	Assert(node->motionID <= sliceTable->nMotions);
 
-	estate->currentSliceIdInPlan = node->motionID;
-	estate->currentExecutingSliceId = node->motionID;
-
 	/*
 	 * create state structure
 	 */
@@ -1135,10 +1132,6 @@ ExecEndMotion(MotionState *node)
 	 * Set the slice no for the nodes under this motion.
 	 */
 	Assert(node->ps.state != NULL);
-	node->ps.state->currentSliceIdInPlan = motNodeID;
-	int			parentExecutingSliceId = node->ps.state->currentExecutingSliceId;
-
-	node->ps.state->currentExecutingSliceId = motNodeID;
 
 	/*
 	 * shut down the subplan
@@ -1226,9 +1219,7 @@ ExecEndMotion(MotionState *node)
 	 * Temporarily set currentExecutingSliceId to the parent value, since this
 	 * motion might be in the top slice of an InitPlan.
 	 */
-	node->ps.state->currentExecutingSliceId = parentExecutingSliceId;
 	EndPlanStateGpmonPkt(&node->ps);
-	node->ps.state->currentExecutingSliceId = motNodeID;
 }
 
 

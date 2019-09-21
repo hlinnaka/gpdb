@@ -634,34 +634,6 @@ typedef struct EState
 	PartitionState *es_partition_state;
 
 	/*
-	 * The slice number for the current node that is
-	 * being processed. During the tree traversal,
-	 * this value is set by Motion and InitPlan nodes.
-	 *
-	 * currentSliceIdInPlan and currentExecutingSliceId
-	 * are basically the same, except for InitPlan nodes.
-	 * For InitPlan nodes, the nodes in the top slice have
-	 * an assigned slice id in the plan, while the executing
-	 * slice id for these nodes is the root slice id.
-	 */
-	int			currentSliceIdInPlan;
-	int			currentExecutingSliceId;
-
-	/*
-	 * This is >0, if we're processing a subplan.
-	 * This is used to determine whether we could eager free
-	 * the Material node on top of Broadcast inside a subplan
-	 * (for supporting correlated subqueries). The Material
-	 * node can be eager-free'ed only when this value is 0.
-	 */
-	int			currentSubplanLevel;
-
-	/*
-	 * The root slice id for this EState.
-	 */
-	int			rootSliceId;
-
-	/*
 	 * Information relevant to dynamic table scans.
 	 */
 	DynamicTableScanInfo *dynamicTableScanInfo;
