@@ -3510,7 +3510,7 @@ struct config_int ConfigureNamesInt_gp[] =
 			GUC_NOT_IN_SAMPLE
 		},
 		&gp_cached_gang_threshold,
-		5, 1, INT_MAX,
+		10, 1, INT_MAX,
 		NULL, NULL, NULL
 	},
 
