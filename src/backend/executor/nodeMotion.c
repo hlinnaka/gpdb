@@ -486,7 +486,7 @@ motion_mkhp_read(void *vpctxt, MKEntry *a)
 		int			routeIndex,
 					readerIndex;
 		MotionMKHeapContext *ctxt = node->tupleheap_mk;
-		Slice	   *sendSlice = (Slice *) list_nth(node->ps.state->es_sliceTable->slices, motion->motionID);
+		ExecSlice  *sendSlice = &node->ps.state->es_sliceTable->slices[motion->motionID];
 
 		Assert(sendSlice->sliceIndex == motion->motionID);
 
@@ -785,7 +785,7 @@ execMotionSortedReceiverFirstTime(MotionState *node)
 	ListCell   *lcProcess;
 	CdbMergeComparatorContext *comparatorContext = node->tupleheap_cxt;
 	AttrNumber	key1_attno = motion->sortColIdx[0];
-	Slice	   *sendSlice = (Slice *) list_nth(node->ps.state->es_sliceTable->slices, motion->motionID);
+	ExecSlice  *sendSlice = &node->ps.state->es_sliceTable->slices[motion->motionID];
 
 	Assert(sendSlice->sliceIndex == motion->motionID);
 
@@ -872,8 +872,8 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 {
 	MotionState *motionstate = NULL;
 	TupleDesc	tupDesc;
-	Slice	   *sendSlice = NULL;
-	Slice	   *recvSlice = NULL;
+	ExecSlice  *sendSlice;
+	ExecSlice  *recvSlice;
 	SliceTable *sliceTable = estate->es_sliceTable;
 	PlanState  *outerPlan;
 
@@ -909,18 +909,15 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	motionstate->hashExprs = NIL;
 	motionstate->cdbhash = NULL;
 
-	/* Look up the sending gang's slice table entry. */
-	sendSlice = (Slice *) list_nth(sliceTable->slices, node->motionID);
-	Assert(IsA(sendSlice, Slice));
+	/* Look up the sending and receiving gang's slice table entries. */
+	sendSlice = &sliceTable->slices[node->motionID];
 	Assert(sendSlice->sliceIndex == node->motionID);
+	recvSlice = &sliceTable->slices[sendSlice->parentIndex];
 
 	/* QD must fill in the global slice table. */
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		MemoryContext oldcxt = MemoryContextSwitchTo(estate->es_query_cxt);
-
-		/* Look up the receiving (parent) gang's slice table entry. */
-		recvSlice = (Slice *) list_nth(sliceTable->slices, sendSlice->parentIndex);
 
 		if (node->motionType == MOTIONTYPE_GATHER ||
 			node->motionType == MOTIONTYPE_GATHER_SINGLE)
@@ -948,8 +945,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	else
 	{
 		Insist(Gp_role == GP_ROLE_EXECUTE);
-
-		recvSlice = (Slice *) list_nth(sliceTable->slices, sendSlice->parentIndex);
 
 		if (LocallyExecutingSliceIndex(estate) == recvSlice->sliceIndex)
 		{

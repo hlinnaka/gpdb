@@ -79,7 +79,7 @@ getMotionConn(ChunkTransportStateEntry *pEntry, int iConn)
 }
 
 static ChunkTransportStateEntry *startOutgoingConnections(ChunkTransportState *transportStates,
-						 Slice *sendSlice,
+						 ExecSlice *sendSlice,
 						 int *pOutgoingCount);
 
 static void format_fd_set(StringInfo buf, int nfds, mpp_fd_set *fds, char *pfx, char *sfx);
@@ -502,18 +502,18 @@ flushIncomingData(int fd)
  */
 static ChunkTransportStateEntry *
 startOutgoingConnections(ChunkTransportState *transportStates,
-						 Slice *sendSlice,
+						 ExecSlice *sendSlice,
 						 int *pOutgoingCount)
 {
 	ChunkTransportStateEntry *pEntry;
 	MotionConn *conn;
 	ListCell   *cell;
-	Slice	   *recvSlice;
+	ExecSlice  *recvSlice;
 	CdbProcess *cdbProc;
 
 	*pOutgoingCount = 0;
 
-	recvSlice = (Slice *) list_nth(transportStates->sliceTable->slices, sendSlice->parentIndex);
+	recvSlice = &transportStates->sliceTable->slices[sendSlice->parentIndex];
 
 	adjustMasterRouting(recvSlice);
 
@@ -781,9 +781,7 @@ sendRegisterMessage(ChunkTransportState *transportStates, ChunkTransportStateEnt
 			   conn->pBuff &&
 			   sizeof(*regMsg) <= Gp_max_packet_size);
 		Assert(pEntry->recvSlice &&
-			   pEntry->sendSlice &&
-			   IsA(pEntry->recvSlice, Slice) &&
-			   IsA(pEntry->sendSlice, Slice));
+			   pEntry->sendSlice);
 
 		/* Save local host and port for log messages. */
 		addrsize = sizeof(localAddr);
@@ -1230,8 +1228,8 @@ SetupTCPInterconnect(EState *estate)
 				index,
 				n;
 	ListCell   *cell;
-	Slice	   *mySlice;
-	Slice	   *aSlice;
+	ExecSlice  *mySlice;
+	ExecSlice  *aSlice;
 	MotionConn *conn;
 	SliceTable *sliceTable = estate->es_sliceTable;
 	int			incoming_count = 0;
@@ -1269,10 +1267,9 @@ SetupTCPInterconnect(EState *estate)
 	interconnect_context->SendChunk = SendChunkTCP;
 	interconnect_context->doSendStopMessage = doSendStopMessageTCP;
 
-	mySlice = (Slice *) list_nth(interconnect_context->sliceTable->slices, sliceTable->localSlice);
+	mySlice = &interconnect_context->sliceTable->slices[sliceTable->localSlice];
 
 	Assert(sliceTable &&
-		   IsA(mySlice, Slice) &&
 		   mySlice->sliceIndex == sliceTable->localSlice);
 
 	gp_interconnect_id = interconnect_context->sliceTable->ic_instance_id;
@@ -1289,7 +1286,7 @@ SetupTCPInterconnect(EState *estate)
 		elog(DEBUG5, "Setting up RECEIVING motion node %d", childId);
 #endif
 
-		aSlice = (Slice *) list_nth(interconnect_context->sliceTable->slices, childId);
+		aSlice = &interconnect_context->sliceTable->slices[childId];
 
 		/*
 		 * If we're using directed-dispatch we have dummy primary-process
@@ -1819,7 +1816,7 @@ TeardownTCPInterconnect(ChunkTransportState *transportStates,
 	ListCell   *cell;
 	ChunkTransportStateEntry *pEntry = NULL;
 	int			i;
-	Slice	   *mySlice;
+	ExecSlice  *mySlice;
 	MotionConn *conn;
 
 	if (transportStates == NULL || transportStates->sliceTable == NULL)
@@ -1835,7 +1832,7 @@ TeardownTCPInterconnect(ChunkTransportState *transportStates,
 	if (forceEOS)
 		HOLD_INTERRUPTS();
 
-	mySlice = (Slice *) list_nth(transportStates->sliceTable->slices, transportStates->sliceId);
+	mySlice = &transportStates->sliceTable->slices[transportStates->sliceId];
 
 	/* Log the start of TeardownInterconnect. */
 	if (gp_log_interconnect >= GPVARS_VERBOSITY_TERSE)
@@ -1957,10 +1954,10 @@ TeardownTCPInterconnect(ChunkTransportState *transportStates,
 	 */
 	foreach(cell, mySlice->children)
 	{
-		Slice	   *aSlice;
+		ExecSlice  *aSlice;
 		int			childId = lfirst_int(cell);
 
-		aSlice = (Slice *) list_nth(transportStates->sliceTable->slices, childId);
+		aSlice = &transportStates->sliceTable->slices[childId];
 
 		getChunkTransportState(transportStates, aSlice->sliceIndex, &pEntry);
 

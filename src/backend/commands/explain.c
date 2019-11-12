@@ -912,7 +912,7 @@ elapsed_time(instr_time *starttime)
 }
 
 static void
-show_dispatch_info(Slice *slice, ExplainState *es, Plan *plan)
+show_dispatch_info(ExecSlice *slice, ExplainState *es, Plan *plan)
 {
 	int			segments;
 
@@ -1097,7 +1097,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 {
 	Plan	   *plan = planstate->plan;
 	PlanState  *parentplanstate;
-    Slice      *save_currentSlice = es->currentSlice;    /* save */
+	ExecSlice  *save_currentSlice = es->currentSlice;    /* save */
 	const char *pname;			/* node type name for text output */
 	const char *sname;			/* node type name for non-text output */
 	const char *strategy = NULL;
@@ -1112,7 +1112,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	int			motion_snd;
 	float		scaleFactor = 1.0; /* we will divide planner estimates by this factor to produce
 									  per-segment estimates */
-	Slice		*parentSlice = NULL;
+	ExecSlice  *parentSlice = NULL;
 
 	/* Remember who called us. */
 	parentplanstate = es->parentPlanState;
@@ -1170,11 +1170,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 		if (sliceTable)
 		{
-			es->currentSlice = (Slice *) list_nth(sliceTable->slices,
-												  pMotion->motionID);
+			es->currentSlice = &sliceTable->slices[pMotion->motionID];
 			parentSlice = es->currentSlice->parentIndex == -1 ? NULL :
-						  (Slice *) list_nth(sliceTable->slices,
-											 es->currentSlice->parentIndex);
+						  &sliceTable->slices[es->currentSlice->parentIndex];
 		}
 	}
 
@@ -1459,7 +1457,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 
 				if (es->pstmt->planGen == PLANGEN_PLANNER)
 				{
-					Slice	   *slice = es->currentSlice;
+					ExecSlice  *slice = es->currentSlice;
 
 					if (slice->directDispatch.isDirectDispatch)
 					{
@@ -3610,7 +3608,7 @@ ExplainSubPlans(List *plans, List *ancestors,
 				SliceTable *sliceTable)
 {
 	ListCell   *lst;
-	Slice      *saved_slice = es->currentSlice;
+	ExecSlice  *saved_slice = es->currentSlice;
 
 	foreach(lst, plans)
 	{
@@ -3636,8 +3634,7 @@ ExplainSubPlans(List *plans, List *ancestors,
 		/* Subplan might have its own root slice */
 		if (sliceTable && qDispSliceId > 0)
 		{
-			es->currentSlice = (Slice *)list_nth(sliceTable->slices,
-												 qDispSliceId);
+			es->currentSlice = &sliceTable->slices[qDispSliceId];
 			es->subplanDispatchedSeparately = true;
 		}
 		else
