@@ -256,33 +256,24 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 	MemoryAccountIdType curMemoryAccountId;
 
-
-	int localMotionId = LocallyExecutingSliceIndex(estate);
-
-	/*
-	 * For most plan nodes the ascendant motion is the parent motion
-	 * node. However, subplans are different. They can be executed under
-	 * different slices, although appearing in another slice. Other
-	 * exception includes two stage agg where agg node on the master
-	 * does not have any parent motion. Any time we see such null parent
-	 * motion, we assume they are not alien. They either assume "citizen"
-	 * status under a subplan, or they are the root of the execution on
-	 * the master.
-	 */
-	Motion *parentMotion = (Motion *) node->motionNode;
-	int parentMotionId = parentMotion != NULL ? parentMotion->motionID : UNSET_SLICE_ID;
-
 	/*
 	 * Is current plan node supposed to execute in current slice?
-	 * Special case is sending motion node, which may be at the root
-	 * and therefore parentless. We can sending motions motionId to
-	 * determine its alien status.
+	 * Special case is a Motion node, which is considered to be part
+	 * of two slices, the sending and the receiving slice. As we recurse
+	 * the tree, currentSliceIdInPlan is set to the receiving slice.
+	 * Motion->motionID is the sending slice.
 	 *
 	 * On master we don't do alien elimination because of EXPLAIN ANALYZE
 	 * gathering stats from all slices.
 	 */
-	bool isAlienPlanNode = !((localMotionId == parentMotionId) || (parentMotionId == UNSET_SLICE_ID) ||
-							 (nodeTag(node) == T_Motion && ((Motion*)node)->motionID == localMotionId) || IS_QUERY_DISPATCHER());
+	int			currentSliceId = estate->currentSliceIdInPlan;
+	int			localSliceId = LocallyExecutingSliceIndex(estate);
+	bool		isLocalNode;
+	bool		isAlienPlanNode;
+
+	isLocalNode = (currentSliceId == localSliceId) ||
+		(IsA(node, Motion) && ((Motion *) node)->motionID == localSliceId);
+	isAlienPlanNode = !isLocalNode && !IS_QUERY_DISPATCHER();
 
 	/* We cannot have alien nodes if we are eliminating aliens */
 	AssertImply(estate->eliminateAliens, !isAlienPlanNode);
