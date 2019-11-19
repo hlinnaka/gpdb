@@ -258,13 +258,8 @@ execMotionSender(MotionState *node)
 	bool		done = false;
 	int			numsegments = 0;
 
-	/* need refactor */
-	if (node->isExplictGatherMotion)
-	{
+	if (motion->motionType == MOTIONTYPE_GATHER_SINGLE)
 		numsegments = motion->plan.flow->numsegments;
-	}
-
-
 
 #ifdef MEASURE_MOTION_TIME
 	struct timeval time1;
@@ -274,6 +269,7 @@ execMotionSender(MotionState *node)
 #endif
 
 	AssertState(motion->motionType == MOTIONTYPE_GATHER ||
+				motion->motionType == MOTIONTYPE_GATHER_SINGLE ||
 				motion->motionType == MOTIONTYPE_HASH ||
 				motion->motionType == MOTIONTYPE_BROADCAST ||
 				(motion->motionType == MOTIONTYPE_EXPLICIT && motion->segidColIdx > 0));
@@ -309,12 +305,13 @@ execMotionSender(MotionState *node)
 			doSendEndOfStream(motion, node);
 			done = true;
 		}
-		else if (node->isExplictGatherMotion &&
+		else if (motion->motionType == MOTIONTYPE_GATHER_SINGLE &&
 				 GpIdentity.segindex != (gp_session_id % numsegments))
 		{
 			/*
-			 * For explicit gather motion, receiver get data from the
-			 * singleton segment explictly.
+			 * For explicit gather motion, receiver gets data from one
+			 * segment only. The others execute the subplan normally, but
+			 * throw away the resulting tuples.
 			 */
 		}
 		else
@@ -366,6 +363,7 @@ execMotionUnsortedReceiver(MotionState *node)
 	Motion	   *motion = (Motion *) node->ps.plan;
 
 	AssertState(motion->motionType == MOTIONTYPE_GATHER ||
+				motion->motionType == MOTIONTYPE_GATHER_SINGLE ||
 				motion->motionType == MOTIONTYPE_HASH ||
 				motion->motionType == MOTIONTYPE_BROADCAST ||
 				(motion->motionType == MOTIONTYPE_EXPLICIT && motion->segidColIdx > 0));
@@ -911,7 +909,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	motionstate->stopRequested = false;
 	motionstate->hashExprs = NIL;
 	motionstate->cdbhash = NULL;
-	motionstate->isExplictGatherMotion = false;
 
 	/* Look up the sending gang's slice table entry. */
 	sendSlice = (Slice *) list_nth(sliceTable->slices, node->motionID);
@@ -926,7 +923,8 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 		/* Look up the receiving (parent) gang's slice table entry. */
 		recvSlice = (Slice *) list_nth(sliceTable->slices, sendSlice->parentIndex);
 
-		if (node->motionType == MOTIONTYPE_GATHER)
+		if (node->motionType == MOTIONTYPE_GATHER ||
+			node->motionType == MOTIONTYPE_GATHER_SINGLE)
 		{
 			/* Sending to a single receiving process on the entry db? */
 			/* Is receiving slice a root slice that runs here in the qDisp? */
@@ -965,19 +963,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 			motionstate->mstype = MOTIONSTATE_SEND;
 		}
 		/* TODO: If neither sending nor receiving, don't bother to initialize. */
-	}
-
-	/*
-	 * If it's gather motion and subplan's locus is CdbLocusType_Replicated,
-	 * mark isExplictGatherMotion to true
-	 */
-	if (motionstate->mstype == MOTIONSTATE_SEND &&
-		node->motionType == MOTIONTYPE_GATHER &&
-		outerPlan(node) &&
-		outerPlan(node)->flow &&
-		outerPlan(node)->flow->locustype == CdbLocusType_Replicated)
-	{
-		motionstate->isExplictGatherMotion = true;
 	}
 
 	motionstate->tupleheapReady = false;
@@ -1494,7 +1479,8 @@ doSendTuple(Motion *motion, MotionState *node, TupleTableSlot *outerTupleSlot)
 	/* We got a tuple from the child-plan. */
 	node->numTuplesFromChild++;
 
-	if (motion->motionType == MOTIONTYPE_GATHER)
+	if (motion->motionType == MOTIONTYPE_GATHER ||
+		motion->motionType == MOTIONTYPE_GATHER_SINGLE)
 	{
 		/*
 		 * Actually, since we can only send to a single output segment
