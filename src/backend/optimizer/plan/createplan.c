@@ -2442,7 +2442,6 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 	Plan	   *subplan;
 	Relids		save_curOuterRels = root->curOuterRels;
 	List	   *save_curOuterParams = root->curOuterParams;
-	int			before_numMotions;
 
 	/*
 	 * singleQE-->entry:  Elide the motion.  The subplan will run in the same
@@ -2460,13 +2459,6 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 		return subplan;
 	}
 
-	/*
-	 * Remember old value of 'numMotions', before recursing. By comparing
-	 * the old value with the new value after the call returns, we know
-	 * if there were any Motions in the subtree.
-	 */
-	before_numMotions = root->numMotions;
-
 	root->curOuterRels = NULL;
 	root->curOuterParams = NIL;
 
@@ -2481,27 +2473,6 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 	 * re-used later
 	 */
 	root->plan_params = NIL;
-
-	/*
-	 * Elide explicit motion, if the subplan doesn't contain any motions.
-	 *
-	 * The idea is that if an Explicit Motion has no Motions underneath it,
-	 * then the row to update must originate from the same segment, and no
-	 * Motion is needed. This is quite conservative, we could elide the motion
-	 * even if there are Motions, as long as they are not between the scan
-	 * on the target table and the ModifyTable.
-	 *
-	 * A SplitUpdate also computes the target segment ID, based on other columns,
-	 * so we treat it the same as a Motion node for this purpose.
-	 */
-	if (root->numMotions == before_numMotions && path->is_explicit_motion)
-	{
-		/* GPDB_96_MERGE_FIXME: does this set the locus correctly? */
-		root->curOuterRels = save_curOuterRels;
-		root->curOuterParams = save_curOuterParams;
-
-		return subplan;
-	}
 
 	/* Add motion operator. */
 	motion = cdbpathtoplan_create_motion_plan(root, path, subplan);
@@ -2636,12 +2607,6 @@ create_splitupdate_plan(PlannerInfo *root, SplitUpdatePath *path)
 	splitupdate->plan.flow->locustype = CdbLocusType_Strewn;
 
 	relation_close(resultRel, NoLock);
-
-	/*
-	 * A SplitUpdate also computes the target segment ID, based on other columns,
-	 * so we treat it the same as a Motion node for this purpose.
-	 */
-	root->numMotions++;
 
 	return (Plan *) splitupdate;
 }
@@ -8274,9 +8239,6 @@ cdbpathtoplan_create_motion_plan(PlannerInfo *root,
     subplan->flow = cdbpathtoplan_create_flow(root,
                                               subpath->locus,
                                               subplan);
-
-	/* Remember that this subtree contains a Motion */
-	root->numMotions++;
 
 	return motion;
 }								/* cdbpathtoplan_create_motion_plan */

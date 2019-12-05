@@ -354,7 +354,6 @@ typedef struct PlannerInfo
 	/* These fields are workspace for createplan.c */
 	Relids		curOuterRels;	/* outer rels above current node */
 	List	   *curOuterParams; /* not-yet-assigned NestLoopParams */
-	int			numMotions;
 
 	PlannerConfig *config;		/* Planner configuration */
 
@@ -1119,7 +1118,9 @@ typedef struct Path
 	 * the same slice, if this path is chosen. It is used in partition planning,
 	 * to decide if it's safe to create a PartitionSelector node that affects
 	 * other nodes at a distance. That can only be done if the PartitionSelector
-	 * would be executed in the same slice.
+	 * would be executed in the same slice. Also, it's used in DELETE and UPDATE
+	 * plans, to decide if an Explicit Motion is needed below the ModifyTable node,
+	 * to bring the target tuple back to the segment where it resides.
 	 *
 	 * This is a conservative estimate, it's always safe to set it to NULL if
 	 * unsure, and the worst that will happen is that you lose out on potential

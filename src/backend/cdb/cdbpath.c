@@ -478,12 +478,24 @@ invalid_motion_request:
 	return NULL;
 }								/* cdbpath_create_motion_path */
 
+/*
+ * Create an Explicit Motion path, if required, to bring the target tuple of
+ * an DELETE or UPDATE back to segment it originated from.
+ */
 Path *
 cdbpath_create_explicit_motion_path(PlannerInfo *root,
+									Index rti,
 									Path *subpath,
 									CdbPathLocus locus)
 {
 	CdbMotionPath *pathnode;
+
+	/*
+	 * If there are no Motions between scan of the target relation and here,
+	 * no motion is required.
+	 */
+	if (bms_is_member(rti, subpath->sameslice_relids))
+		return subpath;
 
 	/* Create CdbMotionPath node. */
 	pathnode = makeNode(CdbMotionPath);
@@ -2609,7 +2621,7 @@ create_motion_path_for_insert(PlannerInfo *root, GpPolicy *policy,
  * Add a suitable Motion Path for deletion.
  */
 Path *
-create_motion_path_for_delete(PlannerInfo *root, GpPolicy *policy,
+create_motion_path_for_delete(PlannerInfo *root, Index rti, GpPolicy *policy,
 							  Path *subpath)
 {
 	GpPolicyType	policyType = policy->ptype;
@@ -2625,6 +2637,7 @@ create_motion_path_for_delete(PlannerInfo *root, GpPolicy *policy,
 		 */
 		CdbPathLocus_MakeStrewn(&targetLocus, policy->numsegments);
 		subpath = cdbpath_create_explicit_motion_path(root,
+													  rti,
 													  subpath,
 													  targetLocus);
 	}
@@ -2648,7 +2661,7 @@ create_motion_path_for_delete(PlannerInfo *root, GpPolicy *policy,
  * distribution key columns, use create_split_update_path() instead.
  */
 Path *
-create_motion_path_for_update(PlannerInfo *root, GpPolicy *policy,
+create_motion_path_for_update(PlannerInfo *root, Index rti, GpPolicy *policy,
 							  Path *subpath)
 {
 	GpPolicyType	policyType = policy->ptype;
@@ -2658,6 +2671,7 @@ create_motion_path_for_update(PlannerInfo *root, GpPolicy *policy,
 	{
 		CdbPathLocus_MakeStrewn(&targetLocus, policy->numsegments);
 		subpath = cdbpath_create_explicit_motion_path(root,
+													  rti,
 													  subpath,
 													  targetLocus);
 	}
@@ -2756,6 +2770,7 @@ create_split_update_path(PlannerInfo *root, Index rti, GpPolicy *policy, Path *s
 
 		subpath = (Path *) make_splitupdate_path(root, subpath, rti);
 		subpath = cdbpath_create_explicit_motion_path(root,
+													  rti,
 													  subpath,
 													  targetLocus);
 	}

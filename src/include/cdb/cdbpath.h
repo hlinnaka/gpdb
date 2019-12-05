@@ -27,6 +27,7 @@ extern Path *cdbpath_create_motion_path(PlannerInfo     *root,
                            CdbPathLocus     locus);
 
 extern Path *cdbpath_create_explicit_motion_path(PlannerInfo *root,
+									Index rti,
 									Path *subpath,
 									CdbPathLocus locus);
 
@@ -42,8 +43,8 @@ extern Path *cdbpath_create_redistribute_motion_path_for_exprs(PlannerInfo *root
 
 extern Path *create_motion_path_for_ctas(PlannerInfo *root, GpPolicy *policy, Path *subpath);
 extern Path *create_motion_path_for_insert(PlannerInfo *root, GpPolicy *targetPolicy, Path *subpath);
-extern Path *create_motion_path_for_delete(PlannerInfo *root, GpPolicy *targetPolicy, Path *subpath);
-extern Path *create_motion_path_for_update(PlannerInfo *root, GpPolicy *targetPolicy, Path *subpath);
+extern Path *create_motion_path_for_delete(PlannerInfo *root, Index rti, GpPolicy *targetPolicy, Path *subpath);
+extern Path *create_motion_path_for_update(PlannerInfo *root, Index rti, GpPolicy *targetPolicy, Path *subpath);
 extern Path *create_split_update_path(PlannerInfo *root, Index rti, GpPolicy *targetPolicy, Path *subpath);
 
 CdbPathLocus
