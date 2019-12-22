@@ -5578,26 +5578,25 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 		Datum	   *d_end = NULL;
 		bool	   *isnull;
 		bool		bstat;
+		PartitionRule *firstrule;
+		PartitionRule *lastrule;
 
-		pid.partiddef = (Node *) makeInteger(-1);
-
-		prule = get_part_rule1(rel, &pid, false, false,
-							   NULL,
-							   pNode,
-							   lrelname,
-							   &pNode2);
+		/* find the last partition */
 
 		/*
 		 * ok if no prior -- just means this is first partition (XXX
 		 * XXX though should always have 1 partition in the table...)
 		 */
 
-		if (!(prule && prule->topRule))
+		if (pNode->num_rules == 0)
 		{
 			*maxpartno = 1;
 			*bOpenGap = true;
 			goto L_fin_no_start;
 		}
+
+		firstrule = pNode->rules[0];
+		lastrule = pNode->rules[pNode->num_rules - 1];
 
 		{
 			Node	   *n1;
@@ -5629,8 +5628,7 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 									n1, &isnull);
 		}
 
-		if (prule && prule->topRule && prule->topRule->parrangeend
-			&& list_length((List *) prule->topRule->parrangeend))
+		if (lastrule->parrangeend)
 		{
 			bstat =
 				compare_partn_opfuncid(pNode,
@@ -5671,17 +5669,7 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 		 * less than the new end, check if new end is less than
 		 * current start
 		 */
-
-		pid.partiddef = (Node *) makeInteger(1);
-
-		prule = get_part_rule1(rel, &pid, false, false,
-							   NULL,
-							   pNode,
-							   lrelname,
-							   &pNode2);
-
-		if (!(prule && prule->topRule && prule->topRule->parrangestart
-			  && list_length((List *) prule->topRule->parrangestart)))
+		if (!firstrule->parrangestart)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 					 errmsg("new partition overlaps existing "
@@ -5691,9 +5679,8 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 			compare_partn_opfuncid(pNode,
 								   "pg_catalog",
 								   ">",
-								   (List *) prule->topRule->parrangestart,
+								   (List *) firstrule->parrangestart,
 								   d_end, isnull, tupledesc);
-
 
 		if (!bstat)
 		{
@@ -5719,7 +5706,7 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 				 !prule->topRule->parrangestartincl))
 			{
 				bstat = compare_partn_opfuncid(pNode, "pg_catalog", "=",
-											   (List *) prule->topRule->parrangestart,
+											   (List *) firstrule->parrangestart,
 											   d_end, isnull, tupledesc);
 			}
 
@@ -5754,16 +5741,8 @@ L_fin_no_start:
 		Datum	   *d_start = NULL;
 		bool	   *isnull;
 		bool		bstat;
-
-		pid.partiddef = (Node *) makeInteger(1);
-
-		prule = get_part_rule1(rel, &pid, false, false,
-							   NULL,
-							   pNode,
-							   lrelname,
-							   &pNode2);
-
-		/* NOTE: invert all the logic of case of missing partStart */
+		PartitionRule *firstrule;
+		PartitionRule *lastrule;
 
 		/*
 		 * ok if no successor [?] -- just means this is first
@@ -5771,13 +5750,17 @@ L_fin_no_start:
 		 * the table... [XXX XXX unless did a SPLIT of a single
 		 * partition !! ])
 		 */
-
-		if (!(prule && prule->topRule))
+		if (pNode->num_rules == 0)
 		{
 			*maxpartno = 1;
 			*bOpenGap = true;
 			goto L_fin_no_end;
 		}
+
+		firstrule = pNode->rules[0];
+		lastrule = pNode->rules[pNode->num_rules - 1];
+
+		/* NOTE: invert all the logic of case of missing partStart */
 
 		{
 			Node	   *n1;
@@ -5795,15 +5778,13 @@ L_fin_no_start:
 									n1, &isnull);
 		}
 
-
-		if (prule && prule->topRule && prule->topRule->parrangestart
-			&& list_length((List *) prule->topRule->parrangestart))
+		if (firstrule->parrangestart)
 		{
 			bstat =
 				compare_partn_opfuncid(pNode,
 									   "pg_catalog",
 									   ">",
-									   (List *) prule->topRule->parrangestart,
+									   (List *) firstrule->parrangestart,
 									   d_start, isnull, tupledesc);
 
 			/*
@@ -5843,17 +5824,7 @@ L_fin_no_start:
 		 * isn't greater than the new start, check if new start is
 		 * greater than current end
 		 */
-
-		pid.partiddef = (Node *) makeInteger(-1);
-
-		prule = get_part_rule1(rel, &pid, false, false,
-							   NULL,
-							   pNode,
-							   lrelname,
-							   &pNode2);
-
-		if (!(prule && prule->topRule && prule->topRule->parrangeend
-			  && list_length((List *) prule->topRule->parrangeend)))
+		if (!lastrule->parrangeend)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
 					 errmsg("new partition overlaps existing "
@@ -5863,12 +5834,12 @@ L_fin_no_start:
 			compare_partn_opfuncid(pNode,
 								   "pg_catalog",
 								   "<",
-								   (List *) prule->topRule->parrangeend,
+								   (List *) lastrule->parrangeend,
 								   d_start, isnull, tupledesc);
 		if (bstat)
 		{
 			/* should be final partition */
-			*maxpartno = prule->topRule->parruleord + 1;
+			*maxpartno = lastrule->parruleord + 1;
 			*newPos = LAST;
 		}
 		else
@@ -5881,7 +5852,7 @@ L_fin_no_start:
 				compare_partn_opfuncid(pNode,
 									   "pg_catalog",
 									   "=",
-									   (List *) prule->topRule->parrangeend,
+									   (List *) lastrule->parrangeend,
 									   d_start, isnull, tupledesc);
 
 			/*
@@ -5893,7 +5864,7 @@ L_fin_no_start:
 			 */
 			if (!bstat ||
 				(bstat &&
-				 (prule->topRule->parrangeendincl ==
+				 (lastrule->parrangeendincl ==
 				  (ri->partedge == PART_EDGE_INCLUSIVE)))
 				)
 				ereport(ERROR,
@@ -5902,7 +5873,7 @@ L_fin_no_start:
 								"partition")));
 
 			/* doesn't overlap, should be final partition */
-			*maxpartno = prule->topRule->parruleord + 1;
+			*maxpartno = lastrule->parruleord + 1;
 
 		}
 L_fin_no_end:
