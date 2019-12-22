@@ -2460,7 +2460,6 @@ typedef struct PgPartRule
 	/* a textual representation of the partition id (for error msgs) */
 	char		*partIdStr;
 	bool         isName;		/* true if partid is name */
-	int          topRuleRank;	/* rank of topRule */
 	char        *relname; 		/* the error msg formatted "relname" */
 } PgPartRule;
 

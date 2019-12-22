@@ -3471,7 +3471,6 @@ _readPgPartRule(void)
 	READ_NODE_FIELD(topRule);
 	READ_STRING_FIELD(partIdStr);
 	READ_BOOL_FIELD(isName);
-	READ_INT_FIELD(topRuleRank);
 	READ_STRING_FIELD(relname);
 
 	READ_DONE();

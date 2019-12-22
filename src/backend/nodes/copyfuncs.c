@@ -3919,7 +3919,6 @@ _copyPgPartRule(const PgPartRule *from)
 	COPY_NODE_FIELD(topRule);
 	COPY_STRING_FIELD(partIdStr);
 	COPY_SCALAR_FIELD(isName);
-	COPY_SCALAR_FIELD(topRuleRank);
 	COPY_STRING_FIELD(relname);
 
 	return newnode;

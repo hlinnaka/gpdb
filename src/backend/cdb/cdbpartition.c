@@ -4914,7 +4914,6 @@ get_part_rule1(Relation rel,
 
 				prule->pNode = pNode;
 				prule->topRule = rule;
-				prule->topRuleRank = rulerank;	/* 1-based */
 				prule->relname = relname;
 				break;
 			}
@@ -4957,7 +4956,6 @@ get_part_rule1(Relation rel,
 
 				prule->pNode = pNode;
 				prule->topRule = rule;
-				prule->topRuleRank = 0; /* 1-based -- 0 means no rank */
 				prule->relname = relname;
 			}
 		}

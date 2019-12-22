@@ -3651,7 +3651,6 @@ _outPgPartRule(StringInfo str, const PgPartRule *node)
 	WRITE_NODE_FIELD(topRule);
 	WRITE_STRING_FIELD(partIdStr);
 	WRITE_BOOL_FIELD(isName);
-	WRITE_INT_FIELD(topRuleRank);
 	WRITE_STRING_FIELD(relname);
 }
 
