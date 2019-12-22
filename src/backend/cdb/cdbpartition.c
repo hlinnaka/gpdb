@@ -5519,6 +5519,1078 @@ atpxPart_validate_spec(PartitionBy *pBy,
 	return result;
 }								/* end atpxPart_validate_spec */
 
+typedef enum
+{
+	FIRST = 0,				/* New partition lies before first. */
+	MIDDLE,					/* New partition lies in the middle. */
+	LAST					/* New partition lies after last. */
+} NewPosition;
+
+/*
+ * Subroutine of atpxPartAddList(), to check if the partition being added overlaps
+ * with existing partitions.
+ *
+ * As a side-effect, fills *maxpartno, *bOpenGap and *newPos with informatation
+ * about the position within the list of partitions (also known as 'parruleord'
+ * or 'rank').
+ */
+static void
+check_range_overlap(Relation rel, PartitionNode *pNode,
+					PartitionElem *pelem, char *lrelname,
+					bool is_split,
+					int *maxpartno,
+					bool *bOpenGap,
+					NewPosition *newPos)
+{
+	PartitionBoundSpec *pbs = NULL;
+	PgPartRule *prule = NULL;
+	AlterPartitionId pid;
+	ParseState *pstate = make_parsestate(NULL);
+	TupleDesc	tupledesc = RelationGetDescr(rel);
+	PartitionNode pNodebuf;
+	PartitionNode *pNode2 = &pNodebuf;
+
+	MemSet(&pid, 0, sizeof(AlterPartitionId));
+
+	pid.idtype = AT_AP_IDRank;
+	pid.location = -1;
+
+	Assert(IsA(pelem->boundSpec, PartitionBoundSpec));
+
+	pbs = (PartitionBoundSpec *) pelem->boundSpec;
+
+	/* no EVERY */
+	if (pbs->partEvery)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("cannot specify EVERY when adding RANGE partition to %s",
+						lrelname)));
+
+	if (!(pbs->partStart || pbs->partEnd))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("need START or END when adding RANGE partition to %s",
+						lrelname)));
+
+	/* if no START, then START after last partition */
+	if (!(pbs->partStart))
+	{
+		Datum	   *d_end = NULL;
+		bool	   *isnull;
+		bool		bstat;
+
+		pid.partiddef = (Node *) makeInteger(-1);
+
+		prule = get_part_rule1(rel, &pid, false, false,
+							   NULL,
+							   pNode,
+							   lrelname,
+							   &pNode2);
+
+		/*
+		 * ok if no prior -- just means this is first partition (XXX
+		 * XXX though should always have 1 partition in the table...)
+		 */
+
+		if (!(prule && prule->topRule))
+		{
+			*maxpartno = 1;
+			*bOpenGap = true;
+			goto L_fin_no_start;
+		}
+
+		{
+			Node	   *n1;
+
+			if (!IsA(pbs->partEnd, PartitionRangeItem))
+			{
+				/*
+				 * pbs->partEnd isn't a PartitionRangeItem!  This
+				 * probably means an invalid split of a default part,
+				 * but we aren't really sure. See MPP-14613.
+				 */
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+						 errmsg("invalid partition range specification")));
+			}
+
+			PartitionRangeItem *ri =
+				(PartitionRangeItem *) pbs->partEnd;
+
+			PartitionRangeItemIsValid(NULL, ri);
+
+			n1 = (Node *) copyObject(ri->partRangeVal);
+			n1 = (Node *) transformExpressionList(pstate,
+												  (List *) n1,
+												  EXPR_KIND_PARTITION_EXPRESSION);
+
+			d_end =
+				magic_expr_to_datum(rel, pNode,
+									n1, &isnull);
+		}
+
+		if (prule && prule->topRule && prule->topRule->parrangeend
+			&& list_length((List *) prule->topRule->parrangeend))
+		{
+			bstat =
+				compare_partn_opfuncid(pNode,
+									   "pg_catalog",
+									   "<",
+									   (List *) prule->topRule->parrangeend,
+									   d_end, isnull, tupledesc);
+
+			/*
+			 * if the current end is less than the new end then use it
+			 * as the start of the new partition
+			 */
+
+			if (bstat)
+			{
+				PartitionRangeItem *ri = makeNode(PartitionRangeItem);
+
+				ri->location = -1;
+
+				ri->partRangeVal =
+					copyObject(prule->topRule->parrangeend);
+
+				/* invert the inclusive/exclusive */
+				ri->partedge = prule->topRule->parrangeendincl ?
+					PART_EDGE_EXCLUSIVE :
+					PART_EDGE_INCLUSIVE;
+
+				/* should be final partition */
+				*maxpartno = prule->topRule->parruleord + 1;
+				*newPos = LAST;
+				pbs->partStart = (Node *) ri;
+				goto L_fin_no_start;
+			}
+		}
+
+		/*
+		 * if the last partition doesn't have an end, or the end isn't
+		 * less than the new end, check if new end is less than
+		 * current start
+		 */
+
+		pid.partiddef = (Node *) makeInteger(1);
+
+		prule = get_part_rule1(rel, &pid, false, false,
+							   NULL,
+							   pNode,
+							   lrelname,
+							   &pNode2);
+
+		if (!(prule && prule->topRule && prule->topRule->parrangestart
+			  && list_length((List *) prule->topRule->parrangestart)))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("new partition overlaps existing "
+							"partition")));
+
+		bstat =
+			compare_partn_opfuncid(pNode,
+								   "pg_catalog",
+								   ">",
+								   (List *) prule->topRule->parrangestart,
+								   d_end, isnull, tupledesc);
+
+
+		if (!bstat)
+		{
+			/*
+			 * As we support explicit inclusive and exclusive ranges
+			 * we need to be even more careful.
+			 *
+			 * We can proceed if we have the following:
+			 *
+			 * END (R) EXCLUSIVE ; START (R) INCLUSIVE END (R)
+			 * INCLUSIVE ; START (R) EXCLUSIVE
+			 *
+			 * XXX: this should be refactored into a single generic
+			 * function that can be used here and in the unbounded end
+			 * case, checked further down. That said, a lot of this
+			 * code should be refactored.
+			 */
+			PartitionRangeItem *ri = (PartitionRangeItem *) pbs->partEnd;
+
+			if ((ri->partedge == PART_EDGE_EXCLUSIVE &&
+				 prule->topRule->parrangestartincl) ||
+				(ri->partedge == PART_EDGE_INCLUSIVE &&
+				 !prule->topRule->parrangestartincl))
+			{
+				bstat = compare_partn_opfuncid(pNode, "pg_catalog", "=",
+											   (List *) prule->topRule->parrangestart,
+											   d_end, isnull, tupledesc);
+			}
+
+		}
+
+		if (bstat)
+		{
+			/* should be first partition */
+			*maxpartno = prule->topRule->parruleord - 1;
+			if (0 == *maxpartno)
+			{
+				*maxpartno = 1;
+				*bOpenGap = true;
+			}
+			newPos = FIRST;
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("new partition overlaps existing "
+							"partition")));
+
+L_fin_no_start:
+		bstat = false;	/* fix warning */
+
+	}
+	else if (!(pbs->partEnd))
+	{					/* if no END, then END before first partition
+						 * *ONLY IF** START of this partition is
+						 * before first partition ... */
+
+		Datum	   *d_start = NULL;
+		bool	   *isnull;
+		bool		bstat;
+
+		pid.partiddef = (Node *) makeInteger(1);
+
+		prule = get_part_rule1(rel, &pid, false, false,
+							   NULL,
+							   pNode,
+							   lrelname,
+							   &pNode2);
+
+		/* NOTE: invert all the logic of case of missing partStart */
+
+		/*
+		 * ok if no successor [?] -- just means this is first
+		 * partition (XXX XXX though should always have 1 partition in
+		 * the table... [XXX XXX unless did a SPLIT of a single
+		 * partition !! ])
+		 */
+
+		if (!(prule && prule->topRule))
+		{
+			*maxpartno = 1;
+			*bOpenGap = true;
+			goto L_fin_no_end;
+		}
+
+		{
+			Node	   *n1;
+			PartitionRangeItem *ri =
+				(PartitionRangeItem *) pbs->partStart;
+
+			PartitionRangeItemIsValid(NULL, ri);
+			n1 = (Node *) copyObject(ri->partRangeVal);
+			n1 = (Node *) transformExpressionList(pstate,
+												  (List *) n1,
+												  EXPR_KIND_PARTITION_EXPRESSION);
+
+			d_start =
+				magic_expr_to_datum(rel, pNode,
+									n1, &isnull);
+		}
+
+
+		if (prule && prule->topRule && prule->topRule->parrangestart
+			&& list_length((List *) prule->topRule->parrangestart))
+		{
+			bstat =
+				compare_partn_opfuncid(pNode,
+									   "pg_catalog",
+									   ">",
+									   (List *) prule->topRule->parrangestart,
+									   d_start, isnull, tupledesc);
+
+			/*
+			 * if the current start is greater than the new start then
+			 * use the current start as the end of the new partition
+			 */
+
+			if (bstat)
+			{
+				PartitionRangeItem *ri = makeNode(PartitionRangeItem);
+
+				ri->location = -1;
+
+				ri->partRangeVal =
+					copyObject(prule->topRule->parrangestart);
+
+				/* invert the inclusive/exclusive */
+				ri->partedge = prule->topRule->parrangestartincl ?
+					PART_EDGE_EXCLUSIVE :
+					PART_EDGE_INCLUSIVE;
+
+				/* should be first partition */
+				*maxpartno = prule->topRule->parruleord - 1;
+				if (0 == *maxpartno)
+				{
+					*maxpartno = 1;
+					*bOpenGap = true;
+				}
+				*newPos = FIRST;
+				pbs->partEnd = (Node *) ri;
+				goto L_fin_no_end;
+			}
+		}
+
+		/*
+		 * if the first partition doesn't have an start, or the start
+		 * isn't greater than the new start, check if new start is
+		 * greater than current end
+		 */
+
+		pid.partiddef = (Node *) makeInteger(-1);
+
+		prule = get_part_rule1(rel, &pid, false, false,
+							   NULL,
+							   pNode,
+							   lrelname,
+							   &pNode2);
+
+		if (!(prule && prule->topRule && prule->topRule->parrangeend
+			  && list_length((List *) prule->topRule->parrangeend)))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("new partition overlaps existing "
+							"partition")));
+
+		bstat =
+			compare_partn_opfuncid(pNode,
+								   "pg_catalog",
+								   "<",
+								   (List *) prule->topRule->parrangeend,
+								   d_start, isnull, tupledesc);
+		if (bstat)
+		{
+			/* should be final partition */
+			*maxpartno = prule->topRule->parruleord + 1;
+			*newPos = LAST;
+		}
+		else
+		{
+			PartitionRangeItem *ri =
+				(PartitionRangeItem *) pbs->partStart;
+
+			/* check for equality */
+			bstat =
+				compare_partn_opfuncid(pNode,
+									   "pg_catalog",
+									   "=",
+									   (List *) prule->topRule->parrangeend,
+									   d_start, isnull, tupledesc);
+
+			/*
+			 * if new start not >= to current end, then new start <
+			 * current end, so it overlaps. Or if new start == current
+			 * end, but the inclusivity is not opposite for the
+			 * boundaries (eg inclusive end abuts inclusive start for
+			 * same start/end value) then it overlaps
+			 */
+			if (!bstat ||
+				(bstat &&
+				 (prule->topRule->parrangeendincl ==
+				  (ri->partedge == PART_EDGE_INCLUSIVE)))
+				)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+						 errmsg("new partition overlaps existing "
+								"partition")));
+
+			/* doesn't overlap, should be final partition */
+			*maxpartno = prule->topRule->parruleord + 1;
+
+		}
+L_fin_no_end:
+		bstat = false;	/* fix warning */
+
+	}
+	else
+	{					/* both start and end are specified */
+		PartitionRangeItem *ri;
+		bool		bOverlap = false;
+		bool	   *isnull;
+		int			startSearchpoint;
+		int			endSearchpoint;
+		Datum	   *d_start = NULL;
+		Datum	   *d_end = NULL;
+
+		/* see if start or end overlaps */
+		pid.idtype = AT_AP_IDValue;
+
+		/* check the start */
+
+		ri = (PartitionRangeItem *) pbs->partStart;
+		PartitionRangeItemIsValid(NULL, ri);
+
+		pid.partiddef = (Node *) copyObject(ri->partRangeVal);
+		pid.partiddef =
+			(Node *) transformExpressionList(pstate,
+											 (List *) pid.partiddef,
+											 EXPR_KIND_PARTITION_EXPRESSION);
+
+		prule = get_part_rule1(rel, &pid, false, false,
+							   &startSearchpoint,
+							   pNode,
+							   lrelname,
+							   &pNode2);
+
+		/* found match for start value in rules */
+		if (prule && !(prule->topRule->parisdefault && is_split))
+		{
+			bool		bstat;
+			PartitionRule *a_rule = prule->topRule;
+
+			d_start =
+				magic_expr_to_datum(rel, pNode,
+									pid.partiddef, &isnull);
+
+			/*
+			 * if start value was inclusive then it definitely
+			 * overlaps
+			 */
+			if (ri->partedge == PART_EDGE_INCLUSIVE)
+			{
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			/*
+			 * not inclusive -- check harder if START really overlaps
+			 */
+
+			if (0 ==
+				list_length((List *) a_rule->parrangeend))
+			{
+				/* infinite end > new start - overlap */
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			bstat =
+				compare_partn_opfuncid(pNode,
+									   "pg_catalog",
+									   ">",
+									   (List *) a_rule->parrangeend,
+									   d_start, isnull, tupledesc);
+			if (bstat)
+			{
+				/* end > new start - overlap */
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			/*
+			 * Must be the case that new start == end of a_rule
+			 * (because if the end < new start then how could we find
+			 * it in the interval for prule ?) This is ok if they have
+			 * opposite INCLUSIVE/EXCLUSIVE ->  New partition does not
+			 * overlap.
+			 */
+
+			Assert(compare_partn_opfuncid(pNode,
+										  "pg_catalog",
+										  "=",
+										  (List *) a_rule->parrangeend,
+										  d_start, isnull, tupledesc));
+
+			if (a_rule->parrangeendincl ==
+				(ri->partedge == PART_EDGE_INCLUSIVE))
+			{
+				/*
+				 * start and end must be of opposite types, else they
+				 * overlap
+				 */
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			/*
+			 * opposite inclusive/exclusive, so in middle of range of
+			 * existing partitions
+			 */
+			*newPos = MIDDLE;
+			goto L_check_end;
+		}				/* end if prule */
+
+		/* check for basic case of START > last partition */
+		if (pNode && pNode->rules && pNode->num_rules > 0)
+		{
+			bool		bstat;
+			PartitionRule *a_rule = /* get last rule */
+				pNode->rules[pNode->num_rules - 1];
+
+			d_start =
+				magic_expr_to_datum(rel, pNode,
+									pid.partiddef, &isnull);
+
+			if (0 ==
+				list_length((List *) a_rule->parrangeend))
+			{
+				/* infinite end > new start */
+				bstat = false;
+			}
+			else
+				bstat =
+					compare_partn_opfuncid(pNode,
+										   "pg_catalog",
+										   "<",
+										   (List *) a_rule->parrangeend,
+										   d_start, isnull, tupledesc);
+
+			/*
+			 * if the new partition start > end of the last partition
+			 * then it is the new final partition. Don't bother
+			 * checking the new end for overlap (just check if end >
+			 * start in validation phase
+			 */
+			if (bstat)
+			{
+				*newPos = LAST;
+				/* should be final partition */
+				*maxpartno = a_rule->parruleord + 1;
+
+				goto L_end_overlap;
+			}
+
+			/*
+			 * could be the case that new start == end of last.  This
+			 * is ok if they have opposite INCLUSIVE/EXCLUSIVE.  New
+			 * partition is still final partition for this case
+			 */
+
+			if (0 ==
+				list_length((List *) a_rule->parrangeend))
+			{
+				/* infinite end > new start */
+				bstat = false;
+			}
+			else
+				bstat =
+					compare_partn_opfuncid(pNode,
+										   "pg_catalog",
+										   "=",
+										   (List *) a_rule->parrangeend,
+										   d_start, isnull, tupledesc);
+			if (bstat)
+			{
+				if (a_rule->parrangeendincl ==
+					(ri->partedge == PART_EDGE_INCLUSIVE))
+				{
+					/*
+					 * start and end must be of opposite types, else
+					 * they overlap
+					 */
+					bOverlap = true;
+					goto L_end_overlap;
+				}
+
+				*newPos = LAST;
+				/* should be final partition */
+				*maxpartno = a_rule->parruleord + 1;
+
+				goto L_end_overlap;
+			}
+			else
+			{
+				/*
+				 * tricky case: the new start is less than the end of
+				 * the final partition, but it does not intersect any
+				 * existing partitions.  So we are trying to add a
+				 * partition in the middle of the existing partitions
+				 * or before the first partition.
+				 */
+				a_rule = pNode->rules[0]; 	/* get first rule */
+
+				if (0 ==
+					list_length((List *) a_rule->parrangestart))
+				{
+					/* new start > negative infinite start */
+					bstat = false;
+				}
+				else
+					bstat =
+						compare_partn_opfuncid(pNode,
+											   "pg_catalog",
+											   ">",
+											   (List *) a_rule->parrangestart,
+											   d_start, isnull, tupledesc);
+
+				/*
+				 * if the new partition start < start of the first
+				 * partition then it is the new first partition.
+				 * Check the new end for overlap.
+				 *
+				 * NOTE: ignore the case where new start == 1st start
+				 * and inclusive vs exclusive because that is just
+				 * stupid.
+				 *
+				 */
+				if (bstat)
+				{
+					*newPos = FIRST;
+					/* should be first partition */
+					*maxpartno = a_rule->parruleord - 1;
+					if (0 == maxpartno)
+					{
+						*maxpartno = 1;
+						*bOpenGap = true;
+					}
+
+				}
+				else
+				{
+					*newPos = MIDDLE;
+				}
+			}
+		}
+		else
+		{
+			/* if no "rules", then this is the first partition */
+
+			*newPos = LAST;
+			/* should be final partition */
+			*maxpartno = 1;
+
+			goto L_end_overlap;
+		}
+
+L_check_end:
+		/* check the end */
+
+		/*
+		 * check for basic case of END < first partition (the opposite
+		 * of START > last partition)
+		 */
+
+		ri = (PartitionRangeItem *) pbs->partEnd;
+		PartitionRangeItemIsValid(NULL, ri);
+
+		pid.partiddef = (Node *) copyObject(ri->partRangeVal);
+		pid.partiddef =
+			(Node *) transformExpressionList(pstate,
+											 (List *) pid.partiddef,
+											 EXPR_KIND_PARTITION_EXPRESSION);
+
+		prule = get_part_rule1(rel, &pid, false, false,
+							   &endSearchpoint,
+							   pNode,
+							   lrelname,
+							   &pNode2);
+
+		/* found match for end value in rules */
+		if (prule && !(prule->topRule->parisdefault &&
+					   is_split))
+		{
+			bool		bstat;
+			PartitionRule *a_rule = prule->topRule;
+
+			d_end =
+				magic_expr_to_datum(rel, pNode,
+									pid.partiddef, &isnull);
+
+			/*
+			 * if end value was inclusive then it definitely overlaps
+			 */
+			if (ri->partedge == PART_EDGE_INCLUSIVE)
+			{
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			/*
+			 * not inclusive -- check harder if END really overlaps
+			 */
+			if (0 ==
+				list_length((List *) a_rule->parrangestart))
+			{
+				/* -infinite start < new end - overlap */
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			bstat =
+				compare_partn_opfuncid(pNode,
+									   "pg_catalog",
+									   "<",
+									   (List *) a_rule->parrangestart,
+									   d_end, isnull, tupledesc);
+			if (bstat)
+			{
+				/* start < new end - overlap */
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+
+			/*
+			 * Must be the case that new end = start of a_rule
+			 * (because if the start > new end then how could we find
+			 * it in the interval for prule ?) This is ok if they have
+			 * opposite INCLUSIVE/EXCLUSIVE ->  New partition does not
+			 * overlap.
+			 */
+
+			Assert(compare_partn_opfuncid(pNode,
+										  "pg_catalog",
+										  "=",
+										  (List *) a_rule->parrangestart,
+										  d_end, isnull, tupledesc));
+
+			if (a_rule->parrangestartincl ==
+				(ri->partedge == PART_EDGE_INCLUSIVE))
+			{
+				/*
+				 * start and end must be of opposite types, else they
+				 * overlap
+				 */
+				bOverlap = true;
+				goto L_end_overlap;
+			}
+		}				/* end if prule */
+
+		/* check for case of END < first partition */
+		if (pNode && pNode->rules && pNode->num_rules)
+		{
+			bool		bstat;
+			PartitionRule *a_rule = pNode->rules[0];	/* get first rule */
+
+			d_end =
+				magic_expr_to_datum(rel, pNode,
+									pid.partiddef, &isnull);
+
+			if (0 ==
+				list_length((List *) a_rule->parrangestart))
+			{
+				/* new end > negative infinite start */
+				bstat = false;
+			}
+			else
+				bstat =
+					compare_partn_opfuncid(pNode,
+										   "pg_catalog",
+										   ">",
+										   (List *) a_rule->parrangestart,
+										   d_end, isnull, tupledesc);
+
+			/*
+			 * if the new partition end < start of the first partition
+			 * then it is the new first partition.
+			 */
+			if (bstat)
+			{
+				/* check if start was also ok for first partition */
+				switch (*newPos)
+				{
+					case FIRST:
+
+						/*
+						 * since new start < first start and new end <
+						 * first start should be first.
+						 */
+
+						/* should be first partition */
+						*maxpartno = a_rule->parruleord - 1;
+						if (0 == *maxpartno)
+						{
+							*maxpartno = 1;
+							*bOpenGap = true;
+						}
+
+						break;
+					case MIDDLE:
+					case LAST:
+					default:
+
+						/*
+						 * new end is less than first partition start
+						 * but new start isn't -- must be end < start
+						 */
+						break;
+				}
+				goto L_end_overlap;
+			}
+
+			/*
+			 * could be the case that new end == start of first.  This
+			 * is ok if they have opposite INCLUSIVE/EXCLUSIVE.  New
+			 * partition is still first partition for this case
+			 */
+
+			if (0 ==
+				list_length((List *) a_rule->parrangestart))
+			{
+				/* new end > negative infinite start */
+				bstat = false;
+			}
+			else
+				bstat =
+					compare_partn_opfuncid(pNode,
+										   "pg_catalog",
+										   "=",
+										   (List *) a_rule->parrangestart,
+										   d_end, isnull, tupledesc);
+			if (bstat)
+			{
+				if (a_rule->parrangestartincl ==
+					(ri->partedge == PART_EDGE_INCLUSIVE))
+				{
+					/*
+					 * start and end must be of opposite types, else
+					 * they overlap
+					 */
+					bOverlap = true;
+					goto L_end_overlap;
+				}
+				/* check if start was also ok for first partition */
+				switch (*newPos)
+				{
+					case FIRST:
+
+						/*
+						 * since new start < first start and new end <
+						 * first start should be first.
+						 */
+
+						/* should be first partition */
+						*maxpartno = a_rule->parruleord - 1;
+						if (0 == *maxpartno)
+						{
+							*maxpartno = 1;
+							*bOpenGap = true;
+						}
+
+						break;
+					case MIDDLE:
+					case LAST:
+					default:
+
+						/*
+						 * new end is less than first partition start
+						 * but new start isn't -- must be end < start
+						 */
+						break;
+				}
+				goto L_end_overlap;
+			}
+			else
+			{
+				/*
+				 * tricky case: the new end is greater than the start
+				 * of the first partition, but it does not intersect
+				 * any existing partitions.  So we are trying to add a
+				 * partition in the middle of the existing partitions
+				 * or after the last partition.
+				 */
+				a_rule = pNode->rules[pNode->num_rules - 1];	/* get last rule */
+				if (0 ==
+					list_length((List *) a_rule->parrangeend))
+				{
+					/* new end < infinite end */
+					bstat = false;
+				}
+				else
+
+					bstat =
+						compare_partn_opfuncid(pNode,
+											   "pg_catalog",
+											   "<",
+											   (List *) a_rule->parrangeend,
+											   d_end, isnull, tupledesc);
+
+				/*
+				 * if the new partition end > end of the last
+				 * partition then it is the new last partition (maybe)
+				 *
+				 * NOTE: ignore the case where new end == last end and
+				 * inclusive vs exclusive because that is just stupid.
+				 *
+				 */
+				if (bstat)
+				{
+					switch (*newPos)
+					{
+						case LAST:
+
+							/*
+							 * since new start > last end and new end
+							 * > last end should be last.
+							 */
+
+							/* should be last partition */
+							*maxpartno = a_rule->parruleord + 1;
+
+							break;
+						case FIRST:
+
+							/*
+							 * since new start < first start and new
+							 * end > last end we would overlap all
+							 * partitions!!!
+							 */
+						case MIDDLE:
+
+							/*
+							 * since new start < last end and new end
+							 * > last end we would overlap last
+							 * partition
+							 */
+							bOverlap = true;
+							goto L_end_overlap;
+							break;
+						default:
+
+							/*
+							 * new end is less than last partition end
+							 * but new start isn't -- must be end <
+							 * start
+							 */
+							break;
+					}
+				}
+				else
+				{
+					switch (*newPos)
+					{
+						case FIRST:
+
+							/*
+							 * since new start < first start and new
+							 * end in middle we overlap
+							 */
+							bOverlap = true;
+							goto L_end_overlap;
+
+							break;
+						case MIDDLE:
+							/* both start and end in middle */
+							break;
+						case LAST:
+						default:
+
+							/*
+							 * since new start > last end and new end
+							 * in middle -- must be end < start
+							 */
+							break;
+					}
+				}
+			}
+		}
+		else
+		{
+			/* if no "rules", then this is the first partition */
+
+			*newPos = LAST;
+			/* should be final partition */
+			*maxpartno = 1;
+
+			goto L_end_overlap;
+		}
+
+
+		/*
+		 * if the individual start and end values don't intersect an
+		 * existing partition, make sure they don't define a range
+		 * which contains an existing partition, ie new start <
+		 * existing start and new end > existing end
+		 */
+
+		if (!bOverlap && (*newPos == MIDDLE))
+		{
+			*bOpenGap = true;
+			int			prev_partno = 0;
+
+			/*
+			 * hmm, not always true.  see MPP-3667, MPP-3636, MPP-3593
+			 *
+			 * if (startSearchpoint != endSearchpoint) { bOverlap =
+			 * true; goto L_end_overlap; }
+			 *
+			 */
+			while (1)
+			{
+				bool		bstat;
+				PartitionRule *a_rule = pNode->rules[startSearchpoint];	/* get the rule */
+
+				/* MPP-3621: fix ADD for open intervals */
+
+				if (0 ==
+					list_length((List *) a_rule->parrangeend))
+				{
+					/* new end < infinite end */
+					bstat = false;
+				}
+				else
+					bstat =
+						compare_partn_opfuncid(pNode,
+											   "pg_catalog",
+											   "<=",
+											   (List *) a_rule->parrangeend,
+											   d_start, isnull, tupledesc);
+
+				if (bstat)
+				{
+					startSearchpoint++;
+					Assert(startSearchpoint <= pNode->num_rules);
+					prev_partno = a_rule->parruleord;
+					continue;
+				}
+
+				/*
+				 * if previous partition was less than current, then
+				 * this one should be larger. if not, then it
+				 * overlaps...
+				 */
+				if (
+					(0 ==
+					 list_length((List *) a_rule->parrangestart))
+					||
+					!compare_partn_opfuncid(pNode,
+											"pg_catalog",
+											">=",
+											(List *) a_rule->parrangestart,
+											d_end, isnull, tupledesc))
+				{
+					prule = NULL;	/* could get the right prule... */
+					bOverlap = true;
+					goto L_end_overlap;
+				}
+
+				if (prev_partno != 0 && prev_partno + 1 < a_rule->parruleord)
+				{
+					/* Found gap.  No need to open it. */
+					*bOpenGap = false;
+					*maxpartno = prev_partno + 1;
+				}
+				else
+					/* shift a_rule up so new rule has a place to fit */
+					*maxpartno = a_rule->parruleord;
+
+				break;
+			}			/* end while */
+
+		}				/* end 0 == middle */
+
+L_end_overlap:
+		if (bOverlap)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("new partition overlaps existing "
+							"partition%s",
+							(prule && prule->isName) ?
+							prule->partIdStr : "")));
+
+	}
+
+	free_parsestate(pstate);
+}
+
+
+
 Node *
 atpxPartAddList(Relation rel,
 				bool is_split,
@@ -5535,12 +6607,6 @@ atpxPartAddList(Relation rel,
 {
 	DestReceiver *dest = None_Receiver;
 	int			maxpartno = 0;
-	typedef enum
-	{
-		FIRST = 0,				/* New partition lies before first. */
-		MIDDLE,					/* New partition lies in the middle. */
-		LAST					/* New partition lies after last. */
-	} NewPosition;
 	NewPosition newPos = MIDDLE;
 	bool		bOpenGap = false;
 	PartitionBy *pBy;
@@ -5563,1051 +6629,11 @@ atpxPartAddList(Relation rel,
 	{
 		if (PARTTYP_RANGE == part_type)
 		{
-			PartitionBoundSpec *pbs = NULL;
-			PgPartRule *prule = NULL;
-			AlterPartitionId pid;
-			ParseState *pstate = make_parsestate(NULL);
-			TupleDesc	tupledesc = RelationGetDescr(rel);
-
-			MemSet(&pid, 0, sizeof(AlterPartitionId));
-
-			pid.idtype = AT_AP_IDRank;
-			pid.location = -1;
-
-			Assert(IsA(pelem->boundSpec, PartitionBoundSpec));
-
-			pbs = (PartitionBoundSpec *) pelem->boundSpec;
 			pSubSpec = pelem->subSpec;	/* look for subpartition spec */
 
-			/* no EVERY */
-			if (pbs->partEvery)
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("cannot specify EVERY when adding RANGE partition to %s",
-								lrelname)));
-
-			if (!(pbs->partStart || pbs->partEnd))
-				ereport(ERROR,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("need START or END when adding RANGE partition to %s",
-								lrelname)));
-
-			/* if no START, then START after last partition */
-			if (!(pbs->partStart))
-			{
-				Datum	   *d_end = NULL;
-				bool	   *isnull;
-				bool		bstat;
-
-				pid.partiddef = (Node *) makeInteger(-1);
-
-				prule = get_part_rule1(rel, &pid, false, false,
-									   NULL,
-									   pNode,
-									   lrelname,
-									   &pNode2);
-
-				/*
-				 * ok if no prior -- just means this is first partition (XXX
-				 * XXX though should always have 1 partition in the table...)
-				 */
-
-				if (!(prule && prule->topRule))
-				{
-					maxpartno = 1;
-					bOpenGap = true;
-					goto L_fin_no_start;
-				}
-
-				{
-					Node	   *n1;
-
-					if (!IsA(pbs->partEnd, PartitionRangeItem))
-					{
-						/*
-						 * pbs->partEnd isn't a PartitionRangeItem!  This
-						 * probably means an invalid split of a default part,
-						 * but we aren't really sure. See MPP-14613.
-						 */
-						ereport(ERROR,
-								(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-								 errmsg("invalid partition range specification")));
-					}
-
-					PartitionRangeItem *ri =
-					(PartitionRangeItem *) pbs->partEnd;
-
-					PartitionRangeItemIsValid(NULL, ri);
-
-					n1 = (Node *) copyObject(ri->partRangeVal);
-					n1 = (Node *) transformExpressionList(pstate,
-														  (List *) n1,
-														  EXPR_KIND_PARTITION_EXPRESSION);
-
-					d_end =
-						magic_expr_to_datum(rel, pNode,
-											n1, &isnull);
-				}
-
-				if (prule && prule->topRule && prule->topRule->parrangeend
-					&& list_length((List *) prule->topRule->parrangeend))
-				{
-					bstat =
-						compare_partn_opfuncid(pNode,
-											   "pg_catalog",
-											   "<",
-											   (List *) prule->topRule->parrangeend,
-											   d_end, isnull, tupledesc);
-
-					/*
-					 * if the current end is less than the new end then use it
-					 * as the start of the new partition
-					 */
-
-					if (bstat)
-					{
-						PartitionRangeItem *ri = makeNode(PartitionRangeItem);
-
-						ri->location = -1;
-
-						ri->partRangeVal =
-							copyObject(prule->topRule->parrangeend);
-
-						/* invert the inclusive/exclusive */
-						ri->partedge = prule->topRule->parrangeendincl ?
-							PART_EDGE_EXCLUSIVE :
-							PART_EDGE_INCLUSIVE;
-
-						/* should be final partition */
-						maxpartno = prule->topRule->parruleord + 1;
-						newPos = LAST;
-						pbs->partStart = (Node *) ri;
-						goto L_fin_no_start;
-					}
-				}
-
-				/*
-				 * if the last partition doesn't have an end, or the end isn't
-				 * less than the new end, check if new end is less than
-				 * current start
-				 */
-
-				pid.partiddef = (Node *) makeInteger(1);
-
-				prule = get_part_rule1(rel, &pid, false, false,
-									   NULL,
-									   pNode,
-									   lrelname,
-									   &pNode2);
-
-				if (!(prule && prule->topRule && prule->topRule->parrangestart
-					  && list_length((List *) prule->topRule->parrangestart)))
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-							 errmsg("new partition overlaps existing "
-									"partition")));
-
-				bstat =
-					compare_partn_opfuncid(pNode,
-										   "pg_catalog",
-										   ">",
-										   (List *) prule->topRule->parrangestart,
-										   d_end, isnull, tupledesc);
-
-
-				if (!bstat)
-				{
-					/*
-					 * As we support explicit inclusive and exclusive ranges
-					 * we need to be even more careful.
-					 *
-					 * We can proceed if we have the following:
-					 *
-					 * END (R) EXCLUSIVE ; START (R) INCLUSIVE END (R)
-					 * INCLUSIVE ; START (R) EXCLUSIVE
-					 *
-					 * XXX: this should be refactored into a single generic
-					 * function that can be used here and in the unbounded end
-					 * case, checked further down. That said, a lot of this
-					 * code should be refactored.
-					 */
-					PartitionRangeItem *ri = (PartitionRangeItem *) pbs->partEnd;
-
-					if ((ri->partedge == PART_EDGE_EXCLUSIVE &&
-						 prule->topRule->parrangestartincl) ||
-						(ri->partedge == PART_EDGE_INCLUSIVE &&
-						 !prule->topRule->parrangestartincl))
-					{
-						bstat = compare_partn_opfuncid(pNode, "pg_catalog", "=",
-													   (List *) prule->topRule->parrangestart,
-													   d_end, isnull, tupledesc);
-					}
-
-				}
-
-				if (bstat)
-				{
-					/* should be first partition */
-					maxpartno = prule->topRule->parruleord - 1;
-					if (0 == maxpartno)
-					{
-						maxpartno = 1;
-						bOpenGap = true;
-					}
-					newPos = FIRST;
-				}
-				else
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-							 errmsg("new partition overlaps existing "
-									"partition")));
-
-		L_fin_no_start:
-				bstat = false;	/* fix warning */
-
-			}
-			else if (!(pbs->partEnd))
-			{					/* if no END, then END before first partition
-								 * *ONLY IF** START of this partition is
-								 * before first partition ... */
-
-				Datum	   *d_start = NULL;
-				bool	   *isnull;
-				bool		bstat;
-
-				pid.partiddef = (Node *) makeInteger(1);
-
-				prule = get_part_rule1(rel, &pid, false, false,
-									   NULL,
-									   pNode,
-									   lrelname,
-									   &pNode2);
-
-				/* NOTE: invert all the logic of case of missing partStart */
-
-				/*
-				 * ok if no successor [?] -- just means this is first
-				 * partition (XXX XXX though should always have 1 partition in
-				 * the table... [XXX XXX unless did a SPLIT of a single
-				 * partition !! ])
-				 */
-
-				if (!(prule && prule->topRule))
-				{
-					maxpartno = 1;
-					bOpenGap = true;
-					goto L_fin_no_end;
-				}
-
-				{
-					Node	   *n1;
-					PartitionRangeItem *ri =
-					(PartitionRangeItem *) pbs->partStart;
-
-					PartitionRangeItemIsValid(NULL, ri);
-					n1 = (Node *) copyObject(ri->partRangeVal);
-					n1 = (Node *) transformExpressionList(pstate,
-														  (List *) n1,
-														  EXPR_KIND_PARTITION_EXPRESSION);
-
-					d_start =
-						magic_expr_to_datum(rel, pNode,
-											n1, &isnull);
-				}
-
-
-				if (prule && prule->topRule && prule->topRule->parrangestart
-					&& list_length((List *) prule->topRule->parrangestart))
-				{
-					bstat =
-						compare_partn_opfuncid(pNode,
-											   "pg_catalog",
-											   ">",
-											   (List *) prule->topRule->parrangestart,
-											   d_start, isnull, tupledesc);
-
-					/*
-					 * if the current start is greater than the new start then
-					 * use the current start as the end of the new partition
-					 */
-
-					if (bstat)
-					{
-						PartitionRangeItem *ri = makeNode(PartitionRangeItem);
-
-						ri->location = -1;
-
-						ri->partRangeVal =
-							copyObject(prule->topRule->parrangestart);
-
-						/* invert the inclusive/exclusive */
-						ri->partedge = prule->topRule->parrangestartincl ?
-							PART_EDGE_EXCLUSIVE :
-							PART_EDGE_INCLUSIVE;
-
-						/* should be first partition */
-						maxpartno = prule->topRule->parruleord - 1;
-						if (0 == maxpartno)
-						{
-							maxpartno = 1;
-							bOpenGap = true;
-						}
-						newPos = FIRST;
-						pbs->partEnd = (Node *) ri;
-						goto L_fin_no_end;
-					}
-				}
-
-				/*
-				 * if the first partition doesn't have an start, or the start
-				 * isn't greater than the new start, check if new start is
-				 * greater than current end
-				 */
-
-				pid.partiddef = (Node *) makeInteger(-1);
-
-				prule = get_part_rule1(rel, &pid, false, false,
-									   NULL,
-									   pNode,
-									   lrelname,
-									   &pNode2);
-
-				if (!(prule && prule->topRule && prule->topRule->parrangeend
-					  && list_length((List *) prule->topRule->parrangeend)))
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-							 errmsg("new partition overlaps existing "
-									"partition")));
-
-				bstat =
-					compare_partn_opfuncid(pNode,
-										   "pg_catalog",
-										   "<",
-										   (List *) prule->topRule->parrangeend,
-										   d_start, isnull, tupledesc);
-				if (bstat)
-				{
-					/* should be final partition */
-					maxpartno = prule->topRule->parruleord + 1;
-					newPos = LAST;
-				}
-				else
-				{
-					PartitionRangeItem *ri =
-					(PartitionRangeItem *) pbs->partStart;
-
-					/* check for equality */
-					bstat =
-						compare_partn_opfuncid(pNode,
-											   "pg_catalog",
-											   "=",
-											   (List *) prule->topRule->parrangeend,
-											   d_start, isnull, tupledesc);
-
-					/*
-					 * if new start not >= to current end, then new start <
-					 * current end, so it overlaps. Or if new start == current
-					 * end, but the inclusivity is not opposite for the
-					 * boundaries (eg inclusive end abuts inclusive start for
-					 * same start/end value) then it overlaps
-					 */
-					if (!bstat ||
-						(bstat &&
-						 (prule->topRule->parrangeendincl ==
-						  (ri->partedge == PART_EDGE_INCLUSIVE)))
-						)
-						ereport(ERROR,
-								(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-								 errmsg("new partition overlaps existing "
-										"partition")));
-
-					/* doesn't overlap, should be final partition */
-					maxpartno = prule->topRule->parruleord + 1;
-
-				}
-		L_fin_no_end:
-				bstat = false;	/* fix warning */
-
-			}
-			else
-			{					/* both start and end are specified */
-				PartitionRangeItem *ri;
-				bool		bOverlap = false;
-				bool	   *isnull;
-				int			startSearchpoint;
-				int			endSearchpoint;
-				Datum	   *d_start = NULL;
-				Datum	   *d_end = NULL;
-
-				/* see if start or end overlaps */
-				pid.idtype = AT_AP_IDValue;
-
-				/* check the start */
-
-				ri = (PartitionRangeItem *) pbs->partStart;
-				PartitionRangeItemIsValid(NULL, ri);
-
-				pid.partiddef = (Node *) copyObject(ri->partRangeVal);
-				pid.partiddef =
-					(Node *) transformExpressionList(pstate,
-													 (List *) pid.partiddef,
-													 EXPR_KIND_PARTITION_EXPRESSION);
-
-				prule = get_part_rule1(rel, &pid, false, false,
-									   &startSearchpoint,
-									   pNode,
-									   lrelname,
-									   &pNode2);
-
-				/* found match for start value in rules */
-				if (prule && !(prule->topRule->parisdefault && is_split))
-				{
-					bool		bstat;
-					PartitionRule *a_rule = prule->topRule;
-
-					d_start =
-						magic_expr_to_datum(rel, pNode,
-											pid.partiddef, &isnull);
-
-					/*
-					 * if start value was inclusive then it definitely
-					 * overlaps
-					 */
-					if (ri->partedge == PART_EDGE_INCLUSIVE)
-					{
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					/*
-					 * not inclusive -- check harder if START really overlaps
-					 */
-
-					if (0 ==
-						list_length((List *) a_rule->parrangeend))
-					{
-						/* infinite end > new start - overlap */
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					bstat =
-						compare_partn_opfuncid(pNode,
-											   "pg_catalog",
-											   ">",
-											   (List *) a_rule->parrangeend,
-											   d_start, isnull, tupledesc);
-					if (bstat)
-					{
-						/* end > new start - overlap */
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					/*
-					 * Must be the case that new start == end of a_rule
-					 * (because if the end < new start then how could we find
-					 * it in the interval for prule ?) This is ok if they have
-					 * opposite INCLUSIVE/EXCLUSIVE ->  New partition does not
-					 * overlap.
-					 */
-
-					Assert(compare_partn_opfuncid(pNode,
-												  "pg_catalog",
-												  "=",
-												  (List *) a_rule->parrangeend,
-												  d_start, isnull, tupledesc));
-
-					if (a_rule->parrangeendincl ==
-						(ri->partedge == PART_EDGE_INCLUSIVE))
-					{
-						/*
-						 * start and end must be of opposite types, else they
-						 * overlap
-						 */
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					/*
-					 * opposite inclusive/exclusive, so in middle of range of
-					 * existing partitions
-					 */
-					newPos = MIDDLE;
-					goto L_check_end;
-				}				/* end if prule */
-
-				/* check for basic case of START > last partition */
-				if (pNode && pNode->rules && pNode->num_rules > 0)
-				{
-					bool		bstat;
-					PartitionRule *a_rule = /* get last rule */
-						pNode->rules[pNode->num_rules - 1];
-
-					d_start =
-						magic_expr_to_datum(rel, pNode,
-											pid.partiddef, &isnull);
-
-					if (0 ==
-						list_length((List *) a_rule->parrangeend))
-					{
-						/* infinite end > new start */
-						bstat = false;
-					}
-					else
-						bstat =
-							compare_partn_opfuncid(pNode,
-												   "pg_catalog",
-												   "<",
-												   (List *) a_rule->parrangeend,
-												   d_start, isnull, tupledesc);
-
-					/*
-					 * if the new partition start > end of the last partition
-					 * then it is the new final partition. Don't bother
-					 * checking the new end for overlap (just check if end >
-					 * start in validation phase
-					 */
-					if (bstat)
-					{
-						newPos = LAST;
-						/* should be final partition */
-						maxpartno = a_rule->parruleord + 1;
-
-						goto L_end_overlap;
-					}
-
-					/*
-					 * could be the case that new start == end of last.  This
-					 * is ok if they have opposite INCLUSIVE/EXCLUSIVE.  New
-					 * partition is still final partition for this case
-					 */
-
-					if (0 ==
-						list_length((List *) a_rule->parrangeend))
-					{
-						/* infinite end > new start */
-						bstat = false;
-					}
-					else
-						bstat =
-							compare_partn_opfuncid(pNode,
-												   "pg_catalog",
-												   "=",
-												   (List *) a_rule->parrangeend,
-												   d_start, isnull, tupledesc);
-					if (bstat)
-					{
-						if (a_rule->parrangeendincl ==
-							(ri->partedge == PART_EDGE_INCLUSIVE))
-						{
-							/*
-							 * start and end must be of opposite types, else
-							 * they overlap
-							 */
-							bOverlap = true;
-							goto L_end_overlap;
-						}
-
-						newPos = LAST;
-						/* should be final partition */
-						maxpartno = a_rule->parruleord + 1;
-
-						goto L_end_overlap;
-					}
-					else
-					{
-						/*
-						 * tricky case: the new start is less than the end of
-						 * the final partition, but it does not intersect any
-						 * existing partitions.  So we are trying to add a
-						 * partition in the middle of the existing partitions
-						 * or before the first partition.
-						 */
-						a_rule = pNode->rules[0]; 	/* get first rule */
-
-						if (0 ==
-							list_length((List *) a_rule->parrangestart))
-						{
-							/* new start > negative infinite start */
-							bstat = false;
-						}
-						else
-							bstat =
-								compare_partn_opfuncid(pNode,
-													   "pg_catalog",
-													   ">",
-													   (List *) a_rule->parrangestart,
-													   d_start, isnull, tupledesc);
-
-						/*
-						 * if the new partition start < start of the first
-						 * partition then it is the new first partition.
-						 * Check the new end for overlap.
-						 *
-						 * NOTE: ignore the case where new start == 1st start
-						 * and inclusive vs exclusive because that is just
-						 * stupid.
-						 *
-						 */
-						if (bstat)
-						{
-							newPos = FIRST;
-							/* should be first partition */
-							maxpartno = a_rule->parruleord - 1;
-							if (0 == maxpartno)
-							{
-								maxpartno = 1;
-								bOpenGap = true;
-							}
-
-						}
-						else
-						{
-							newPos = MIDDLE;
-						}
-					}
-				}
-				else
-				{
-					/* if no "rules", then this is the first partition */
-
-					newPos = LAST;
-					/* should be final partition */
-					maxpartno = 1;
-
-					goto L_end_overlap;
-				}
-
-		L_check_end:
-				/* check the end */
-
-				/*
-				 * check for basic case of END < first partition (the opposite
-				 * of START > last partition)
-				 */
-
-				ri = (PartitionRangeItem *) pbs->partEnd;
-				PartitionRangeItemIsValid(NULL, ri);
-
-				pid.partiddef = (Node *) copyObject(ri->partRangeVal);
-				pid.partiddef =
-					(Node *) transformExpressionList(pstate,
-													 (List *) pid.partiddef,
-													 EXPR_KIND_PARTITION_EXPRESSION);
-
-				prule = get_part_rule1(rel, &pid, false, false,
-									   &endSearchpoint,
-									   pNode,
-									   lrelname,
-									   &pNode2);
-
-				/* found match for end value in rules */
-				if (prule && !(prule->topRule->parisdefault &&
-							   is_split))
-				{
-					bool		bstat;
-					PartitionRule *a_rule = prule->topRule;
-
-					d_end =
-						magic_expr_to_datum(rel, pNode,
-											pid.partiddef, &isnull);
-
-					/*
-					 * if end value was inclusive then it definitely overlaps
-					 */
-					if (ri->partedge == PART_EDGE_INCLUSIVE)
-					{
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					/*
-					 * not inclusive -- check harder if END really overlaps
-					 */
-					if (0 ==
-						list_length((List *) a_rule->parrangestart))
-					{
-						/* -infinite start < new end - overlap */
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					bstat =
-						compare_partn_opfuncid(pNode,
-											   "pg_catalog",
-											   "<",
-											   (List *) a_rule->parrangestart,
-											   d_end, isnull, tupledesc);
-					if (bstat)
-					{
-						/* start < new end - overlap */
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-
-					/*
-					 * Must be the case that new end = start of a_rule
-					 * (because if the start > new end then how could we find
-					 * it in the interval for prule ?) This is ok if they have
-					 * opposite INCLUSIVE/EXCLUSIVE ->  New partition does not
-					 * overlap.
-					 */
-
-					Assert(compare_partn_opfuncid(pNode,
-												  "pg_catalog",
-												  "=",
-												  (List *) a_rule->parrangestart,
-												  d_end, isnull, tupledesc));
-
-					if (a_rule->parrangestartincl ==
-						(ri->partedge == PART_EDGE_INCLUSIVE))
-					{
-						/*
-						 * start and end must be of opposite types, else they
-						 * overlap
-						 */
-						bOverlap = true;
-						goto L_end_overlap;
-					}
-				}				/* end if prule */
-
-				/* check for case of END < first partition */
-				if (pNode && pNode->rules && pNode->num_rules > 0)
-				{
-					bool		bstat;
-					PartitionRule *a_rule = pNode->rules[0];	/* get first rule */
-
-					d_end =
-						magic_expr_to_datum(rel, pNode,
-											pid.partiddef, &isnull);
-
-					if (0 ==
-						list_length((List *) a_rule->parrangestart))
-					{
-						/* new end > negative infinite start */
-						bstat = false;
-					}
-					else
-						bstat =
-							compare_partn_opfuncid(pNode,
-												   "pg_catalog",
-												   ">",
-												   (List *) a_rule->parrangestart,
-												   d_end, isnull, tupledesc);
-
-					/*
-					 * if the new partition end < start of the first partition
-					 * then it is the new first partition.
-					 */
-					if (bstat)
-					{
-						/* check if start was also ok for first partition */
-						switch (newPos)
-						{
-							case FIRST:
-
-								/*
-								 * since new start < first start and new end <
-								 * first start should be first.
-								 */
-
-								/* should be first partition */
-								maxpartno = a_rule->parruleord - 1;
-								if (0 == maxpartno)
-								{
-									maxpartno = 1;
-									bOpenGap = true;
-								}
-
-								break;
-							case MIDDLE:
-							case LAST:
-							default:
-
-								/*
-								 * new end is less than first partition start
-								 * but new start isn't -- must be end < start
-								 */
-								break;
-						}
-						goto L_end_overlap;
-					}
-
-					/*
-					 * could be the case that new end == start of first.  This
-					 * is ok if they have opposite INCLUSIVE/EXCLUSIVE.  New
-					 * partition is still first partition for this case
-					 */
-
-					if (0 ==
-						list_length((List *) a_rule->parrangestart))
-					{
-						/* new end > negative infinite start */
-						bstat = false;
-					}
-					else
-						bstat =
-							compare_partn_opfuncid(pNode,
-												   "pg_catalog",
-												   "=",
-												   (List *) a_rule->parrangestart,
-												   d_end, isnull, tupledesc);
-					if (bstat)
-					{
-						if (a_rule->parrangestartincl ==
-							(ri->partedge == PART_EDGE_INCLUSIVE))
-						{
-							/*
-							 * start and end must be of opposite types, else
-							 * they overlap
-							 */
-							bOverlap = true;
-							goto L_end_overlap;
-						}
-						/* check if start was also ok for first partition */
-						switch (newPos)
-						{
-							case FIRST:
-
-								/*
-								 * since new start < first start and new end <
-								 * first start should be first.
-								 */
-
-								/* should be first partition */
-								maxpartno = a_rule->parruleord - 1;
-								if (0 == maxpartno)
-								{
-									maxpartno = 1;
-									bOpenGap = true;
-								}
-
-								break;
-							case MIDDLE:
-							case LAST:
-							default:
-
-								/*
-								 * new end is less than first partition start
-								 * but new start isn't -- must be end < start
-								 */
-								break;
-						}
-						goto L_end_overlap;
-					}
-					else
-					{
-						/*
-						 * tricky case: the new end is greater than the start
-						 * of the first partition, but it does not intersect
-						 * any existing partitions.  So we are trying to add a
-						 * partition in the middle of the existing partitions
-						 * or after the last partition.
-						 */
-						a_rule = pNode->rules[pNode->num_rules - 1];	/* get last rule */
-						if (0 ==
-							list_length((List *) a_rule->parrangeend))
-						{
-							/* new end < infinite end */
-							bstat = false;
-						}
-						else
-
-							bstat =
-								compare_partn_opfuncid(pNode,
-													   "pg_catalog",
-													   "<",
-													   (List *) a_rule->parrangeend,
-													   d_end, isnull, tupledesc);
-
-						/*
-						 * if the new partition end > end of the last
-						 * partition then it is the new last partition (maybe)
-						 *
-						 * NOTE: ignore the case where new end == last end and
-						 * inclusive vs exclusive because that is just stupid.
-						 *
-						 */
-						if (bstat)
-						{
-							switch (newPos)
-							{
-								case LAST:
-
-									/*
-									 * since new start > last end and new end
-									 * > last end should be last.
-									 */
-
-									/* should be last partition */
-									maxpartno = a_rule->parruleord + 1;
-
-									break;
-								case FIRST:
-
-									/*
-									 * since new start < first start and new
-									 * end > last end we would overlap all
-									 * partitions!!!
-									 */
-								case MIDDLE:
-
-									/*
-									 * since new start < last end and new end
-									 * > last end we would overlap last
-									 * partition
-									 */
-									bOverlap = true;
-									goto L_end_overlap;
-									break;
-								default:
-
-									/*
-									 * new end is less than last partition end
-									 * but new start isn't -- must be end <
-									 * start
-									 */
-									break;
-							}
-						}
-						else
-						{
-							switch (newPos)
-							{
-								case FIRST:
-
-									/*
-									 * since new start < first start and new
-									 * end in middle we overlap
-									 */
-									bOverlap = true;
-									goto L_end_overlap;
-
-									break;
-								case MIDDLE:
-									/* both start and end in middle */
-									break;
-								case LAST:
-								default:
-
-									/*
-									 * since new start > last end and new end
-									 * in middle -- must be end < start
-									 */
-									break;
-							}
-						}
-					}
-				}
-				else
-				{
-					/* if no "rules", then this is the first partition */
-
-					newPos = LAST;
-					/* should be final partition */
-					maxpartno = 1;
-
-					goto L_end_overlap;
-				}
-
-
-				/*
-				 * if the individual start and end values don't intersect an
-				 * existing partition, make sure they don't define a range
-				 * which contains an existing partition, ie new start <
-				 * existing start and new end > existing end
-				 */
-
-				if (!bOverlap && (newPos == MIDDLE))
-				{
-					bOpenGap = true;
-					int			prev_partno = 0;
-
-					/*
-					 * hmm, not always true.  see MPP-3667, MPP-3636, MPP-3593
-					 *
-					 * if (startSearchpoint != endSearchpoint) { bOverlap =
-					 * true; goto L_end_overlap; }
-					 *
-					 */
-					while (1)
-					{
-						bool		bstat;
-						PartitionRule *a_rule = pNode->rules[startSearchpoint];	/* get the rule */
-
-						/* MPP-3621: fix ADD for open intervals */
-
-						if (0 ==
-							list_length((List *) a_rule->parrangeend))
-						{
-							/* new end < infinite end */
-							bstat = false;
-						}
-						else
-							bstat =
-								compare_partn_opfuncid(pNode,
-													   "pg_catalog",
-													   "<=",
-													   (List *) a_rule->parrangeend,
-													   d_start, isnull, tupledesc);
-
-						if (bstat)
-						{
-							startSearchpoint++;
-							Assert(startSearchpoint <= pNode->num_rules);
-							prev_partno = a_rule->parruleord;
-							continue;
-						}
-
-						/*
-						 * if previous partition was less than current, then
-						 * this one should be larger. if not, then it
-						 * overlaps...
-						 */
-						if (
-							(0 ==
-							 list_length((List *) a_rule->parrangestart))
-							||
-							!compare_partn_opfuncid(pNode,
-													"pg_catalog",
-													">=",
-													(List *) a_rule->parrangestart,
-													d_end, isnull, tupledesc))
-						{
-							prule = NULL;	/* could get the right prule... */
-							bOverlap = true;
-							goto L_end_overlap;
-						}
-
-						if (prev_partno != 0 && prev_partno + 1 < a_rule->parruleord)
-						{
-							/* Found gap.  No need to open it. */
-							bOpenGap = false;
-							maxpartno = prev_partno + 1;
-						}
-						else
-							/* shift a_rule up so new rule has a place to fit */
-							maxpartno = a_rule->parruleord;
-
-						break;
-					}			/* end while */
-
-				}				/* end 0 == middle */
-
-		L_end_overlap:
-				if (bOverlap)
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-							 errmsg("new partition overlaps existing "
-									"partition%s",
-									(prule && prule->isName) ?
-									prule->partIdStr : "")));
-
-			}
-
-			free_parsestate(pstate);
-		}						/* end if parttype_range */
+			check_range_overlap(rel, pNode, pelem, lrelname, is_split,
+								&maxpartno, &bOpenGap, &newPos);
+		}
 	}							/* end if pelem && pelem->boundspec */
 
 	/*
