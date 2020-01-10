@@ -284,8 +284,12 @@ CTranslatorDXLToPlStmt::GetPlannedStmtFromDXL
 		}
 	}
 
+	/*
+	 * If it's a CREATE TABLE AS, we have to dispatch the top slice to
+	 * all segments, because the catalog changes need to be made
+	 * everywhere even if the data originates from only some segments.
+	 */
 	if (orig_query->commandType == CMD_SELECT && orig_query->parentStmtType == PARENTSTMTTYPE_CTAS)
-	  /* FIXME: || planned_stmt->copyIntoClause || planned_stmt->refreshClause */
 	{
 		topslice->numsegments = m_num_of_segments;
 		topslice->gangType = GANGTYPE_PRIMARY_WRITER;
@@ -1889,7 +1893,7 @@ CTranslatorDXLToPlStmt::TranslateDXLMotion
 
 	// Recurse into the child, which runs in the sending slice.
 	m_dxl_to_plstmt_context->SetCurrentSlice(sendslice);
-	
+
 	Plan *child_plan = TranslateDXLOperatorToPlan(child_dxlnode, &child_context, ctxt_translation_prev_siblings);
 
 	CDXLTranslationContextArray *child_contexts = GPOS_NEW(m_mp) CDXLTranslationContextArray(m_mp);

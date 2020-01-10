@@ -229,7 +229,7 @@ namespace gpdxl
 			{
 				m_current_slice = slice;
 			}
-	  
+
 			// add CTAS information
 			void AddCtasInfo(IntoClause *into_clause, GpPolicy *distribution_policy);
 			
@@ -244,7 +244,7 @@ namespace gpdxl
 			{
 				return m_distribution_policy;
 			}
-	  
+
 			// Get the hash opclass or hash function for given datatype,
 			// based on decision made by DetermineDistributionHashOpclasses()
 			Oid GetDistributionHashOpclassForType(Oid typid);

@@ -630,6 +630,9 @@ cdbllize_adjust_init_plan_path(PlannerInfo *root, Path *best_path)
  * The result is a deep copy of the argument Plan tree with added/modified
  * Motion nodes, or the original Plan tree unmodified if no changes are
  * needed.
+ *
+ * Note: Subqueries in from-list can contain MOTIONTYPE_OUTER_QUERY Motions,
+ * too, so we need to scan the tree even there are no SubPlans.
  */
 Plan *
 cdbllize_decorate_subplans_with_motions(PlannerInfo *root, Plan *plan)
@@ -637,11 +640,6 @@ cdbllize_decorate_subplans_with_motions(PlannerInfo *root, Plan *plan)
 	Plan	   *result;
 	decorate_subplans_with_motions_context context;
 	int			nsubplans;
-
-	/* If there are no subplans, nothing to do. */
-	// FIXME: subqueries can contain OUTER_QUERY motions too.
-	//if (!root->glob->subplans)
-	//	return plan;
 
 	/* Initialize mutator context. */
 	planner_init_plan_tree_base(&context.base, root);
@@ -709,11 +707,13 @@ cdbllize_decorate_subplans_with_motions(PlannerInfo *root, Plan *plan)
 			context.currentPlanFlow = sstate->parentFlow;
 		}
 
+		if (!subplan->flow)
+			elog(ERROR, "subplan is missing Flow information");
+
 		/*
 		 * If the subquery result is not available where the outer query needs it,
 		 * we have to add a Motion node to redistribute it.
 		 */
-		/* FIXME: elog(ERROR) if no flow*/
 		if (subplan->flow->locustype != CdbLocusType_OuterQuery &&
 			subplan->flow->locustype != CdbLocusType_SegmentGeneral &&
 			subplan->flow->locustype != CdbLocusType_General)

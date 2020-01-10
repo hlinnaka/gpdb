@@ -2486,7 +2486,7 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 	sendSlice->sliceIndex = -1;
 
 	root->curSlice = sendSlice;
-	
+
 	subplan = create_plan_recurse(root, subpath, CP_EXACT_TLIST);
 
 	root->curSlice = save_curSlice;
@@ -2526,7 +2526,7 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 
 		return subplan;
 	}
-	
+
 	switch (subpath->locus.locustype)
 	{
 		case CdbLocusType_Entry:
@@ -2539,7 +2539,12 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 		case CdbLocusType_SingleQE:
 			sendSlice->gangType = GANGTYPE_SINGLETON_READER;
 			sendSlice->numsegments = 1;
-			sendSlice->segindex = 0; //FIXME
+			/*
+			 * XXX: for now, always execute the slice in segment 0. Ideally, we
+			 * would assign different SingleQEs to different segments to distribute
+			 * the load more evenly, but keep it simple for now.
+			 */
+			sendSlice->segindex = 0;
 			break;
 
 		case CdbLocusType_General:

@@ -2219,16 +2219,18 @@ PrimaryWriterSliceIndex(EState *estate)
 /**
  * Provide root slice of locally executing slice.
  */
-int RootSliceIndex(EState *estate)
+int
+RootSliceIndex(EState *estate)
 {
-	Assert(estate);
-	int result = 0;
+	int			result = 0;
 
 	if (estate->es_sliceTable)
 	{
 		ExecSlice *localSlice = &estate->es_sliceTable->slices[LocallyExecutingSliceIndex(estate)];
 
 		result = localSlice->rootIndex;
+
+		Assert(result >= 0 && estate->es_sliceTable->numSlices);
 	}
 
 	return result;
@@ -2266,10 +2268,6 @@ void AssertSliceTableIsValid(SliceTable *st)
 		 */
 		if (s->rootIndex == -1 && s->parentIndex == -1 && s->gangType == GANGTYPE_UNALLOCATED)
 			continue;
-
-		/* The root index of a slice is either 0 or is a slice corresponding to an init plan */
-		// FIXME
-		//Assert((s->rootIndex == 0) || (s->rootIndex > st->nMotions && s->rootIndex <= st->maxSliceIndex));
 
 		/* Parent slice index */
 		if (s->sliceIndex == s->rootIndex)
