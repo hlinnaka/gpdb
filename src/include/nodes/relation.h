@@ -363,8 +363,6 @@ typedef struct PlannerInfo
 
 	PlanSlice  *curSlice;
 
-	Flow	   *topFlow;
-
 	PlannerConfig *config;		/* Planner configuration */
 
 	List	   *dynamicScans;	/* DynamicScanInfos */
