@@ -548,8 +548,9 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	/*
 	 * Fix sharing id and shared id.
 	 *
-	 * This must be called before set_plan_references and cdbparallelize.  The other mutator
-	 * or tree walker assumes the input is a tree.  If there is plan sharing, we have a DAG. 
+	 * This must be called before set_plan_references.  The other mutator or
+	 * tree walker assumes the input is a tree.  If there is plan sharing, we
+	 * have a DAG.
 	 *
 	 * apply_shareinput will fix shared_id, and change the DAG to a tree.
 	 */
@@ -605,7 +606,7 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	if (Gp_role == GP_ROLE_DISPATCH)
 	{
 		/*
-		 * cdbparallelize() mutates all the nodes, so the producer nodes we
+		 * cdb_build_slice_table() can modify nodes, so the producer nodes we
 		 * memorized earlier are no longer valid. apply_shareinput_xslice()
 		 * will re-populate it, but clear it for now, just to make sure that
 		 * we don't access the obsolete copies of the nodes.
@@ -614,9 +615,9 @@ standard_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 			memset(glob->share.producers, 0, glob->share.producer_count * sizeof(ShareInputScan *));
 
 		/*
-		 * cdbparallelize may create additional slices that may affect share
-		 * input. need to mark material nodes that are split acrossed multi
-		 * slices.
+		 * cdb_build_slice_table() may create additional slices that may affect
+		 * share input. need to mark material nodes that are split acrossed
+		 * multi slices.
 		 */
 		top_plan = apply_shareinput_xslice(top_plan, root, glob->slices);
 	}

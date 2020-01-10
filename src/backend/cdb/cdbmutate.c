@@ -994,10 +994,9 @@ shareinput_mutator_xslice_1(Node *node, PlannerInfo *root, bool fPop)
 			set_plan_driver_slice(shared, motId);
 
 			/*
-			 * We need to repopulate the producers array. cdbparallelize() was
-			 * run on the plan tree between shareinput_mutator_dag_to_tree()
-			 * and here, which copies all the nodes, and the destroys the
-			 * producers array in the process.
+			 * We need to repopulate the producers array. The plan tree might
+			 * have been modified between shareinput_mutator_dag_to_tree() and
+			 * here, destroying the producers array in the process.
 			 */
 			ctxt->producers[sisc->share_id] = sisc;
 			ctxt->sliceMarks[sisc->share_id] = motId;
