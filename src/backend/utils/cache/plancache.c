@@ -1179,17 +1179,17 @@ cached_plan_cost(CachedPlan *plan, bool include_planner)
 		 * through volcano model, do two phase commit and write xlog for
 		 * Prepare etc, which not only consumes CPU but also IO to disk.
 		 *
-		 * So using direct dispatch when it's possible plan matters. To
+		 * So using a direct dispatch plan, when it's possible, matters. To
 		 * nudge the decision to that direction, we add some cost to plans
-		 * that don't use direct dispatch. Since non direct dispatch introduces
-		 * additional IO, we use seq_page_cost as base unit to measure non
-		 * direct dispatch cost. The number of unneccessary QEs also measures
-		 * the amount of this cost. Considering clusters with 100 segments vs.
-		 * 10 segments, the non-direct dispatch cost of the 100 segments
-		 * cluster is definitely higher than 10 segments cluster. We don't
-		 * have a good cost model for this, so somewhat arbitrarily, add
-		 * 10 * seq_page_cost to the cost, for every segment that is involved
-		 * in the execution.
+		 * that don't use direct dispatch. Since non direct dispatch
+		 * introduces additional IO, we use seq_page_cost as base unit to
+		 * measure non direct dispatch cost. The number of unneccessary QEs
+		 * also measures the amount of this cost. Considering clusters with
+		 * 100 segments vs. 10 segments, the non-direct dispatch cost of the
+		 * 100 segments cluster is definitely higher than 10 segments cluster.
+		 * We don't have a good cost model for this, so somewhat arbitrarily,
+		 * add 10 * seq_page_cost to the cost, for every segment that is
+		 * involved in the execution.
 		 *
 		 * Actually, we're not very accurate in counting the number of
 		 * segments; we use the highest number of segments involved in any
