@@ -576,11 +576,12 @@ cdbdisp_buildPlanQueryParms(struct QueryDesc *queryDesc,
 	rootIdx = RootSliceIndex(queryDesc->estate);
 
 #ifdef USE_ASSERT_CHECKING
-	SliceTable *sliceTbl = queryDesc->estate->es_sliceTable;
+	//SliceTable *sliceTbl = queryDesc->estate->es_sliceTable;
 
-	Assert(rootIdx == 0 ||
-		   (rootIdx > sliceTbl->nMotions
-			&& rootIdx <= sliceTbl->nMotions + sliceTbl->nInitPlans));
+	// FIXME
+	//Assert(rootIdx == 0 ||
+	//	   (rootIdx > sliceTbl->nMotions
+	//		&& rootIdx <= sliceTbl->nMotions + sliceTbl->nInitPlans));
 #endif
 
 	DispatchCommandQueryParms *pQueryParms = (DispatchCommandQueryParms *) palloc0(sizeof(*pQueryParms));
@@ -1064,9 +1065,10 @@ cdbdisp_dispatchX(QueryDesc* queryDesc,
 	Assert(sliceTbl != NULL);
 
 	rootIdx = RootSliceIndex(estate);
-	Assert(rootIdx == 0 ||
-		   (rootIdx > sliceTbl->nMotions &&
-			rootIdx <= sliceTbl->nMotions + sliceTbl->nInitPlans));
+	// FIXME
+	//Assert(rootIdx == 0 ||
+	//	   (rootIdx > sliceTbl->nMotions &&
+	//		rootIdx <= sliceTbl->nMotions + sliceTbl->nInitPlans));
 
 
 	ds = cdbdisp_makeDispatcherState(queryDesc->extended_query);
