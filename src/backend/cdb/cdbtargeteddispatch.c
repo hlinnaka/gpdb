@@ -360,22 +360,14 @@ DirectDispatchUpdateContentIdsFromPlan(PlannerInfo *root, Plan *plan)
 	switch (nodeTag(plan))
 	{
 		case T_Result:
-			/* no change to dispatchInfo --> just iterate children */
-			break;
 		case T_Append:
 		case T_MergeAppend:
-			/* no change to dispatchInfo --> just iterate children */
-			break;
 		case T_LockRows:
 		case T_ModifyTable:
-			/* no change to dispatchInfo --> just iterate children */
-			break;
 		case T_BitmapAnd:
 		case T_BitmapOr:
-			/* no change to dispatchInfo --> just iterate children */
-			break;
 		case T_BitmapHeapScan:
-			/* no change to dispatchInfo --> just iterate children */
+			/* no change to dispatchInfo */
 			break;
 		case T_SampleScan:
 			DisableTargetedDispatch(&dispatchInfo);
@@ -445,7 +437,7 @@ DirectDispatchUpdateContentIdsFromPlan(PlannerInfo *root, Plan *plan)
 			}
 			break;
 		case T_SubqueryScan:
-			/* Regular walker goes into subplans */
+			/* no change to dispatchInfo */
 			break;
 		case T_TidScan:
 		case T_FunctionScan:
@@ -458,7 +450,7 @@ DirectDispatchUpdateContentIdsFromPlan(PlannerInfo *root, Plan *plan)
 		case T_NestLoop:
 		case T_MergeJoin:
 		case T_HashJoin:
-			/* join: no change to dispatchInfo --> just iterate children */
+			/* join: no change to dispatchInfo */
 
 			/*
 			 * note that we could want to look at the join qual but
@@ -498,7 +490,7 @@ DirectDispatchUpdateContentIdsFromPlan(PlannerInfo *root, Plan *plan)
 		case T_TableFunctionScan:
 		case T_Repeat:
 		case T_RecursiveUnion:
-			/* no change to dispatchInfo --> just iterate children */
+			/* no change to dispatchInfo */
 			break;
 		case T_ForeignScan:
 			DisableTargetedDispatch(&dispatchInfo); /* not sure about
