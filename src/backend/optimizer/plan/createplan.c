@@ -2382,7 +2382,10 @@ create_modifytable_plan(PlannerInfo *root, ModifyTablePath *best_path)
 			Oid			reloid = planner_rt_fetch(idx, root)->relid;
 			GpPolicy   *policy = GpPolicyFetch(reloid);
 
-			/* We cannot update tables on segmennts and on the entry DB in the same process. */
+			/*
+			 * We cannot update tables on segments and on the entry DB in the
+			 * same process.
+			 */
 			if (isfirst)
 				policyType = policy->ptype;
 			else
