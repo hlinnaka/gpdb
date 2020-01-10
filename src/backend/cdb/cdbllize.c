@@ -860,8 +860,16 @@ fix_outer_query_motions_mutator(Node *node, decorate_subplans_with_motions_conte
 			context->currentPlanFlow->segindex == 0 &&
 			motion->plan.lefttree->flow->locustype == CdbLocusType_SegmentGeneral)
 		{
-			/* omit this motion */
-			newnode = (Node *) motion->plan.lefttree;
+			/*
+			 * Omit this motion. If there were any InitPlans attached to it,
+			 * make sure we keep them.
+			 */
+			Plan	   *child;
+
+			child = motion->plan.lefttree;
+			child->initPlan = list_concat(child->initPlan, motion->plan.initPlan);
+
+			newnode = (Node *) child;
 		}
 		else
 		{
@@ -920,16 +928,23 @@ fix_subplan_motion(PlannerInfo *root, Plan *subplan, Flow *outer_query_flow)
 		PlanSlice  *sendSlice;
 		Motion	   *motion;
 		Flow	   *subFlow = subplan->flow;
+		List	   *initPlans = NIL;
 
 		Assert(subFlow);
 
 		/*
 		 * Strip off any Material nodes at the top. There's no point in
 		 * materializing just below a Motion, because a Motion is never
-		 * resacnned.
+		 * rescanned.
+		 *
+		 * If we strip off any nodes, make sure we preserve any initPlans
+		 * that were attached to them.
 		 */
 		while (IsA(subplan, Material))
+		{
+			initPlans = list_concat(initPlans, subplan->initPlan);
 			subplan = subplan->lefttree;
+		}
 
 		/*
 		 * If there's an existing Motion on top, we can remove it, and
@@ -945,6 +960,7 @@ fix_subplan_motion(PlannerInfo *root, Plan *subplan, Flow *outer_query_flow)
 
 			sendSlice = strippedMotion->senderSliceInfo;
 			subplan = subplan->lefttree;
+			initPlans = list_concat(initPlans, strippedMotion->plan.initPlan);
 		}
 		else
 		{
@@ -975,6 +991,7 @@ fix_subplan_motion(PlannerInfo *root, Plan *subplan, Flow *outer_query_flow)
 		motion->hashExprs = NIL;
 		motion->hashFuncs = NULL;
 		motion->plan.lefttree->flow = subFlow;
+		motion->plan.initPlan = initPlans;
 		motion->senderSliceInfo = sendSlice;
 
 		subplan = (Plan *) motion;

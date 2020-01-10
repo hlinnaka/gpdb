@@ -2585,9 +2585,6 @@ SS_attach_initplans(PlannerInfo *root, Plan *plan)
 	 * GPDB: make a copy of the list, because it gets free'd from the plan
 	 * later, in the remove_unused_initplans() step.
 	 */
-	if (IsA(plan, Motion))
-		plan = plan->lefttree;
-
 	plan->initPlan = list_copy(root->init_plans);
 }
 

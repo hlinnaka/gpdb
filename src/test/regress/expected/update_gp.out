@@ -130,13 +130,13 @@ WHERE t1.user_vie_project_code_pk = keo1.user_vie_project_code_pk;
      ->  Finalize Aggregate
            InitPlan 2 (returns $1)  (slice3)
              ->  Gather Motion 3:1  (slice4; segments: 3)
+                   InitPlan 1 (returns $0)  (slice5)
+                     ->  Finalize Aggregate
+                           ->  Gather Motion 3:1  (slice6; segments: 3)
+                                 ->  Partial Aggregate
+                                       ->  Seq Scan on keo4
                    ->  Seq Scan on keo4 keo4_1
                          Filter: ((keo_para_budget_date)::text = $0)
-                         InitPlan 1 (returns $0)  (slice5)
-                           ->  Finalize Aggregate
-                                 ->  Gather Motion 3:1  (slice6; segments: 3)
-                                       ->  Partial Aggregate
-                                             ->  Seq Scan on keo4
            ->  Gather Motion 3:1  (slice2; segments: 3)
                  ->  Partial Aggregate
                        ->  Seq Scan on keo3
