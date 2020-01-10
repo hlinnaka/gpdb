@@ -74,8 +74,7 @@ static void
 DisableTargetedDispatch(DirectDispatchInfo *data)
 {
 	data->isDirectDispatch = false;
-	data->contentIds = NULL; /* leaks but it's okay, we made a new memory
-							  * context for the entire calculation */
+	data->contentIds = NULL;
 	data->haveProcessedAnyCalculations = true;
 }
 

@@ -14,7 +14,7 @@
 
 #include "postgres.h"
 
-#include "nodes/execnodes.h"	/* Slice, SliceTable */
+#include "nodes/execnodes.h"	/* ExecSlice, SliceTable */
 #include "nodes/pg_list.h"
 #include "nodes/print.h"
 #include "miscadmin.h"

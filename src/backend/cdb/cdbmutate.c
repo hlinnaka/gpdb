@@ -1157,7 +1157,6 @@ apply_shareinput_xslice(Plan *plan, PlannerInfo *root, PlanSlice *sliceTable)
 
 	ctxt->motStack = NULL;
 	ctxt->qdShares = NULL;
-	ctxt->nextPlanId = 0;
 	ctxt->slices = sliceTable;
 
 	ctxt->sliceMarks = palloc0(ctxt->producer_count * sizeof(int));

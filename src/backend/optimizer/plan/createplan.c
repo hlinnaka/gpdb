@@ -494,14 +494,6 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 			break;
 		case T_Motion:
 			plan = create_motion_plan(root, (CdbMotionPath *) best_path);
-			/*
-			 * It's currently not allowed to direct-dispatch a slice that
-			 * has a Motion that sends tuples to it. It would be possible
-			 * in principle, but the interconnect initialization code gets
-			 * confused.
-			 */
-			if (Gp_role == GP_ROLE_DISPATCH && root->config->gp_enable_direct_dispatch)
-				DirectDispatchUpdateContentIdsFromPlan(root, plan);
 			break;
 		case T_PartitionSelector:
 			plan = create_partition_selector_plan(root, (PartitionSelectorPath *) best_path);
@@ -2601,6 +2593,15 @@ create_motion_plan(PlannerInfo *root, CdbMotionPath *path)
 
 	root->curOuterRels = save_curOuterRels;
 	root->curOuterParams = save_curOuterParams;
+
+	/*
+	 * It's currently not allowed to direct-dispatch a slice that has a
+	 * Motion that sends tuples to it. It would be possible in principle,
+	 * but the interconnect initialization code gets confused. Give the
+	 * direct dispatch machinery a chance to react to this Motion.
+	 */
+	if (Gp_role == GP_ROLE_DISPATCH && root->config->gp_enable_direct_dispatch)
+		DirectDispatchUpdateContentIdsFromPlan(root, (Plan *) motion);
 
 	return (Plan *) motion;
 }	/* create_motion_plan */

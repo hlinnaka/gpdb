@@ -107,8 +107,6 @@ typedef struct ApplyShareInputContext
 	int			share_refcounts_sz;		/* allocated sized of 'share_refcounts' */
 	List *motStack;
 	List *qdShares;
-	List *qdSlices;
-	int nextPlanId;
 
 	ShareInputScan **producers;
 	int		   *sliceMarks;			/* one for each producer */

@@ -601,11 +601,11 @@ cdbllize_adjust_init_plan_path(PlannerInfo *root, Path *best_path)
  * cdbllize_decorate_subplans_with_motions - Adjust subplans for MPP.
  *
  * This function adds Motion nodes on top of plan trees for SubPlans, so that
- * the subplan results are available at the correct for the outer query. It
- * also fixes up any MOTIONTYPE_OUTER_QUERY Motions, changing them into Gather
- * or Broadcast Motions, depending on the parent slice. The plan tree can
- * contain outer-query Motions, even if there are no SubPlans, if it contains
- * subquery RTEs.
+ * the subplan results are available at the correct segment for the outer
+ * query. It also fixes up any MOTIONTYPE_OUTER_QUERY Motions, changing them
+ * into Gather or Broadcast Motions, depending on the parent slice. The plan
+ * tree can contain outer-query Motions, even if there are no SubPlans, if it
+ * contains subquery RTEs.
  *
  * The input is a Plan tree, from create_plan().
  *
