@@ -1323,17 +1323,13 @@ RemoveRelations(DropStmt *drop)
 		if (rel_is_child_partition(relOid) && !drop->bAllowPartn)
 		{
 			Oid		 master = rel_partition_get_master(relOid);
-			char	*pretty	= rel_get_part_path_pretty(relOid,
-													   " ALTER PARTITION ",
-													   " DROP PARTITION ");
 
 			ereport(ERROR,
 					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
 					errmsg("cannot drop partition \"%s\" directly",
 						   get_rel_name(relOid)),
-					errhint("Table \"%s\" is a child partition of table \"%s\". To drop it, use ALTER TABLE \"%s\"%s...",
-							get_rel_name(relOid), get_rel_name(master),
-							get_rel_name(master), pretty ? pretty : "" )));
+					errhint("Table \"%s\" is a child partition of table \"%s\". To drop it, use ALTER TABLE \"%s\" DROP PARTITION...",
+							get_rel_name(relOid), get_rel_name(master), get_rel_name(master))));
 		}
 
 		/* OK, we're ready to delete this one */
@@ -3222,17 +3218,15 @@ RenameRelation(RenameStmt *stmt)
 	if (stmt && rel_is_child_partition(relid) && !stmt->bAllowPartn)
 	{
 		Oid		 master = rel_partition_get_master(relid);
-		char	*pretty	= rel_get_part_path_pretty(relid,
-													  " ALTER PARTITION ",
-													  " RENAME PARTITION ");
+
 		ereport(ERROR,
 				(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
 						errmsg("cannot rename partition \"%s\" directly",
 							   get_rel_name(relid)),
 						errhint("Table \"%s\" is a child partition of table "
-								"\"%s\".  To rename it, use ALTER TABLE \"%s\"%s...",
+								"\"%s\".  To rename it, use ALTER TABLE \"%s\" RENAME PARTITION...",
 								get_rel_name(relid), get_rel_name(master),
-								get_rel_name(master), pretty ? pretty : "" )));
+								get_rel_name(master))));
 	}
 
 	/* Do the work */

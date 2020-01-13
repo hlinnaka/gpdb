@@ -109,10 +109,6 @@ extern PgPartRule *get_part_rule(Relation rel, AlterPartitionId *pid,
 			  int *pSearch,
 			  bool inctemplate);
 
-
-extern char *
-rel_get_part_path_pretty(Oid relid, char *separator, char *lastsep);
-
 extern bool 
 partition_policies_equal(GpPolicy *p, PartitionNode *pn);
 
