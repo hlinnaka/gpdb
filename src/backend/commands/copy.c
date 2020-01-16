@@ -1846,7 +1846,7 @@ BeginCopy(bool is_from,
 	 * Since external scan calls BeginCopyFrom to init CopyStateData.
 	 * Current relation may be an external relation.
 	 */
-	if (rel != NULL && RelationIsExternal(rel))
+	if (rel != NULL && rel_is_external_table(RelationGetRelid(rel)))
 	{
 		is_copy = false;
 		num_columns = rel->rd_att->natts;
@@ -2486,8 +2486,7 @@ BeginCopyTo(Relation rel,
 	CopyState	cstate;
 	MemoryContext oldcontext;
 
-	if (rel != NULL && rel->rd_rel->relkind != RELKIND_RELATION &&
-		!RelationIsExternal(rel))
+	if (rel != NULL && rel->rd_rel->relkind != RELKIND_RELATION)
 	{
 		if (rel->rd_rel->relkind == RELKIND_VIEW)
 			ereport(ERROR,
@@ -2517,14 +2516,6 @@ BeginCopyTo(Relation rel,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("cannot copy from non-table relation \"%s\"",
 							RelationGetRelationName(rel))));
-	}
-	if (rel != NULL && RelationIsExternal(rel))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("cannot copy from external relation \"%s\"",
-						RelationGetRelationName(rel)),
-				 errhint("Try the COPY (SELECT ...) TO variant.")));
 	}
 
 	cstate = BeginCopy(false, rel, query, queryString, queryRelId, attnamelist,
@@ -2657,7 +2648,7 @@ BeginCopyToForExternalTable(Relation extrel, List *options)
 {
 	CopyState	cstate;
 
-	Assert(RelationIsExternal(extrel));
+	Assert(rel_is_external_table(RelationGetRelid(extrel)));
 
 	cstate = BeginCopy(false, extrel, NULL, NULL, InvalidOid, NIL, options, NULL);
 	cstate->dispatch_mode = COPY_DIRECT;
@@ -3229,7 +3220,7 @@ CopyTo(CopyState cstate)
 
 				pfree(proj);
 			}
-			else if(RelationIsExternal(rel))
+			else if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 			{
 				/* should never get here */
 				if (!cstate->skip_ext_partition)
@@ -3628,10 +3619,13 @@ CopyFrom(CopyState cstate)
 	bool	   *baseNulls;
 	GpDistributionData *part_distData = NULL;
 	int			firstBufferedLineNo = 0;
+	bool		is_external_table;
 
 	Assert(cstate->rel);
 
-	if (cstate->rel->rd_rel->relkind != RELKIND_RELATION)
+	is_external_table = (cstate->rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE &&
+						 rel_is_external_table(RelationGetRelid(cstate->rel)));
+	if (cstate->rel->rd_rel->relkind != RELKIND_RELATION && !is_external_table)
 	{
 		if (cstate->rel->rd_rel->relkind == RELKIND_VIEW)
 			ereport(ERROR,
@@ -4141,7 +4135,7 @@ CopyFrom(CopyState cstate)
 					aocs_insert_init(resultRelInfo->ri_RelationDesc,
 									 resultRelInfo->ri_aosegno, false);
 			}
-			else if (relstorage == RELSTORAGE_EXTERNAL &&
+			else if (is_external_table &&
 					 resultRelInfo->ri_extInsertDesc == NULL)
 			{
 				resultRelInfo->ri_extInsertDesc =
@@ -4257,7 +4251,7 @@ CopyFrom(CopyState cstate)
 					aocs_insert(resultRelInfo->ri_aocsInsertDesc, slot);
 					insertedTid = *slot_get_ctid(slot);
 				}
-				else if (relstorage == RELSTORAGE_EXTERNAL)
+				else if (is_external_table)
 				{
 					HeapTuple tuple;
 

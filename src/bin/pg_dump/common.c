@@ -329,9 +329,7 @@ flagInhTables(TableInfo *tblinfo, int numTables,
 		/* Some kinds never have parents */
 		if (tblinfo[i].relkind == RELKIND_SEQUENCE ||
 			tblinfo[i].relkind == RELKIND_VIEW ||
-			tblinfo[i].relkind == RELKIND_MATVIEW ||
-			tblinfo[i].relstorage == RELSTORAGE_EXTERNAL ||
-			tblinfo[i].relstorage == RELSTORAGE_FOREIGN)
+			tblinfo[i].relkind == RELKIND_MATVIEW)
 			continue;
 
 		/* Don't bother computing anything for non-target tables, either */
@@ -377,9 +375,7 @@ flagInhAttrs(DumpOptions *dopt, TableInfo *tblinfo, int numTables)
 		/* Some kinds never have parents */
 		if (tbinfo->relkind == RELKIND_SEQUENCE ||
 			tbinfo->relkind == RELKIND_VIEW ||
-			tbinfo->relkind == RELKIND_MATVIEW ||
-			tbinfo->relstorage == RELSTORAGE_EXTERNAL ||
-			tbinfo->relstorage == RELSTORAGE_FOREIGN)
+			tbinfo->relkind == RELKIND_MATVIEW)
 			continue;
 
 		/* Don't bother computing anything for non-target tables, either */

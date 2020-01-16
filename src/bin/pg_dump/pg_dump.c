@@ -50,6 +50,7 @@
 #include "catalog/pg_am.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_foreign_server.h"
 #include "catalog/pg_magic_oid.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_default_acl.h"
@@ -2465,9 +2466,6 @@ makeTableDataInfo(DumpOptions *dopt, TableInfo *tbinfo, bool oids)
 	if (tbinfo->dataObj != NULL)
 		return;
 
-	/* Skip EXTERNAL TABLEs */
-	if (tbinfo->relstorage == RELSTORAGE_EXTERNAL)
-		return;
 	/* Skip VIEWs (no data to dump) */
 	if (tbinfo->relkind == RELKIND_VIEW)
 		return;
@@ -8444,8 +8442,9 @@ getTableAttrs(Archive *fout, TableInfo *tblinfo, int numTables)
 			 * attributes are marked as local.  Applicable to partitioned
 			 * tables where a partition is exchanged for an external table.
 			 */
-			if (tbinfo->relstorage == RELSTORAGE_EXTERNAL && tbinfo->attislocal[j])
-				tbinfo->attislocal[j] = false;
+			// FIXME
+			//if (tbinfo->relstorage == RELSTORAGE_EXTERNAL && tbinfo->attislocal[j])
+			//	tbinfo->attislocal[j] = false;
 		}
 
 		PQclear(res);
@@ -8700,7 +8699,8 @@ shouldPrintColumn(DumpOptions *dopt, TableInfo *tbinfo, int colno)
 {
 	if (dopt->binary_upgrade)
 		return true;
-	return ((tbinfo->attislocal[colno] || tbinfo->relstorage == RELSTORAGE_EXTERNAL) &&
+	// FIXME
+	return ((tbinfo->attislocal[colno] /* || tbinfo->relstorage == RELSTORAGE_EXTERNAL */) &&
 	        !tbinfo->attisdropped[colno]);
 }
 
@@ -16204,13 +16204,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			appendPQExpBuffer(q, "\n  WITH %s CHECK OPTION", tbinfo->checkoption);
 		appendPQExpBufferStr(q, ";\n");
 	}
-	/* START MPP ADDITION */
-	else if (tbinfo->relstorage == RELSTORAGE_EXTERNAL)
-	{
-		reltypename = "EXTERNAL TABLE";
-		dumpExternal(fout, tbinfo, q, delq);
-	}
-	/* END MPP ADDITION */
 	else
 	{
 		switch (tbinfo->relkind)
@@ -16245,6 +16238,16 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					ftoptions = pg_strdup(PQgetvalue(res, 0, i_ftoptions));
 					PQclear(res);
 					destroyPQExpBuffer(query);
+
+					/* START MPP ADDITION */
+					if (strcmp(srvname, PG_EXTTABLE_SERVER_NAME) == 0)
+					{
+						reltypename = "EXTERNAL TABLE";
+						dumpExternal(fout, tbinfo, q, delq);
+						break;
+					}
+					/* END MPP ADDITION */
+
 					break;
 				}
 			case (RELKIND_MATVIEW):
@@ -16607,9 +16610,10 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 										 "  JOIN pg_partition_rule pr ON (part.oid = pr.parchildrelid) "
 										 "  JOIN pg_partition p ON (pr.paroid = p.oid) "
 										 "WHERE p.parrelid = '%u'::pg_catalog.oid "
-										 "  AND part.relstorage = '%c') "
+										 "  AND part.relkind = '%c') "
 										 "AS has_external_partitions;",
-								  tbinfo->dobj.catId.oid, RELSTORAGE_EXTERNAL);
+								  tbinfo->dobj.catId.oid,
+								  RELKIND_FOREIGN_TABLE);
 
 				res = ExecuteSqlQueryForSingleRow(fout, query->data);
 				hasExternalPartitions = (PQgetvalue(res, 0, 0)[0] == 't');
@@ -16659,8 +16663,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					"JOIN pg_partitions ps on (c.relname = ps.tablename) "
 					"JOIN pg_class cc on (ps.partitiontablename = cc.relname) "
 					"JOIN pg_partition_rule pp on (cc.oid = pp.parchildrelid) "
-					"WHERE p.parrelid = %u AND cc.relstorage = '%c';",
-					tbinfo->dobj.catId.oid, RELSTORAGE_EXTERNAL);
+					"WHERE p.parrelid = %u AND cc.relkind = '%c';",
+					tbinfo->dobj.catId.oid, RELKIND_FOREIGN_TABLE);
 
 			res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 

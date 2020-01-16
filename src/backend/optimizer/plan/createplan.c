@@ -7928,7 +7928,12 @@ make_modifytable(PlannerInfo *root,
 
 			Assert(rte->rtekind == RTE_RELATION);
 			if (rte->relkind == RELKIND_FOREIGN_TABLE)
-				fdwroutine = GetFdwRoutineByRelId(rte->relid);
+			{
+				if (rel_is_external_table(rte->relid))
+					fdwroutine = NULL;
+				else
+					fdwroutine = GetFdwRoutineByRelId(rte->relid);
+			}
 			else
 				fdwroutine = NULL;
 		}

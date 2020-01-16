@@ -51,6 +51,7 @@
 #include "cdb/cdbrelsize.h"
 #include "catalog/pg_appendonly_fn.h"
 #include "catalog/pg_exttable.h"
+#include "catalog/pg_foreign_server.h"
 #include "catalog/pg_inherits_fn.h"
 #include "utils/guc.h"
 
@@ -143,13 +144,14 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 	rel->relstorage = relation->rd_rel->relstorage;
 
-	/* If it's an external table, get locations and format from catalog */
-	if (rel->relstorage == RELSTORAGE_EXTERNAL)
-		get_external_relation_info(relation, rel);
-
 	/* If it's an foreign table, get info from catalog */
-	if (rel->relstorage == RELSTORAGE_FOREIGN)
-		rel->ftEntry = GetForeignTable(RelationGetRelid(relation));
+	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+	{
+		if (rel_is_external_table(relationObjectId))
+			get_external_relation_info(relation, rel);
+		else
+			rel->ftEntry = GetForeignTable(RelationGetRelid(relation));
+	}
 
 	/*
 	 * Estimate relation size --- unless it's an inheritance parent, in which
@@ -433,7 +435,10 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 	if (relation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 	{
 		rel->serverid = GetForeignServerIdByRelId(RelationGetRelid(relation));
-		rel->fdwroutine = GetFdwRoutineForRelation(relation, true);
+		if (rel->serverid == PG_EXTTABLE_SERVER_OID)
+			rel->fdwroutine = NULL;
+		else
+			rel->fdwroutine = GetFdwRoutineForRelation(relation, true);
 	}
 	else
 	{
@@ -493,6 +498,7 @@ cdb_estimate_rel_size(RelOptInfo   *relOptInfo,
 	BlockNumber relallvisible;
 	double		density;
     BlockNumber curpages = 0;
+	bool		use_external_table_defaults = false;
 
     /* Rel not distributed?  RelationGetNumberOfBlocks can get actual #pages. */
     if (!relOptInfo->cdbpolicy ||
@@ -524,8 +530,10 @@ cdb_estimate_rel_size(RelOptInfo   *relOptInfo,
 		 */
 		curpages = relpages;
 	}
-	else if (RelationIsExternal(rel))
+	else if (rel_is_external_table(RelationGetRelid(rel)))
 	{
+		/* Note: we can't use relOptinfo->serverid here, because isn't filled in yet */
+		use_external_table_defaults = true;
 		curpages = DEFAULT_EXTERNAL_TABLE_PAGES;
 	}
 	else
@@ -560,6 +568,15 @@ cdb_estimate_rel_size(RelOptInfo   *relOptInfo,
 	 */
 	if (relpages > 0)
 		density = reltuples / (double) relpages;
+	else if (use_external_table_defaults)
+	{
+		/*
+		 * For an external table with no estimates stored in pg_class, use
+		 * defaults.
+		 */
+		density = DEFAULT_EXTERNAL_TABLE_TUPLES /
+			(double) DEFAULT_EXTERNAL_TABLE_PAGES;
+	}
 	else
 	{
 		/*
@@ -1155,10 +1172,6 @@ estimate_rel_size(Relation rel, int32 *attr_widths,
 		case RELKIND_AOSEGMENTS:
 		case RELKIND_AOBLOCKDIR:
 		case RELKIND_AOVISIMAP:
-
-			/* skip external tables */
-			if(RelationIsExternal(rel))
-				break;
 			
 			if (RelationIsAoRows(rel))
 			{
