@@ -158,16 +158,9 @@ external_beginscan(Relation relation, uint32 scancounter,
 	scan->fs_noop = false;
 	scan->fs_file = NULL;
 	scan->fs_formatter = NULL;
-	scan->fs_constraintExprs = NULL;
-	if (relation->rd_att->constr != NULL && relation->rd_att->constr->num_check > 0)
-	{
-		scan->fs_hasConstraints = true;
-	}
-	else
-	{
-		scan->fs_hasConstraints = false;
-	}
 
+	/* There should be no CHECK constraints on external tables. */
+	Assert(relation->rd_att->constr == NULL || relation->rd_att->constr->num_check == 0);
 
 	/*
 	 * get the external URI assigned to us.
