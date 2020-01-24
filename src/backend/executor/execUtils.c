@@ -1219,7 +1219,12 @@ ShouldPrefetchJoinQual(EState *estate, Join *join)
 		return false;
 	localSlice = &estate->es_sliceTable->slices[estate->currentSliceId];
 
-	return (localSlice->parentIndex != -1);
+	bool result = (localSlice->parentIndex != -1);
+
+	Assert (result == (findSenderMotion(estate->es_plannedstmt,
+										estate->currentSliceId) != NULL));
+
+	return result;
 }
 
 /* ----------------------------------------------------------------
