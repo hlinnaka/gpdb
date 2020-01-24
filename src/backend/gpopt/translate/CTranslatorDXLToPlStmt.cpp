@@ -427,6 +427,7 @@ CTranslatorDXLToPlStmt::TranslateDXLTblScan
 	}
 
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -591,6 +592,7 @@ CTranslatorDXLToPlStmt::TranslateDXLIndexScan
 
 	Plan *plan = &(index_scan->scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -894,6 +896,7 @@ CTranslatorDXLToPlStmt::TranslateDXLLimit
 
 	Plan *plan = &(limit->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -978,6 +981,7 @@ CTranslatorDXLToPlStmt::TranslateDXLHashJoin
 	Join *join = &(hashjoin->join);
 	Plan *plan = &(join->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalHashJoin *hashjoin_dxlop = CDXLPhysicalHashJoin::Cast(hj_dxlnode->GetOperator());
 
@@ -1169,6 +1173,7 @@ CTranslatorDXLToPlStmt::TranslateDXLTvf
 	m_dxl_to_plstmt_context->AddRTE(rte);
 
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -1435,6 +1440,7 @@ CTranslatorDXLToPlStmt::TranslateDXLNLJoin
 	Join *join = &(nested_loop->join);
 	Plan *plan = &(join->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalNLJoin *dxl_nlj = CDXLPhysicalNLJoin::PdxlConvert(nl_join_dxlnode->GetOperator());
 
@@ -1578,6 +1584,7 @@ CTranslatorDXLToPlStmt::TranslateDXLMergeJoin
 	Join *join = &(merge_join->join);
 	Plan *plan = &(join->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalMergeJoin *merge_join_dxlop = CDXLPhysicalMergeJoin::Cast(merge_join_dxlnode->GetOperator());
 
@@ -1738,6 +1745,7 @@ CTranslatorDXLToPlStmt::TranslateDXLHash
 
 	Plan *plan = &(hash->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate dxl node
 	CDXLTranslateContext dxl_translate_ctxt(m_mp, false, output_context->GetColIdToParamIdMap());
@@ -1819,6 +1827,9 @@ CTranslatorDXLToPlStmt::TranslateDXLMotion
 
 	Plan *plan = &(motion->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	// 'sliceId' is the *receiving* slice's ID. The sender's ID is stored in
+	// 'motionID'.
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -2045,6 +2056,7 @@ CTranslatorDXLToPlStmt::TranslateDXLRedistributeMotionToResultHashFilters
 
 	Plan *plan = &(result->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalMotion *motion_dxlop = CDXLPhysicalMotion::Cast(motion_dxlnode->GetOperator());
 
@@ -2176,6 +2188,7 @@ CTranslatorDXLToPlStmt::TranslateDXLAgg
 
 	Plan *plan = &(agg->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalAgg *dxl_phy_agg_dxlop = CDXLPhysicalAgg::Cast(agg_dxlnode->GetOperator());
 
@@ -2307,6 +2320,7 @@ CTranslatorDXLToPlStmt::TranslateDXLWindow
 
 	Plan *plan = &(window->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalWindow *window_dxlop = CDXLPhysicalWindow::Cast(window_dxlnode->GetOperator());
 
@@ -2550,6 +2564,7 @@ CTranslatorDXLToPlStmt::TranslateDXLSort
 
 	Plan *plan = &(sort->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalSort *sort_dxlop = CDXLPhysicalSort::Cast(sort_dxlnode->GetOperator());
 
@@ -2634,6 +2649,7 @@ CTranslatorDXLToPlStmt::TranslateDXLSubQueryScan
 
 	Plan *plan = &(subquery_scan->scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalSubqueryScan *subquery_scan_dxlop = CDXLPhysicalSubqueryScan::Cast(subquery_scan_dxlnode->GetOperator());
 
@@ -2740,6 +2756,7 @@ CTranslatorDXLToPlStmt::TranslateDXLResult
 
 	Plan *plan = &(result->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -2828,6 +2845,7 @@ CTranslatorDXLToPlStmt::TranslateDXLPartSelector
 
 	Plan *plan = &(partition_selector->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalPartitionSelector *partition_selector_dxlop = CDXLPhysicalPartitionSelector::Cast(partition_selector_dxlnode->GetOperator());
 	const ULONG num_of_levels = partition_selector_dxlop->GetPartitioningLevel();
@@ -2986,6 +3004,7 @@ CTranslatorDXLToPlStmt::TranslateDXLAppend
 
 	Plan *plan = &(append->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -3095,6 +3114,7 @@ CTranslatorDXLToPlStmt::TranslateDXLMaterialize
 
 	Plan *plan = &(materialize->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalMaterialize *materialize_dxlop = CDXLPhysicalMaterialize::Cast(materialize_dxlnode->GetOperator());
 
@@ -3183,6 +3203,7 @@ CTranslatorDXLToPlStmt::TranslateDXLCTEProducerToSharedScan
 	shared_input_scan->share_id = cte_id;
 	Plan *plan = &(shared_input_scan->scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// store share scan node for the translation of CTE Consumers
 	m_dxl_to_plstmt_context->AddCTEConsumerInfo(cte_id, shared_input_scan);
@@ -3224,6 +3245,7 @@ CTranslatorDXLToPlStmt::TranslateDXLCTEProducerToSharedScan
 
 		Plan *materialize_plan = &(materialize->plan);
 		materialize_plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+		plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 		TranslatePlanCosts
 			(
@@ -3348,6 +3370,7 @@ CTranslatorDXLToPlStmt::TranslateDXLCTEConsumerToSharedScan
 
 	Plan *plan = &(share_input_scan_cte_consumer->scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -3419,6 +3442,7 @@ CTranslatorDXLToPlStmt::TranslateDXLSequence
 
 	Plan *plan = &(psequence->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -3516,6 +3540,7 @@ CTranslatorDXLToPlStmt::TranslateDXLDynTblScan
 
 	Plan *plan = &(dyn_seq_scan->seqscan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -3594,6 +3619,7 @@ CTranslatorDXLToPlStmt::TranslateDXLDynIdxScan
 
 	Plan *plan = &(dyn_idx_scan->indexscan.scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -3787,6 +3813,7 @@ CTranslatorDXLToPlStmt::TranslateDXLDml
 	Plan *result_plan = &(result->plan);
 
 	result_plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	result_plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 	result_plan->lefttree = child_plan;
 
 	result_plan->targetlist = target_list_with_dropped_cols;
@@ -3807,6 +3834,7 @@ CTranslatorDXLToPlStmt::TranslateDXLDml
 
 	plan->targetlist = NIL;
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	SetParamIds(plan);
 
@@ -3987,6 +4015,7 @@ CTranslatorDXLToPlStmt::TranslateDXLSplit
 
 	plan->lefttree = child_plan;
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	SetParamIds(plan);
 
@@ -4027,6 +4056,7 @@ CTranslatorDXLToPlStmt::TranslateDXLAssert
 
 	Plan *plan = &(assert_node->plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	CDXLPhysicalAssert *assert_dxlop = CDXLPhysicalAssert::Cast(assert_dxlnode->GetOperator());
 
@@ -4163,6 +4193,7 @@ CTranslatorDXLToPlStmt::TranslateDXLRowTrigger
 
 	plan->lefttree = child_plan;
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	SetParamIds(plan);
 
@@ -5035,6 +5066,7 @@ CTranslatorDXLToPlStmt::TranslateDXLCtas
 	Result *result = MakeNode(Result);
 	Plan *result_plan = &(result->plan);
 	result_plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	result_plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 	result_plan->lefttree = plan;
 
 	result_plan->targetlist = target_list;
@@ -5288,6 +5320,7 @@ CTranslatorDXLToPlStmt::TranslateDXLBitmapTblScan
 
 	Plan *plan = &(bitmap_tbl_scan->scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts
@@ -5517,6 +5550,7 @@ CTranslatorDXLToPlStmt::TranslateDXLBitmapIndexProbe
 	OID oidRel = CMDIdGPDB::CastMdid(table_descr->MDId())->Oid();
 	Plan *plan = &(bitmap_idx_scan->scan.plan);
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	GPOS_ASSERT(1 == bitmap_index_probe_dxlnode->Arity());
 	CDXLNode *index_cond_list_dxlnode = (*bitmap_index_probe_dxlnode)[0];
@@ -5592,6 +5626,7 @@ CTranslatorDXLToPlStmt::TranslateDXLValueScan
 	m_dxl_to_plstmt_context->AddRTE(rte);
 
 	plan->plan_node_id = m_dxl_to_plstmt_context->GetNextPlanId();
+	plan->sliceId = m_dxl_to_plstmt_context->GetCurrentSlice()->sliceIndex;
 
 	// translate operator costs
 	TranslatePlanCosts

@@ -2401,6 +2401,7 @@ ReadCommonPlan(Plan *local_node)
 #endif /* COMPILING_BINARY_FUNCS */
 
 	READ_UINT64_FIELD(operatorMemKB);
+	READ_INT_FIELD(sliceId);
 }
 
 /*

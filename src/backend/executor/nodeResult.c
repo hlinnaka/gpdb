@@ -390,8 +390,7 @@ ExecInitResult(Result *node, EState *estate, int eflags)
 	 */
 	if (node->numHashFilterCols > 0)
 	{
-		int			currentSliceId = estate->currentSliceId;
-		ExecSlice *currentSlice = &estate->es_sliceTable->slices[currentSliceId];
+		ExecSlice *currentSlice = &estate->es_sliceTable->slices[node->plan.sliceId];
 
 		resstate->hashFilter = makeCdbHash(currentSlice->planNumSegments,
 										   node->numHashFilterCols,

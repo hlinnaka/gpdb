@@ -692,7 +692,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	ExecSlice  *recvSlice;
 	SliceTable *sliceTable = estate->es_sliceTable;
 	PlanState  *outerPlan;
-	int			parentIndex;
 
 #ifdef CDB_MOTION_DEBUG
 	int			i;
@@ -713,9 +712,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	Assert(node->motionID > 0);
 	Assert(node->motionID < sliceTable->numSlices);
 
-	parentIndex = estate->currentSliceId;
-	estate->currentSliceId = node->motionID;
-
 	/*
 	 * create state structure
 	 */
@@ -730,8 +726,8 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	/* Look up the sending and receiving gang's slice table entries. */
 	sendSlice = &sliceTable->slices[node->motionID];
 	Assert(sendSlice->sliceIndex == node->motionID);
-	recvSlice = &sliceTable->slices[parentIndex];
-	Assert(parentIndex == sendSlice->parentIndex);
+	recvSlice = &sliceTable->slices[node->plan.sliceId];
+	Assert(node->plan.sliceId == sendSlice->parentIndex);
 
 	/* QD must fill in the global slice table. */
 	if (Gp_role == GP_ROLE_DISPATCH)
@@ -913,8 +909,6 @@ ExecInitMotion(Motion *node, EState *estate, int eflags)
 	}
 #endif
 
-	estate->currentSliceId = parentIndex;
-
 	return motionstate;
 }
 
@@ -926,7 +920,6 @@ void
 ExecEndMotion(MotionState *node)
 {
 	Motion	   *motion = (Motion *) node->ps.plan;
-	uint16		motNodeID = motion->motionID;
 #ifdef MEASURE_MOTION_TIME
 	double		otherTimeSec;
 	double		motionTimeSec;
@@ -943,7 +936,6 @@ ExecEndMotion(MotionState *node)
 	 * Set the slice no for the nodes under this motion.
 	 */
 	Assert(node->ps.state != NULL);
-	node->ps.state->currentSliceId = motNodeID;
 
 	/*
 	 * shut down the subplan
@@ -1015,7 +1007,8 @@ ExecEndMotion(MotionState *node)
 	 *
 	 * TODO: For now, we don't flush the comm-layer.  NO ERRORS DURING AMS!!!
 	 */
-	EndMotionLayerNode(node->ps.state->motionlayer_context, motNodeID, /* flush-comm-layer */ false);
+	EndMotionLayerNode(node->ps.state->motionlayer_context, motion->motionID,
+					   /* flush-comm-layer */ false);
 
 #ifdef CDB_MOTION_DEBUG
 	if (node->outputFunArray)

@@ -1243,8 +1243,18 @@ build_slice_table_walker(Node *node, build_slice_table_context *context)
 
 		context->currentSliceIndex = save_currentSliceIndex;
 
+		/*
+		 * sliceId in Motion nodes are labeled with the *receiving* slice's
+		 * id. The sender's ID is stored in motion->motionID.
+		 */
+		motion->plan.sliceId = context->currentSliceIndex;
+
 		return result;
 	}
+
+	/* set 'sliceId' on every Plan node to the slice that it's contained in. */
+	if (is_plan_node(node))
+		((Plan *) node)->sliceId = context->currentSliceIndex;
 
 	return plan_tree_walker(node,
 							build_slice_table_walker,

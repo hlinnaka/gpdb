@@ -240,33 +240,23 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 
 	MemoryAccountIdType curMemoryAccountId;
 
-
-	int localMotionId = LocallyExecutingSliceIndex(estate);
-
-	/*
-	 * For most plan nodes the ascendant motion is the parent motion
-	 * node. However, subplans are different. They can be executed under
-	 * different slices, although appearing in another slice. Other
-	 * exception includes two stage agg where agg node on the master
-	 * does not have any parent motion. Any time we see such null parent
-	 * motion, we assume they are not alien. They either assume "citizen"
-	 * status under a subplan, or they are the root of the execution on
-	 * the master.
-	 */
-	Motion *parentMotion = (Motion *) node->motionNode;
-	int parentMotionId = parentMotion != NULL ? parentMotion->motionID : UNSET_SLICE_ID;
-
 	/*
 	 * Is current plan node supposed to execute in current slice?
-	 * Special case is sending motion node, which may be at the root
-	 * and therefore parentless. We can sending motions motionId to
-	 * determine its alien status.
 	 *
-	 * On master we don't do alien elimination because of EXPLAIN ANALYZE
+	 * On QD we don't do alien elimination because of EXPLAIN ANALYZE
 	 * gathering stats from all slices.
+	 *
+	 * A Motion node executes in both the sending and receiving slices.
 	 */
-	bool isAlienPlanNode = !((localMotionId == parentMotionId) || (parentMotionId == UNSET_SLICE_ID) ||
-							 (nodeTag(node) == T_Motion && ((Motion*)node)->motionID == localMotionId) || IS_QUERY_DISPATCHER());
+	bool		isLocallyExecutingNode;
+	bool		isAlienPlanNode;
+
+	isLocallyExecutingNode =
+		(node->sliceId == estate->currentSliceId ||
+		 IS_QUERY_DISPATCHER() ||
+		 (nodeTag(node) == T_Motion && ((Motion *) node)->motionID == estate->currentSliceId));
+
+	isAlienPlanNode = !isLocallyExecutingNode;
 
 	/* We cannot have alien nodes if we are eliminating aliens */
 	AssertImply(estate->eliminateAliens, !isAlienPlanNode);

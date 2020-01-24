@@ -87,9 +87,9 @@ ExecMaterial(MaterialState *node)
 		{
 			char rwfile_prefix[100];
 
-			if(ma->driver_slice != currentSliceId)
+			if(ma->driver_slice != estate->currentSliceId)
 			{
-				elog(LOG, "Material Exec on CrossSlice, current slice %d", currentSliceId);
+				elog(LOG, "Material Exec on CrossSlice, current slice %d", estate->currentSliceId);
 				return NULL;
 			}
 
@@ -165,7 +165,7 @@ ExecMaterial(MaterialState *node)
 			 */
 			if (ma->share_type == SHARE_MATERIAL_XSLICE)
 			{
-				if (ma->driver_slice == currentSliceId)
+				if (ma->driver_slice == estate->currentSliceId)
 				{
 					ntuplestore_flush(ts);
 

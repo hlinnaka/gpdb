@@ -321,9 +321,9 @@ typedef struct Plan
 	uint64 operatorMemKB;
 
 	/*
-	 * The parent motion node of a plan node.
+	 * The containing slice of the plan node.
 	 */
-	struct Plan *motionNode;
+	int			sliceId;
 } Plan;
 
 /* ----------------

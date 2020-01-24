@@ -519,12 +519,6 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 */
 	estate->eliminateAliens = execute_pruned_plan && estate->es_sliceTable && estate->es_sliceTable->hasMotions && !IS_QUERY_DISPATCHER();
 
-	/*
-	 * Assign a Motion Node to every Plan Node. This makes it
-	 * easy to identify which slice any Node belongs to
-	 */
-	AssignParentMotionToPlanNodes(queryDesc->plannedstmt);
-
 	/* If the interconnect has been set up; we need to catch any
 	 * errors to shut it down -- so we have to wrap InitPlan in a PG_TRY() block. */
 	PG_TRY();
@@ -2008,7 +2002,7 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 	Bitmapset *locallyExecutableSubplans;
 	Plan *start_plan_node = plannedstmt->planTree;
 
-	estate->currentSliceId = 0;
+	estate->currentSliceId = LocallyExecutingSliceIndex(estate);
 
 	/*
 	 * If eliminateAliens is true then we extract the local Motion node
@@ -2026,8 +2020,6 @@ InitPlan(QueryDesc *queryDesc, int eflags)
 		if (NULL != m)
 		{
 			start_plan_node = (Plan *) m;
-			ExecSlice *sendSlice = &estate->es_sliceTable->slices[m->motionID];
-			estate->currentSliceId = sendSlice->parentIndex;
 		}
 		/* Compute SubPlans' root plan nodes for SubPlans reachable from this plan root */
 		locallyExecutableSubplans = getLocallyExecutableSubplans(plannedstmt, start_plan_node);
