@@ -62,7 +62,7 @@ Update sto_alt_ao_part set d = 5 where b = 4;
 select * from sto_alt_ao_part;
 
 -- Alter table drop partition
-Alter table sto_alt_ao_part drop partition for (rank(1));
+Alter table sto_alt_ao_part drop partition for (1);
 Update sto_alt_ao_part set d = 4 where b = 4;
 select * from sto_alt_ao_part;
 
@@ -102,7 +102,7 @@ Update sto_altap2 set b = 5 where a = 1 or a = 4;
 select * from sto_altap2 order by a;
 
 Alter table sto_alt_ao_part alter partition p1 split partition
- FOR (RANK(1)) at(2) into (partition splita,partition splitb);
+ FOR (1) at(2) into (partition splita,partition splitb);
 -- TODO: The following update causes "ERROR: moving tuple from
 -- partition ... to partition ... is not supported".  Enable the
 -- update statement after this bug is fixed.

@@ -3357,10 +3357,10 @@ alter_table_partition_id_spec:
 					if ($6)
 						parser_yyerror("syntax error");
 
-					n = makeNode(AlterPartitionId);
-					n->idtype = AT_AP_IDRank;
-                    n->partiddef = (Node *) val;
-                    n->location  = @5;
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("ALTER TABLE ... FOR(RANK(...)) is no longer supported"),
+							 errhint("Use FOR (<value>) instead.")));
 
 					$$ = (Node *)n;
 				}
@@ -3376,7 +3376,7 @@ alter_table_partition_id_spec_with_opt_default:
 				{
 					ereport(ERROR,
 							(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("cannot specify a name, rank, or value for a DEFAULT partition in this context")));
+							 errmsg("cannot specify a name or value for a DEFAULT partition in this context")));
 				}
 			| DEFAULT PARTITION 
 				{

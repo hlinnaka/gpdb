@@ -551,9 +551,9 @@ WHERE tablename='sales';
         view. Although you can query and load any table (including partitioned tables) directly
         using SQL commands, you can only modify the structure of a partitioned table using the
           <codeph>ALTER TABLE...PARTITION</codeph> clauses.<p>Partitions are not required to have
-          names. If a partition does not have a name, use one of the following expressions to
-          specify a partition: <codeph>PARTITION FOR (<varname>value</varname>)</codeph> or
-            <codeph>PARTITION FOR (RANK(<varname>number</varname>))</codeph>. </p></note>
+          names. If a partition does not have a name, use the following expression to
+          specify a partition: <codeph>PARTITION FOR (<varname>value</varname>)</codeph>.
+      </p></note>
       <p>For a multi-level partitioned table, you identify a specific partition to change with
           <codeph>ALTER PARTITION</codeph> clauses. For each partition level in the table hierarchy
         that is above the target partition, specify the partition that is related to the target
@@ -593,7 +593,7 @@ WHERE tablename='sales';
         <p>When you add a subpartition to an existing partition, you can specify the partition to
           alter. For example:</p>
         <p>
-          <codeblock>ALTER TABLE sales ALTER PARTITION FOR (RANK(12))
+          <codeblock>ALTER TABLE sales ALTER PARTITION FOR ('2017-04-01')
       ADD PARTITION africa VALUES ('africa');
 </codeblock>
         </p>
@@ -659,13 +659,13 @@ WHERE tablename='sales';
         <p>If your partition design is multi-level, each level in the hierarchy must have a default
           partition. For example:</p>
         <p>
-          <codeblock>ALTER TABLE sales ALTER PARTITION FOR (RANK(1)) ADD DEFAULT 
+          <codeblock>ALTER TABLE sales ALTER PARTITION jan16 ADD DEFAULT
 PARTITION other;
 
-ALTER TABLE sales ALTER PARTITION FOR (RANK(2)) ADD DEFAULT 
+ALTER TABLE sales ALTER PARTITION feb16 ADD DEFAULT
 PARTITION other;
 
-ALTER TABLE sales ALTER PARTITION FOR (RANK(3)) ADD DEFAULT 
+ALTER TABLE sales ALTER PARTITION mar16 ADD DEFAULT
 PARTITION other;
 </codeblock>
         </p>
@@ -683,7 +683,7 @@ PARTITION other;
           partitions, it is common to drop the older partitions from the range as old data is rolled
           out of the data warehouse. For example:</p>
         <p>
-          <codeblock>ALTER TABLE sales DROP PARTITION FOR (RANK(1));
+          <codeblock>ALTER TABLE sales DROP PARTITION jan16;
 </codeblock>
         </p>
       </body>
@@ -695,7 +695,7 @@ PARTITION other;
           truncate a partition that has subpartitions, the subpartitions are automatically truncated
           as well. </p>
         <p>
-          <codeblock>ALTER TABLE sales TRUNCATE PARTITION FOR (RANK(1));
+          <codeblock>ALTER TABLE sales TRUNCATE PARTITION jan16;
 </codeblock>
         </p>
       </body>

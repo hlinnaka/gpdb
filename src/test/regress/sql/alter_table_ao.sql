@@ -331,7 +331,7 @@ select indexname from pg_indexes where tablename='ao_multi_level_part_table';
 select * from ao_multi_level_part_table;
 truncate ao_multi_level_part_table_1_prt_part1_2_prt_asia;
 select * from ao_multi_level_part_table;
-alter table ao_multi_level_part_table truncate partition for (rank(1));
+alter table ao_multi_level_part_table truncate partition for (date '2008-06-01');
 select * from ao_multi_level_part_table;
 alter table ao_multi_level_part_table alter partition part2 truncate partition usa;
 select * from ao_multi_level_part_table;

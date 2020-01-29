@@ -244,7 +244,7 @@ select indKey, defaultLevels, partCons from gp_build_logical_index('part_table3'
 select * from part_table3;
 truncate part_table3_1_prt_part1_2_prt_asia;
 select * from part_table3;
-alter table part_table3 truncate partition for (rank(1));
+alter table part_table3 truncate partition part1;
 select * from part_table3;
 alter table part_table3 alter partition part2 truncate partition usa;
 select * from part_table3;

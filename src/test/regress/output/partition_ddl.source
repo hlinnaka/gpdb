@@ -229,7 +229,7 @@ subpartition template (start('0') end('25') every(5))
 (
 partition p1 start('1') end('150001') every(50000)
 );
-Alter table mpp3304_customer alter partition for (rank(2)) rename partition for (rank(1)) to newname;
+Alter table mpp3304_customer alter partition for (75000) rename partition for (1) to newname;
 create table mpp3045_hhh (a char(1), b date, d char(3)) with (appendonly=true)
 distributed by (a) 
 partition by range (b) 

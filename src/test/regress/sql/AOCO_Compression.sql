@@ -302,7 +302,7 @@ CREATE INDEX ON co_cr_sub_partzlib8192_1_exch USING bitmap (a1);
 
 CREATE INDEX ON co_cr_sub_partzlib8192_1_exch (a9);
 
-Alter table co_cr_sub_partzlib8192_1 alter partition FOR (RANK(1)) exchange partition sp1 with table co_cr_sub_partzlib8192_1_exch;
+Alter table co_cr_sub_partzlib8192_1 alter partition FOR (1) exchange partition sp1 with table co_cr_sub_partzlib8192_1_exch;
 \d+ co_cr_sub_partzlib8192_1_1_prt_1_2_prt_sp1
 
 
@@ -453,12 +453,12 @@ CREATE INDEX ON co_cr_sub_partzlib8192_1_2_exch USING bitmap (a1);
 
 CREATE INDEX ON co_cr_sub_partzlib8192_1_2_exch(a9);
 
-Alter table co_cr_sub_partzlib8192_1_2 alter partition p2 exchange partition FOR (RANK(1)) with table co_cr_sub_partzlib8192_1_2_exch;
+Alter table co_cr_sub_partzlib8192_1_2 alter partition p2 exchange partition FOR (1) with table co_cr_sub_partzlib8192_1_2_exch;
 \d+ co_cr_sub_partzlib8192_1_2_1_prt_p2_2_prt_2
 
 
 --Alter table Split Partition 
- Alter table co_cr_sub_partzlib8192_1_2 alter partition p1 split partition FOR (RANK(4)) at(4000) into (partition splita,partition splitb) ;
+ Alter table co_cr_sub_partzlib8192_1_2 alter partition p1 split partition FOR (4000) at(4000) into (partition splita,partition splitb) ;
 \d+ co_cr_sub_partzlib8192_1_2_1_prt_p1_2_prt_splita 
 
 
@@ -609,7 +609,7 @@ CREATE INDEX ON co_wt_sub_partrle_type8192_1_exch USING bitmap (a1);
 
 CREATE INDEX ON co_wt_sub_partrle_type8192_1_exch(a9);
 
-Alter table co_wt_sub_partrle_type8192_1 alter partition FOR (RANK(1)) exchange partition sp1 with table co_wt_sub_partrle_type8192_1_exch;
+Alter table co_wt_sub_partrle_type8192_1 alter partition FOR (1) exchange partition sp1 with table co_wt_sub_partrle_type8192_1_exch;
 \d+ co_wt_sub_partrle_type8192_1_1_prt_1_2_prt_sp1
 
 
@@ -759,12 +759,12 @@ CREATE INDEX ON co_wt_sub_partrle_type8192_1_2_exch USING bitmap (a1);
 
 CREATE INDEX ON co_wt_sub_partrle_type8192_1_2_exch (a9);
 
-Alter table co_wt_sub_partrle_type8192_1_2 alter partition p1 exchange partition FOR (RANK(1)) with table co_wt_sub_partrle_type8192_1_2_exch;
+Alter table co_wt_sub_partrle_type8192_1_2 alter partition p1 exchange partition FOR (1) with table co_wt_sub_partrle_type8192_1_2_exch;
 \d+ co_wt_sub_partrle_type8192_1_2_1_prt_p1_2_prt_2
 
 
 --Alter table Split Partition 
- Alter table co_wt_sub_partrle_type8192_1_2 alter partition p2 split partition FOR (RANK(4)) at(4000) into (partition splita,partition splitb) ;
+ Alter table co_wt_sub_partrle_type8192_1_2 alter partition p2 split partition FOR (4000) at(4000) into (partition splita,partition splitb) ;
 \d+ co_wt_sub_partrle_type8192_1_2_1_prt_p2_2_prt_splita 
 
 
@@ -914,7 +914,7 @@ CREATE INDEX ON ao_wt_sub_partzlib8192_5_exch USING bitmap (a1);
 
 CREATE INDEX ON ao_wt_sub_partzlib8192_5_exch (a9);
 
-Alter table ao_wt_sub_partzlib8192_5 alter partition FOR (RANK(1)) exchange partition sp1 with table ao_wt_sub_partzlib8192_5_exch;
+Alter table ao_wt_sub_partzlib8192_5 alter partition FOR (1) exchange partition sp1 with table ao_wt_sub_partzlib8192_5_exch;
 \d+ ao_wt_sub_partzlib8192_5_1_prt_1_2_prt_sp1
 
 
@@ -1064,12 +1064,12 @@ CREATE INDEX ON ao_wt_sub_partzlib8192_5_2_exch USING bitmap (a1);
 
 CREATE INDEX ON ao_wt_sub_partzlib8192_5_2_exch (a9);
 
-Alter table ao_wt_sub_partzlib8192_5_2 alter partition p1 exchange partition FOR (RANK(1)) with table ao_wt_sub_partzlib8192_5_2_exch;
+Alter table ao_wt_sub_partzlib8192_5_2 alter partition p1 exchange partition FOR (1) with table ao_wt_sub_partzlib8192_5_2_exch;
 \d+ ao_wt_sub_partzlib8192_5_2_1_prt_p1_2_prt_2
 
 
 --Alter table Split Partition 
- Alter table ao_wt_sub_partzlib8192_5_2 alter partition p2 split partition FOR (RANK(4)) at(4000) into (partition splita,partition splitb) ;
+ Alter table ao_wt_sub_partzlib8192_5_2 alter partition p2 split partition FOR (4000) at(4000) into (partition splita,partition splitb) ;
 \d+ ao_wt_sub_partzlib8192_5_2_1_prt_p2_2_prt_splita 
 
 

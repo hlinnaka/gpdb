@@ -332,7 +332,7 @@ alter table addcol1 reset (appendonly, compresslevel, fillfactor);
 create table alter_aocs_part_table (a int, b int) with (appendonly=true, orientation=column) distributed by (a)
     partition by range(b) (start (1) end (5) exclusive every (1), default partition foo);
 insert into alter_aocs_part_table values (generate_series(1,10), generate_series(1,10));
-alter table alter_aocs_part_table drop partition for (rank(1));
+alter table alter_aocs_part_table drop partition for (1);
 alter table alter_aocs_part_table split default partition start(6) inclusive end(7) exclusive;
 alter table alter_aocs_part_table split default partition start(6) inclusive end(8) exclusive;
 alter table alter_aocs_part_table split default partition start(7) inclusive end(8) exclusive;
@@ -340,18 +340,18 @@ select partitionrangestart, partitionstartinclusive, partitionrangeend, partitio
     from pg_partitions where tablename = 'alter_aocs_part_table';
 create table alter_aocs_ao_table (a int, b int) with (appendonly=true) distributed by (a);
 insert into alter_aocs_ao_table values (2,2);
-alter table alter_aocs_part_table exchange partition for (rank(1)) with table alter_aocs_ao_table;
+alter table alter_aocs_part_table exchange partition for (2) with table alter_aocs_ao_table;
 create table alter_aocs_heap_table (a int, b int) distributed by (a);
 insert into alter_aocs_heap_table values (3,3);
-alter table alter_aocs_part_table exchange partition for (rank(2)) with table alter_aocs_heap_table;
+alter table alter_aocs_part_table exchange partition for (3) with table alter_aocs_heap_table;
 
 -- Test truncating and exchanging partition and then rolling back
 begin work;
 create table alter_aocs_ptable_exchange (a int, b int) with (appendonly=true, orientation=column) distributed by (a);
 insert into alter_aocs_ptable_exchange values (3,3), (3,3), (3,3);
-alter table alter_aocs_part_table truncate partition for (rank(2));
+alter table alter_aocs_part_table truncate partition for (3);
 select count(*) from alter_aocs_part_table;
-alter table alter_aocs_part_table exchange partition for (rank(2)) with table alter_aocs_ptable_exchange;
+alter table alter_aocs_part_table exchange partition for (3) with table alter_aocs_ptable_exchange;
 select count(*) from alter_aocs_part_table;
 rollback work;
 select count(*) from alter_aocs_part_table;
@@ -391,7 +391,7 @@ select indexname from pg_indexes where tablename='aocs_multi_level_part_table';
 select * from aocs_multi_level_part_table;
 truncate aocs_multi_level_part_table_1_prt_part1_2_prt_asia;
 select * from aocs_multi_level_part_table;
-alter table aocs_multi_level_part_table truncate partition for (rank(1));
+alter table aocs_multi_level_part_table truncate partition for (date '2008-06-01');
 select * from aocs_multi_level_part_table;
 alter table aocs_multi_level_part_table alter partition part2 truncate partition usa;
 select * from aocs_multi_level_part_table;

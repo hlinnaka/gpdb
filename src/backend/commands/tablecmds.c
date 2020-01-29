@@ -16762,13 +16762,6 @@ ATPExecPartDrop(Relation rel,
 								lrelname)));
 
 				break;
-			case AT_AP_IDRank:				/* IDentifier FOR Rank */
-				ereport(NOTICE,
-						(errcode(ERRCODE_UNDEFINED_OBJECT),
-						 errmsg("partition for specified rank of %s does not exist, skipping",
-								lrelname)));
-
-				break;
 			case AT_AP_ID_oid:				/* IDentifier by oid */
 				ereport(NOTICE,
 						(errcode(ERRCODE_UNDEFINED_OBJECT),

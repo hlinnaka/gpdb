@@ -222,8 +222,8 @@ select tablename, partitionlevel,  partitiontablename, partitionname, partitionr
  mpp7164r  |              0 | mpp7164r_1_prt_2   |               |             2
 (2 rows)
 
-alter table mpp7164r rename partition for (rank(1)) to r1;
-alter table mpp7164r rename partition for (rank(2)) to r2;
+alter table mpp7164r rename partition for (0) to r1;
+alter table mpp7164r rename partition for (1) to r2;
 select * from partlist where ptable='mpp7164r'::regclass order by ptemplate, plevel, rrank;
   ptable  | plevel | ptemplate | pkind |      rchild       | rname | rrank | rparent 
 ----------+--------+-----------+-------+-------------------+-------+-------+---------
@@ -270,9 +270,9 @@ select tablename, partitionlevel,  partitiontablename, partitionname, partitionr
  mpp7164r  |              0 | mpp7164r_1_prt_r2  | r2            |             2
 (3 rows)
 
-alter table mpp7164r rename partition for (rank(1)) to new_1;
+alter table mpp7164r rename partition for (0) to new_1;
 NOTICE:  renamed partition "r1" to "new_1" for relation "mpp7164r"
-alter table mpp7164r rename partition for (rank(2)) to new_2;
+alter table mpp7164r rename partition for (1) to new_2;
 NOTICE:  renamed partition "r2" to "new_2" for relation "mpp7164r"
 select * from partlist where ptable='mpp7164r'::regclass order by ptemplate, plevel, rrank;
   ptable  | plevel | ptemplate | pkind |        rchild        | rname | rrank | rparent 
@@ -298,8 +298,8 @@ select tablename, partitionlevel,  partitiontablename, partitionname, partitionr
  mpp7164r  |              0 | mpp7164r_1_prt_new_2 | new_2         |             2
 (3 rows)
 
-alter table mpp7164r rename partition for (rank(0)) to new_d;
-ERROR:  partition for rank 0 of relation "mpp7164r" does not exist
+alter table mpp7164r rename partition notexist to new_d;
+ERROR:  partition "notexist" of relation "mpp7164r" does not exist
 alter table mpp7164r rename default partition to new_d;
 NOTICE:  renamed partition "d" to "new_d" for relation "mpp7164r"
 select * from partlist where ptable='mpp7164r'::regclass order by ptemplate, plevel, rrank;

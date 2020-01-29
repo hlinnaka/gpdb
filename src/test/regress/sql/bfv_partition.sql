@@ -1416,9 +1416,9 @@ drop table mpp5427;
 -- MPP-5524
 create table mpp5524 (a int, b int, c int, d int) partition by range(d) (start(1) end(20) every(5));
 -- Not allowed
-alter table mpp5524 alter partition for(rank(1)) set distributed by (b);
+alter table mpp5524 alter partition for(1) set distributed by (b);
 -- Not allowed
-alter table mpp5524 alter partition for(rank(2)) set distributed by (c);
+alter table mpp5524 alter partition for(5) set distributed by (c);
 insert into mpp5524 select i, i+1, i+2, i+3 from generate_series(1, 10) i;
 drop table mpp5524;
 

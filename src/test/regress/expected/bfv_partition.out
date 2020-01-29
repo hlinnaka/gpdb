@@ -3728,12 +3728,12 @@ NOTICE:  CREATE TABLE will create partition "mpp5524_1_prt_2" for table "mpp5524
 NOTICE:  CREATE TABLE will create partition "mpp5524_1_prt_3" for table "mpp5524"
 NOTICE:  CREATE TABLE will create partition "mpp5524_1_prt_4" for table "mpp5524"
 -- Not allowed
-alter table mpp5524 alter partition for(rank(1)) set distributed by (b);
-ERROR:  cannot ALTER PARTITION ... SET DISTRIBUTED BY for partition for rank 1 of relation "mpp5524"
+alter table mpp5524 alter partition for(1) set distributed by (b);
+ERROR:  cannot ALTER PARTITION ... SET DISTRIBUTED BY for partition for value (1) of relation "mpp5524"
 HINT:  distribution policy of partition must match parent
 -- Not allowed
-alter table mpp5524 alter partition for(rank(2)) set distributed by (c);
-ERROR:  cannot ALTER PARTITION ... SET DISTRIBUTED BY for partition for rank 2 of relation "mpp5524"
+alter table mpp5524 alter partition for(5) set distributed by (c);
+ERROR:  cannot ALTER PARTITION ... SET DISTRIBUTED BY for partition for value (5) of relation "mpp5524"
 HINT:  distribution policy of partition must match parent
 insert into mpp5524 select i, i+1, i+2, i+3 from generate_series(1, 10) i;
 drop table mpp5524;

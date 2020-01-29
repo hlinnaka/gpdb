@@ -32,7 +32,7 @@ ALTER TABLE [IF EXISTS] [ONLY] <varname>name</varname> SET
    | DISTRIBUTED REPLICATED 
 
 ALTER TABLE <varname>name</varname>
-   [ ALTER PARTITION { <varname>partition_name</varname> | FOR (RANK(<varname>number</varname>)) 
+   [ ALTER PARTITION { <varname>partition_name</varname>
    | FOR (<varname>value</varname>) } [...] ] <varname>partition_action</varname>
 
 where <varname>action</varname> is one of:
@@ -74,17 +74,17 @@ where <varname>action</varname> is one of:
                         <codeblock>  ALTER DEFAULT PARTITION
   DROP DEFAULT PARTITION [IF EXISTS]
   DROP PARTITION [IF EXISTS] { <varname>partition_name</varname> | 
-      FOR (RANK(<varname>number</varname>)) | FOR (<varname>value</varname>) } [CASCADE]
+      FOR (<varname>value</varname>) } [CASCADE]
   TRUNCATE DEFAULT PARTITION
-  TRUNCATE PARTITION { <varname>partition_name</varname> | FOR (RANK(<varname>number</varname>)) | 
+  TRUNCATE PARTITION { <varname>partition_name</varname> |
       FOR (<varname>value</varname>) }
   RENAME DEFAULT PARTITION TO <varname>new_partition_name</varname>
-  RENAME PARTITION { <varname>partition_name</varname> | FOR (RANK(<varname>number</varname>)) | 
+  RENAME PARTITION { <varname>partition_name</varname> |
       FOR (<varname>value</varname>) } TO <varname>new_partition_name</varname>
   ADD DEFAULT PARTITION <varname>name</varname> [ ( <varname>subpartition_spec</varname> ) ]
   ADD PARTITION [<varname>partition_name</varname>] <varname>partition_element</varname>
      [ ( <varname>subpartition_spec</varname> ) ]
-  EXCHANGE PARTITION { <varname>partition_name</varname> | FOR (RANK(<varname>number</varname>)) | 
+  EXCHANGE PARTITION { <varname>partition_name</varname> |
        FOR (<varname>value</varname>) } WITH TABLE <varname>table_name</varname>
         [ WITH | WITHOUT VALIDATION ]
   EXCHANGE DEFAULT PARTITION WITH TABLE <varname>table_name</varname>
@@ -96,7 +96,7 @@ where <varname>action</varname> is one of:
         END([<varname>datatype</varname>] <varname>range_value</varname>) [INCLUSIVE | EXCLUSIVE] }
     [ INTO ( PARTITION <varname>new_partition_name</varname>, 
              PARTITION <varname>default_partition_name</varname> ) ]
-  SPLIT PARTITION { <varname>partition_name</varname> | FOR (RANK(<varname>number</varname>)) | 
+  SPLIT PARTITION { <varname>partition_name</varname> |
      FOR (<varname>value</varname>) } AT (<varname>value</varname>) 
     [ INTO (PARTITION <varname>partition_name</varname>, PARTITION <varname>partition_name</varname>)]  </codeblock>
                         <p>where <varname>partition_element</varname> is:</p>
@@ -873,11 +873,6 @@ where <varname>action</varname> is one of:
                                                   >pg_partitions</xref></i> system view.</pd>
                                 </plentry>
                                 <plentry>
-                                        <pt>FOR (RANK(number))</pt>
-                                        <pd>For range partitions, the rank of the partition in the
-                                                range. </pd>
-                                </plentry>
-                                <plentry>
                                         <pt>FOR ('<varname>value</varname>')</pt>
                                         <pd>Specifies a partition by declaring a value that falls
                                                 within the partition boundary specification. If the
@@ -1046,8 +1041,8 @@ where <varname>action</varname> is one of:
                         <p>Rename a partition:</p>
                         <codeblock>ALTER TABLE sales RENAME PARTITION FOR ('2016-01-01') TO 
 jan08;</codeblock>
-                        <p>Drop the first (oldest) partition in a range sequence:</p>
-                        <codeblock>ALTER TABLE sales DROP PARTITION FOR (RANK(1));</codeblock>
+                        <p>Drop the partition that covers '2016-01-01':</p>
+                        <codeblock>ALTER TABLE sales DROP PARTITION FOR ('2016-01-01');</codeblock>
                         <p>Exchange a table into your partition design:</p>
                         <codeblock>ALTER TABLE sales EXCHANGE PARTITION FOR ('2016-01-01') WITH 
 TABLE jan08;</codeblock>

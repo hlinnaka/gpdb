@@ -74,27 +74,27 @@ partition by range(j)
 -- policies are different
 create table bar_p_diff_pol (i int, j int) distributed by (j);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p_diff_pol;
+alter table foo_p exchange partition for(6) with table bar_p_diff_pol;
 
 -- random policy vs. hash policy
 create table bar_p_rand_pol (i int, j int) distributed randomly;
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p_rand_pol;
+alter table foo_p exchange partition for(6) with table bar_p_rand_pol;
 
 -- different number of columns
 create table bar_p_diff_col (i int, j int, k int) distributed by (i);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p_diff_col;
+alter table foo_p exchange partition for(6) with table bar_p_diff_col;
 
 -- different types
 create table bar_p_diff_typ (i int, j int8) distributed by (i);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p_diff_typ;
+alter table foo_p exchange partition for(6) with table bar_p_diff_typ;
 
 -- different column names
 create table bar_p_diff_colnam (i int, m int) distributed by (i);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p_diff_colnam;
+alter table foo_p exchange partition for(6) with table bar_p_diff_colnam;
 
 -- still different schema, but more than one level partitioning
 CREATE TABLE two_level_pt(a int, b int, c int)
@@ -117,18 +117,18 @@ create role part_role;
 create table bar_p (i int, j int) distributed by (i);
 set session authorization part_role;
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 
 -- back to superuser
 \c -
 alter table bar_p owner to part_role;
 set session authorization part_role;
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 \c -
 
 -- owners should be the same, error out 
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 drop table foo_p;
 drop table bar_p;
 
@@ -138,7 +138,7 @@ create table foo_p (i int, j int) distributed by (i)
 partition by range(j)
 (start(1) end(6) every(3));
 reset role;
-alter table foo_p split partition for(rank(1)) at (2) into (partition prt_11, partition prt_12);
+alter table foo_p split partition for(1) at (2) into (partition prt_11, partition prt_12);
 \dt foo_*
 drop table foo_p;
 
@@ -154,7 +154,7 @@ partition by range(j)
 (start(1) end(10) every(1));
 create table bar_p (i int, j int) with (oids = true) distributed by (i);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 drop table foo_p;
 drop table bar_p;
 
@@ -166,7 +166,7 @@ partition by range(j)
 create table barparent(i int, j int) distributed by (i);
 create table bar_p () inherits(barparent);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6 ) with table bar_p;
 drop table bar_p;
 drop table barparent;
 
@@ -174,7 +174,7 @@ drop table barparent;
 create table bar_p(i int, j int) distributed by (i);
 create table barchild () inherits(bar_p);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 drop table barchild;
 drop table bar_p;
 
@@ -184,7 +184,7 @@ create table baz_p(i int, j int) distributed by (i);
 create rule bar_baz as on insert to bar_p do instead insert into baz_p
   values(NEW.i, NEW.j);
 
-alter table foo_p exchange partition for(rank(2)) with table bar_p;
+alter table foo_p exchange partition for(2) with table bar_p;
 drop table foo_p, bar_p, baz_p;
 
 -- Should fail: A constraint on bar_p isn't shared by all the parts.  
@@ -198,19 +198,19 @@ partition by range(j)
 (start(1) end(5) every(1));
 
 create table bar_a(i int, j int check (j > 1000)) distributed by (i);
-alter table foo_p exchange partition for(rank(2)) with table bar_a;
+alter table foo_p exchange partition for(2) with table bar_a;
 
 -- Should fail: A constraint on bar_p isn't shared by all the parts.
 -- Allowing this would make an inconsistent partitioned table. 
 -- Prior versions allowed this, so parts could have differing constraints
 -- as long as they avoided the partition columns.
 create table bar_b(i int check (i > 1000), j int) distributed by (i);
-alter table foo_p exchange partition for(rank(2)) with table bar_b;
+alter table foo_p exchange partition for(2) with table bar_b;
 
 -- like above, but with two contraints, just to check that the error
 -- message can print that correctly.
 create table bar_c(i int check (i > 1000), j int check (j > 1000)) distributed by (i);
-alter table foo_p exchange partition for(rank(2)) with table bar_c;
+alter table foo_p exchange partition for(2) with table bar_c;
 
 -- Shouldn't fail: check constraint matches partition rule.
 -- Note this test is slightly different from prior versions to get
@@ -218,7 +218,7 @@ alter table foo_p exchange partition for(rank(2)) with table bar_c;
 create table bar_d(i int, j int check (j >= 2 and j < 3 ))
 distributed by (i);
 insert into bar_d values(100000, 2);
-alter table foo_p exchange partition for(rank(2)) with table bar_d;
+alter table foo_p exchange partition for(2) with table bar_d;
 insert into bar_d values(200000, 2);
 select * from bar_d;
 
@@ -233,7 +233,7 @@ grant select on foo_p to part_role;
 revoke all on bar_p from part_role;
 select has_table_privilege('part_role', 'foo_p_1_prt_6'::regclass, 'select');
 select has_table_privilege('part_role', 'bar_p'::regclass, 'select');
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select has_table_privilege('part_role', 'foo_p_1_prt_6'::regclass, 'select');
 select has_table_privilege('part_role', 'bar_p'::regclass, 'select');
 drop table foo_p;
@@ -248,8 +248,8 @@ create table bar_p (i int);
 insert into bar_p values(6);
 insert into bar_p values(100);
 -- should fail
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
-alter table foo_p exchange partition for(rank(6)) with table bar_p without
+alter table foo_p exchange partition for(6) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p without
 validation;
 select * from foo_p;
 drop table foo_p, bar_p;
@@ -261,7 +261,7 @@ partition by range(j)
 create table bar_p(i int, j int) distributed by (i);
 
 insert into bar_p values(6);
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 select * from bar_p;
 -- test that we got the dependencies right
@@ -274,7 +274,7 @@ partition by range(j)
 create table bar_p(i int, j int) distributed by (i);
 
 insert into bar_p values(6, 6);
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 -- Should fail.  Prior releases didn't convey constraints out via exchange
 -- but we do now, so the following tries to insert a value that can't go
 -- in part 6.
@@ -294,7 +294,7 @@ create table bar_p(i int, j int) distributed by (i);
 
 insert into foo_p values(1, 1), (2, 1), (3, 1);
 insert into bar_p values(6, 6);
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 drop table bar_p;
 drop table foo_p;
@@ -307,7 +307,7 @@ create table bar_p(i int, j int) with(appendonly = true) distributed by (i);
 
 insert into foo_p values(1, 1), (2, 1), (3, 2);
 insert into bar_p values(6, 6);
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 drop table bar_p;
 drop table foo_p;
@@ -320,7 +320,7 @@ create table bar_p(i int, j int) with(appendonly = true) distributed by (i);
 
 insert into foo_p values(1, 2), (2, 3), (3, 4);
 insert into bar_p values(6, 6);
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 drop table bar_p;
 drop table foo_p;
@@ -332,15 +332,15 @@ partition by range(j)
 create table bar_p(i int, j int) distributed by (i);
 
 insert into bar_p values(6, 6);
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 select * from bar_p;
 
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 select * from bar_p;
 
-alter table foo_p exchange partition for(rank(6)) with table bar_p;
+alter table foo_p exchange partition for(6) with table bar_p;
 select * from foo_p;
 select * from bar_p;
 drop table foo_p;
@@ -401,9 +401,9 @@ c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and c1.reltoastrelid = c2.o
 create table exh_ao_ao (like sto_ao_ao) with (appendonly=true);
 
 -- Exchange default sub-partition, should fail
-alter table sto_ao_ao alter partition for (rank(3)) exchange default partition with table exh_ao_ao;
+alter table sto_ao_ao alter partition for (date '2008-03-01') exchange default partition with table exh_ao_ao;
 set gp_enable_exchange_default_partition = on;
-alter table sto_ao_ao alter partition for (rank(3)) exchange default partition with table exh_ao_ao;
+alter table sto_ao_ao alter partition for (date '2008-03-01') exchange default partition with table exh_ao_ao;
 reset gp_enable_exchange_default_partition;
 
 -- Exchange a non-default sub-partition of a default partition, should fail
@@ -433,8 +433,8 @@ c1.relname like 'sto_ao_ao%' and c2.relfrozenxid = 0 and c1.reltoastrelid = c2.o
 -- WITHOUT VALIDATION and that the new partition won't be included in TRUNCATE
 create table foo_p (i int, j int) distributed by (i) partition by range(j) (start(1) end(10) every(2));
 create readable external table bar_p(i int, j int) location ('gpfdist://host.invalid:8000/file') format 'text';
-alter table foo_p exchange partition for(rank(3)) with table bar_p;
-alter table foo_p exchange partition for(rank(3)) with table bar_p without validation;
+alter table foo_p exchange partition for(5) with table bar_p;
+alter table foo_p exchange partition for(5) with table bar_p without validation;
 truncate foo_p;
 drop table foo_p;
 drop table bar_p;
@@ -881,31 +881,31 @@ subpartition ohio values ('OH')
 
 -- ok
 alter table ataprank truncate partition girls;
-alter table ataprank alter partition girls truncate partition for (rank(1));
+alter table ataprank alter partition girls truncate partition for (date '2001-01-01');
 alter table ataprank alter partition girls alter partition 
-for (rank(1)) truncate partition mass;
+for (date '2001-01-01') truncate partition mass;
 
 -- don't NOTIFY of children if cascade
 alter table ataprank truncate partition girls cascade;
 
--- fail - no rank 100
-alter table ataprank alter partition girls truncate partition for (rank(100));
+-- fail - value not covered by any partition
+alter table ataprank alter partition girls truncate partition for (date '2100-01-01');
 
 -- fail - no funky
 alter table ataprank alter partition girls alter partition 
-for (rank(1)) truncate partition "funky";
+for (date '2001-01-01') truncate partition "funky";
 
 -- fail - no funky (drop)
 alter table ataprank alter partition girls alter partition 
-for (rank(1)) drop partition "funky";
+for (date '2001-01-01') drop partition "funky";
 
 -- fail - missing name
 alter table ataprank alter partition girls alter partition 
-for (rank(1)) drop partition ;
+for (date '2001-01-01') drop partition ;
 
 -- ok
 alter table ataprank alter partition girls drop partition 
-for (rank(1)) ;
+for (date '2001-01-01') ;
 
 -- ok , skipping
 alter table ataprank alter partition girls drop partition if exists jan01;
@@ -916,7 +916,7 @@ alter table ataprank alter partition girls drop partition for ('2003-01-01');
 alter table ataprank alter partition girls drop partition for ('2004-01-01');
 
 -- ok, skipping
-alter table ataprank alter partition girls drop partition if exists for (rank(5));
+alter table ataprank alter partition girls drop partition if exists for (date '1980-01-01');
 
 -- ok
 alter table ataprank alter partition girls rename partition jan05 
@@ -1446,7 +1446,7 @@ create table a (i date) partition by range(i)
 	every(interval '2 years'));
 revoke all on a from public;
 grant insert on a to part_role;
-alter table a split partition for(rank(1)) at (date '2006-01-01')
+alter table a split partition for(date '2005-02-02') at (date '2006-01-01')
   into (partition f, partition g);
 alter table a add default partition mydef;
 alter table a split default partition start(date '2010-01-01') end(date
@@ -2289,7 +2289,7 @@ pg_get_partition_def(
 (select oid from pg_class 
 where relname='mpp6297')::pg_catalog.oid, true);
 
-alter table mpp6297 drop partition for (rank(3));
+alter table mpp6297 drop partition for (3);
 
 -- note that the every clause splits into two parts: 1-3 and 4-10
 select
@@ -2383,7 +2383,7 @@ pg_get_partition_def(
 (select oid from pg_class 
 where relname='mpp6297')::pg_catalog.oid, true);
 
-alter table mpp6297 drop partition for (rank(3));
+alter table mpp6297 drop partition for (3);
 
 -- note that the every clause splits into two parts: 1-3 and 4-10 (and
 -- inclusive/exclusive is listed correctly)
@@ -2666,7 +2666,7 @@ subpartition by range (d)
 
 -- MPP-10421: allow re-use sp2 for non-DEFAULT partition
 alter table mpp10223b alter partition p1 
-split partition for (rank(1) ) at (25)
+split partition for (20) at (25)
 into (partition sp2, partition sp3);
 
 select partitiontablename,partitionposition,partitionrangestart,
@@ -2778,15 +2778,13 @@ start (1) end (10) every (1)
 -- syntax error
 alter table cov1 drop partition for (funky(1));
 
--- no rank for default
-alter table cov1 drop default partition for (rank(1));
-
 -- no default
 alter table cov1 split default partition at (9);
 alter table cov1 drop default partition;
 
--- cannot add except by name
+-- FOR(RANK(...)) syntax is no longer supported
 alter table cov1 add partition for (rank(1));
+alter table cov1 drop partition for (rank(1));
 
 -- bad template
 alter table cov1 set subpartition template (values (1,2) (values (2,3)));
@@ -2908,7 +2906,7 @@ pc.relnamespace=ns.oid and relname like ('mpp6979%');
 
 -- exchange the partition with the ao table.  
 -- Now we have an ao partition and mpp6979tab is heap!
-alter table mpp6979part exchange partition for (rank(1)) 
+alter table mpp6979part exchange partition for (1) 
 with table mpp6979dummy.mpp6979tab;
 
 -- after the exchange, all partitions are still in public
@@ -2916,7 +2914,7 @@ select schemaname, tablename, partitionschemaname, partitiontablename
 from pg_partitions 
 where tablename like ('mpp6979%');
 
--- the rank 1 partition is ao, but still in public, and 
+-- the 1st partition is ao, but still in public, and 
 -- table mpp6979tab is now heap, but still in mpp6979dummy
 select nspname, relname, relstorage from pg_class pc, pg_namespace ns 
 where
@@ -3883,14 +3881,14 @@ select array_agg(test_split_part_1_prt_other_log_ids) from test_split_part_1_prt
 -- partitions. Originally reported in MPP-7232
 create table mpp7232a (a int, b int) distributed by (a) partition by range (b) (start (1) end (3) every (1));
 select pg_get_partition_def('mpp7232a'::regclass, true);
-alter table mpp7232a rename partition for (rank(1)) to alpha;
-alter table mpp7232a rename partition for (rank(2)) to bravo;
+alter table mpp7232a rename partition for (1) to alpha;
+alter table mpp7232a rename partition for (2) to bravo;
 select partitionname, partitionrank from pg_partitions where tablename like 'mpp7232a' order by 2;
 select pg_get_partition_def('mpp7232a'::regclass, true);
 
 create table mpp7232b (a int, b int) distributed by (a) partition by range (b) (partition alpha start (1) end (3) every (1));
 select partitionname, partitionrank from pg_partitions where tablename like 'mpp7232b' order by 2;
-alter table mpp7232b rename partition for (rank(1)) to foo;
+alter table mpp7232b rename partition for (1) to foo;
 select pg_get_partition_def('mpp7232b'::regclass, true);
 
 -- Test .. WITH (tablename = <foo> ..) syntax.

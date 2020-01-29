@@ -147,8 +147,8 @@ select * from sto_alt_ao_part;
 (13 rows)
 
 -- Alter table drop partition
-Alter table sto_alt_ao_part drop partition for (rank(1));
-NOTICE:  dropped partition for rank 1 for relation "sto_alt_ao_part" and its children
+Alter table sto_alt_ao_part drop partition for (1);
+NOTICE:  dropped partition for value (1) for relation "sto_alt_ao_part" and its children
 Update sto_alt_ao_part set d = 4 where b = 4;
 select * from sto_alt_ao_part;
  a | b | c | d 
@@ -258,7 +258,7 @@ select * from sto_altap2 order by a;
 (20 rows)
 
 Alter table sto_alt_ao_part alter partition p1 split partition
- FOR (RANK(1)) at(2) into (partition splita,partition splitb);
+ FOR (1) at(2) into (partition splita,partition splitb);
 NOTICE:  CREATE TABLE will create partition "sto_alt_ao_part_1_prt_p1_2_prt_splita" for table "sto_alt_ao_part_1_prt_p1"
 NOTICE:  CREATE TABLE will create partition "sto_alt_ao_part_1_prt_p1_2_prt_splitb" for table "sto_alt_ao_part_1_prt_p1"
 -- TODO: The following update causes "ERROR: moving tuple from

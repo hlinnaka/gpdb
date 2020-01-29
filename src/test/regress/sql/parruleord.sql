@@ -329,8 +329,8 @@ PARTITION BY RANGE(a)
 -- create gap such that parruleord sequence is [1,4,5,6,7]
 ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero ADD PARTITION partnew3 START(3) END(4);
 ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero ADD PARTITION partnew4 START(4) END(5);
-ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION FOR (RANK(2));
-ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION FOR (RANK(2));
+ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION part0;
+ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION partnew3;
 
 SELECT parchildrelid::regclass, parname, parruleord
    FROM pg_partition_rule r LEFT JOIN pg_partition p

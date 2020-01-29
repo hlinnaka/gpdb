@@ -615,7 +615,7 @@ select * from part_table3;
  03-03-2009 | asia   | China   |   1.01
 (3 rows)
 
-alter table part_table3 truncate partition for (rank(1));
+alter table part_table3 truncate partition part1;
 NOTICE:  truncated partition "part1" for relation "part_table3" and its children
 select * from part_table3;
     date    | region | region1 | amount 

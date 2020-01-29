@@ -528,7 +528,7 @@ select * from ao_multi_level_part_table;
  03-03-2009 | asia   | Japan   |   1.01
 (3 rows)
 
-alter table ao_multi_level_part_table truncate partition for (rank(1));
+alter table ao_multi_level_part_table truncate partition for (date '2008-06-01');
 NOTICE:  truncated partition "part1" for relation "ao_multi_level_part_table" and its children
 select * from ao_multi_level_part_table;
     date    | region | region1 | amount 

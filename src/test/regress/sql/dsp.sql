@@ -414,7 +414,7 @@ alter table dsp_partition1 add partition p3 start(11) end(15);
 alter table dsp_partition1 add partition p4 start(16) end(18) with(appendonly=false);
 select relname, relkind, relstorage, reloptions from pg_class where relname like 'dsp_partition1%' order by relname;
 -- Split partition
-alter table dsp_partition1 split partition for (rank(2)) at (7) into (partition split_p1, partition split_p2);
+alter table dsp_partition1 split partition for (6) at (7) into (partition split_p1, partition split_p2);
 select relname, relkind, relstorage, reloptions from pg_class where relname like 'dsp_partition1%' order by relname;
 RESET gp_default_storage_options;
 

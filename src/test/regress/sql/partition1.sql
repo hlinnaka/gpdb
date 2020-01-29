@@ -569,7 +569,7 @@ partition j2 end (date '2009-01-01'));
 
 -- must have a name
 alter table jjj add default partition;
-alter table jjj add default partition for (rank(1));
+alter table jjj add default partition for (1);
 -- cannot have boundary spec
 alter table jjj add default partition j3 end (date '2010-01-01');
 
@@ -603,8 +603,6 @@ alter table hhh drop partition cc restrict;
 alter table hhh drop partition if exists cc;
 
 -- fail (mpp-3265)
-alter table hhh drop partition for (rank(0));
-alter table hhh drop partition for (rank(-55));
 alter table hhh drop partition for ('2001-01-01');
 
 
@@ -633,7 +631,7 @@ alter table hhh_l1 drop partition for ('2008-01-01');
 -- same with range partitioning
 alter table hhh_r1 drop partition;
 alter table hhh_r1 drop partition for ('2007-04-01');
-alter table hhh_r1 drop partition for(rank(1));
+alter table hhh_r1 drop partition aa_1;
 alter table hhh_r1 drop partition aa_2;
 alter table hhh_r1 drop partition aa_3;
 alter table hhh_r1 drop partition aa_5;

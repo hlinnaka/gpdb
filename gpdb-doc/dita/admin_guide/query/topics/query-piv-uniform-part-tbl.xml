@@ -92,10 +92,10 @@ mlp_1_prt_21
       <p>In the above example, if you drop the subpartition <codeph>mlp_1_prt_21_2_prt_asia</codeph>
         and add another subpartition for the region <codeph>canada</codeph>, the constraints are no
         longer
-        uniform.<codeblock>ALTER TABLE mlp ALTER PARTITION FOR (RANK(2))
+        uniform.<codeblock>ALTER TABLE mlp ALTER PARTITION FOR (2006)
   DROP PARTITION asia ;
 
-ALTER TABLE mlp ALTER PARTITION FOR (RANK(2))
+ALTER TABLE mlp ALTER PARTITION FOR (2011)
   ADD PARTITION canada VALUES ('canada');</codeblock></p>
       <p>Also, if you add a partition <codeph>canada</codeph> under <codeph>mlp_1_prt_21</codeph>,
         the partitioning hierarchy is not uniform. </p>

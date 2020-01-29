@@ -668,10 +668,8 @@ ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero ADD PARTI
 NOTICE:  CREATE TABLE will create partition "test_partitioned_table_never_decrements_parruleo_1_prt_partnew3" for table "test_partitioned_table_never_decrements_parruleord_to_zero"
 ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero ADD PARTITION partnew4 START(4) END(5);
 NOTICE:  CREATE TABLE will create partition "test_partitioned_table_never_decrements_parruleo_1_prt_partnew4" for table "test_partitioned_table_never_decrements_parruleord_to_zero"
-ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION FOR (RANK(2));
-NOTICE:  dropped partition "part0" for relation "test_partitioned_table_never_decrements_parruleord_to_zero"
-ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION FOR (RANK(2));
-NOTICE:  dropped partition "partnew3" for relation "test_partitioned_table_never_decrements_parruleord_to_zero"
+ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION part0;
+ALTER TABLE test_partitioned_table_never_decrements_parruleord_to_zero DROP PARTITION partnew3;
 SELECT parchildrelid::regclass, parname, parruleord
    FROM pg_partition_rule r LEFT JOIN pg_partition p
    ON p.oid = r.paroid

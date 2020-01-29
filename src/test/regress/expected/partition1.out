@@ -852,7 +852,7 @@ alter table jjj add default partition;
 ERROR:  syntax error at or near ";"
 LINE 1: alter table jjj add default partition;
                                              ^
-alter table jjj add default partition for (rank(1));
+alter table jjj add default partition for (1);
 ERROR:  can only ADD a partition by name
 -- cannot have boundary spec
 alter table jjj add default partition j3 end (date '2010-01-01');
@@ -890,10 +890,6 @@ ERROR:  partition "cc" of relation "hhh" does not exist
 alter table hhh drop partition if exists cc;
 NOTICE:  partition "cc" of relation "hhh" does not exist, skipping
 -- fail (mpp-3265)
-alter table hhh drop partition for (rank(0));
-ERROR:  partition for rank 0 of relation "hhh" does not exist
-alter table hhh drop partition for (rank(-55));
-ERROR:  partition for rank -55 of relation "hhh" does not exist
 alter table hhh drop partition for ('2001-01-01');
 ERROR:  partition for value ('2001-01-01') of relation "hhh" does not exist
 create table hhh_r1 (a char(1), b date, d char(3))
@@ -937,8 +933,7 @@ alter table hhh_r1 drop partition;
 ERROR:  missing name or value for DROP for relation "hhh_r1"
 alter table hhh_r1 drop partition for ('2007-04-01');
 NOTICE:  dropped partition "aa_4" for relation "hhh_r1"
-alter table hhh_r1 drop partition for(rank(1));
-NOTICE:  dropped partition "aa_1" for relation "hhh_r1"
+alter table hhh_r1 drop partition aa_1;
 alter table hhh_r1 drop partition aa_2;
 alter table hhh_r1 drop partition aa_3;
 alter table hhh_r1 drop partition aa_5;

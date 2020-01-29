@@ -40,29 +40,29 @@ pg_namespace n on c.relnamespace = n.oid and relname like
 --- Exchange partitions
 create table exh_ao_ao (like ao_part) with (appendonly=true) distributed randomly;
 insert into exh_ao_ao values (1, '2008-02-20', 'ao_row'), (2, '2008-02-21', 'ao_row');
-Alter table ao_part alter partition for (rank(2)) exchange partition for ('ao_row') with table exh_ao_ao;
+Alter table ao_part alter partition for ('2008-02-20') exchange partition for ('ao_row') with table exh_ao_ao;
 update ao_part set col4 = col1 where col2 in ('2008-02-20', '2008-02-21');
 
 create table exh_ao_co (like ao_part) with (appendonly=true, orientation=column) distributed randomly;
 insert into exh_ao_co values (1, '2008-03-20', 'ao_row'),  (2, '2008-03-21', 'ao_row');
-Alter table ao_part alter partition for (rank(3)) exchange partition for ('ao_row') with table exh_ao_co;
+Alter table ao_part alter partition for ('2008-03-20') exchange partition for ('ao_row') with table exh_ao_co;
 delete from ao_part where col2 = '2008-03-20';
 
 create table exh_ao_heap (like ao_part) distributed randomly;
 insert into exh_ao_heap values (1, '2008-04-20', 'ao_row'),  (2, '2008-04-21', 'ao_row');
-Alter table ao_part alter partition for (rank(4)) exchange partition for ('ao_row') with table exh_ao_heap;
+Alter table ao_part alter partition for ('2008-04-20') exchange partition for ('ao_row') with table exh_ao_heap;
 update ao_part set col4 = -col1 where col2 in ('2008-04-20', '2008-04-21');
 select count(*) from ao_part where col4 < 0;
 
 create table exh_heap_ao (like ao_part) with (appendonly=true) distributed randomly;
 insert into exh_heap_ao values (1, '2008-01-20', 'heap'), (2, '2008-01-21', 'heap');
-Alter table ao_part alter partition for (rank(1)) exchange partition for ('heap') with table exh_heap_ao;
+Alter table ao_part alter partition for ('2008-01-20') exchange partition for ('heap') with table exh_heap_ao;
 update ao_part set col4 = col1 where col2 in ('2008-01-20', '2008-01-21');
 select * from ao_part where col2 in ('2008-01-20', '2008-01-21') and col3 = 'heap';
 
 create table exh_co_ao (like ao_part) with (appendonly=true) distributed randomly;
 insert into exh_co_ao values (1, '2008-01-20', 'ao_col'), (2, '2008-01-21', 'ao_col');
-Alter table ao_part alter partition for (rank(1)) exchange partition for ('ao_col') with table exh_co_ao;
+Alter table ao_part alter partition for ('2008-01-20') exchange partition for ('ao_col') with table exh_co_ao;
 update ao_part set col4 = -col1 where col4 is null;
 select count(*) from ao_part where col4 is not null;
 

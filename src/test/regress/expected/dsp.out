@@ -1046,7 +1046,7 @@ select relname, relkind, relstorage, reloptions from pg_class where relname like
 (5 rows)
 
 -- Split partition
-alter table dsp_partition1 split partition for (rank(2)) at (7) into (partition split_p1, partition split_p2);
+alter table dsp_partition1 split partition for (6) at (7) into (partition split_p1, partition split_p2);
 NOTICE:  CREATE TABLE will create partition "dsp_partition1_1_prt_split_p1" for table "dsp_partition1"
 NOTICE:  CREATE TABLE will create partition "dsp_partition1_1_prt_split_p2" for table "dsp_partition1"
 select relname, relkind, relstorage, reloptions from pg_class where relname like 'dsp_partition1%' order by relname;

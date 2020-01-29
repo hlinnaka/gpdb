@@ -163,7 +163,6 @@ static void add_partition_rule(PartitionRule *rule);
 static Oid	get_part_oid(Oid rootrelid, int16 parlevel, bool istemplate);
 static Datum *magic_expr_to_datum(Relation rel, PartitionNode *partnode,
 					Node *expr, bool **ppisnull);
-static Oid	selectPartitionByRank(PartitionNode *partnode, int rnk);
 static bool compare_partn_opfuncid(PartitionNode *partnode,
 					   char *pub, char *compare_op,
 					   List *colvals,
@@ -3467,7 +3466,7 @@ rel_partition_get_master(Oid relid)
 
 /* given a relid, build a path list from the master tablename down to
  * the partition for that relation, using partition names if possible,
- * else rank or value expressions.
+ * else value expressions.
  */
 List *
 rel_get_part_path1(Oid relid)
@@ -3667,41 +3666,6 @@ magic_expr_to_datum(Relation rel, PartitionNode *partnode,
 
 	return values;
 }								/* end magic_expr_to_datum */
-
-/*
- * Assume the partition rules are in the "correct" order and return
- * the nth rule (1-based).  If rnk is negative start from the end, ie
- * -1 is the last rule.
- */
-static Oid
-selectPartitionByRank(PartitionNode *partnode, int rnk)
-{
-	Oid			relid = InvalidOid;
-	PartitionRule *rule;
-
-	Assert(partnode->part->parkind == 'r');
-
-	if (rnk > partnode->num_rules)
-		return relid;
-
-	if (rnk == 0)
-		return relid;
-
-	if (rnk > 0)
-		rnk--;					/* list_nth is zero-based, not one-based */
-	else if (rnk < 0)
-	{
-		rnk = partnode->num_rules + rnk; /* if negative go from end */
-
-		/* mpp-3265 */
-		if (rnk < 0)			/* oops -- too negative */
-			return relid;
-	}
-
-	rule = partnode->rules[rnk];
-
-	return rule->parchildrelid;
-}								/* end selectPartitionByRank */
 
 static bool
 compare_partn_opfuncid(PartitionNode *partnode,
@@ -4505,7 +4469,6 @@ get_part_rule1(Relation rel,
 	PgPartRule *prule = NULL;
 
 	Oid			partrelid = InvalidOid;
-	int			idrank = 0;		/* only set for range partns by rank */
 
 	if (!pid)
 		ereport(ERROR,
@@ -4538,22 +4501,6 @@ get_part_rule1(Relation rel,
 		case AT_AP_IDValue:		/* IDentifier FOR Value */
 			snprintf(partIdStr, sizeof(partIdStr), " for specified value");
 			break;
-		case AT_AP_IDRank:		/* IDentifier FOR Rank */
-			{
-				snprintf(partIdStr, sizeof(partIdStr), " for specified rank");
-
-				if (IsA(pid->partiddef, Integer))
-					idrank = intVal(pid->partiddef);
-				else if (IsA(pid->partiddef, Float))
-					idrank = floor(floatVal(pid->partiddef));
-				else
-					Assert(false);
-
-				snprintf(partIdStr, sizeof(partIdStr),
-						 " for rank %d",
-						 idrank);
-			}
-			break;
 		case AT_AP_ID_oid:		/* IDentifier by oid */
 			snprintf(partIdStr, sizeof(partIdStr), " for oid %u",
 					 *((Oid *) (pid->partiddef)));
@@ -4582,7 +4529,7 @@ get_part_rule1(Relation rel,
 						relname)));
 
 	/*
-	 * if id is a value or rank, get the relid of the partition if it exists
+	 * if id is a value, get the relid of the partition if it exists
 	 */
 	if (pNode)
 	{
@@ -4631,23 +4578,11 @@ get_part_rule1(Relation rel,
 			}
 
 		}
-		else if (pid->idtype == AT_AP_IDRank)
-		{
-			if (pNode->part->parkind == 'l')
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("cannot find partition by RANK -- \"%s\" is LIST partitioned",
-								relname)));
-
-			partrelid = selectPartitionByRank(pNode, idrank);
-		}
 	}
 
 	/* check thru the list of partition rules to match by relid or name */
 	if (pNode)
 	{
-		int			rulerank = 1;
-
 		/* set up the relid for the default partition if necessary */
 		if ((pid->idtype == AT_AP_IDDefault)
 			&& pNode->default_part)
@@ -4658,8 +4593,7 @@ get_part_rule1(Relation rel,
 			PartitionRule *rule = pNode->rules[i];
 			bool		foundit = false;
 
-			if ((pid->idtype == AT_AP_IDValue)
-				|| (pid->idtype == AT_AP_IDRank))
+			if (pid->idtype == AT_AP_IDValue)
 			{
 				if ((partrelid != InvalidOid)
 					&& (partrelid == rule->parchildrelid))
@@ -4690,7 +4624,6 @@ get_part_rule1(Relation rel,
 				prule->relname = relname;
 				break;
 			}
-			rulerank++;
 		}						/* end foreach */
 
 		/* if cannot find, check default partition */
@@ -4700,7 +4633,6 @@ get_part_rule1(Relation rel,
 			bool		foundit = false;
 
 			if ((pid->idtype == AT_AP_IDValue)
-				|| (pid->idtype == AT_AP_IDRank)
 				|| (pid->idtype == AT_AP_IDDefault))
 			{
 				if ((partrelid != InvalidOid)
@@ -4737,8 +4669,7 @@ get_part_rule1(Relation rel,
 	/*
 	 * if the partition exists, set the "id string" in prule and indicate
 	 * whether it is the partition name.  The ATPExec commands will notify
-	 * users of the "real" name if the original specification was by value or
-	 * rank
+	 * users of the "real" name if the original specification was by value.
 	 */
 	if (prule)
 	{
@@ -4773,7 +4704,6 @@ get_part_rule1(Relation rel,
 				break;
 			case AT_AP_IDName:	/* IDentify by Name */
 			case AT_AP_IDValue: /* IDentifier FOR Value */
-			case AT_AP_IDRank:	/* IDentifier FOR Rank */
 			case AT_AP_ID_oid:	/* IDentifier by oid */
 				ereport(ERROR,
 						(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -4801,7 +4731,6 @@ get_part_rule1(Relation rel,
 				break;
 			case AT_AP_IDName:	/* IDentify by Name */
 			case AT_AP_IDValue: /* IDentifier FOR Value */
-			case AT_AP_IDRank:	/* IDentifier FOR Rank */
 			case AT_AP_ID_oid:	/* IDentifier by oid */
 				ereport(ERROR,
 						(errcode(ERRCODE_DUPLICATE_OBJECT),
@@ -5316,17 +5245,11 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 					NewPosition *newPos)
 {
 	PartitionBoundSpec *pbs = NULL;
-	PgPartRule *prule = NULL;
-	AlterPartitionId pid;
+	PgPartRule *prule;
 	ParseState *pstate = make_parsestate(NULL);
 	TupleDesc	tupledesc = RelationGetDescr(rel);
 	PartitionNode pNodebuf;
 	PartitionNode *pNode2 = &pNodebuf;
-
-	MemSet(&pid, 0, sizeof(AlterPartitionId));
-
-	pid.idtype = AT_AP_IDRank;
-	pid.location = -1;
 
 	Assert(IsA(pelem->boundSpec, PartitionBoundSpec));
 
@@ -5407,7 +5330,7 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 				compare_partn_opfuncid(pNode,
 									   "pg_catalog",
 									   "<",
-									   (List *) prule->topRule->parrangeend,
+									   (List *) lastrule->parrangeend,
 									   d_end, isnull, tupledesc);
 
 			/*
@@ -5421,16 +5344,15 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 
 				ri->location = -1;
 
-				ri->partRangeVal =
-					copyObject(prule->topRule->parrangeend);
+				ri->partRangeVal = copyObject(lastrule->parrangeend);
 
 				/* invert the inclusive/exclusive */
-				ri->partedge = prule->topRule->parrangeendincl ?
+				ri->partedge = lastrule->parrangeendincl ?
 					PART_EDGE_EXCLUSIVE :
 					PART_EDGE_INCLUSIVE;
 
 				/* should be final partition */
-				*maxpartno = prule->topRule->parruleord + 1;
+				*maxpartno = lastrule->parruleord + 1;
 				*newPos = LAST;
 				pbs->partStart = (Node *) ri;
 				goto L_fin_no_start;
@@ -5474,9 +5396,9 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 			PartitionRangeItem *ri = (PartitionRangeItem *) pbs->partEnd;
 
 			if ((ri->partedge == PART_EDGE_EXCLUSIVE &&
-				 prule->topRule->parrangestartincl) ||
+				 firstrule->parrangestartincl) ||
 				(ri->partedge == PART_EDGE_INCLUSIVE &&
-				 !prule->topRule->parrangestartincl))
+				 !firstrule->parrangestartincl))
 			{
 				bstat = compare_partn_opfuncid(pNode, "pg_catalog", "=",
 											   (List *) firstrule->parrangestart,
@@ -5488,7 +5410,7 @@ check_range_overlap(Relation rel, PartitionNode *pNode,
 		if (bstat)
 		{
 			/* should be first partition */
-			*maxpartno = prule->topRule->parruleord - 1;
+			*maxpartno = firstrule->parruleord - 1;
 			if (0 == *maxpartno)
 			{
 				*maxpartno = 1;
@@ -5572,15 +5494,15 @@ L_fin_no_start:
 				ri->location = -1;
 
 				ri->partRangeVal =
-					copyObject(prule->topRule->parrangestart);
+					copyObject(firstrule->parrangestart);
 
 				/* invert the inclusive/exclusive */
-				ri->partedge = prule->topRule->parrangestartincl ?
+				ri->partedge = firstrule->parrangestartincl ?
 					PART_EDGE_EXCLUSIVE :
 					PART_EDGE_INCLUSIVE;
 
 				/* should be first partition */
-				*maxpartno = prule->topRule->parruleord - 1;
+				*maxpartno = firstrule->parruleord - 1;
 				if (0 == *maxpartno)
 				{
 					*maxpartno = 1;
@@ -5662,9 +5584,13 @@ L_fin_no_end:
 		int			endSearchpoint;
 		Datum	   *d_start = NULL;
 		Datum	   *d_end = NULL;
+		AlterPartitionId pid;
+
 
 		/* see if start or end overlaps */
+		MemSet(&pid, 0, sizeof(AlterPartitionId));
 		pid.idtype = AT_AP_IDValue;
+		pid.location = -1;
 
 		/* check the start */
 
