@@ -95,9 +95,10 @@ CREATE VIEW [ <varname>schema</varname> . ] <varname>view_name</varname> AS WITH
       <p>Be careful that the names and data types of the view's columns will be assigned the way you
         want. For example:</p>
       <codeblock>CREATE VIEW vista AS SELECT 'Hello World';</codeblock>
-      <p>is bad form in two ways: the column name defaults to <codeph>?column?</codeph>, and the
-        column data type defaults to <codeph>unknown</codeph>. If you want a string literal in a
-        view's result, use something like:</p>
+      <p>is bad form because the column name defaults to <codeph>?column?</codeph>;
+        also, the column data type defaults to <codeph>text</codeph>, which might not
+        be what you wanted.  Better style for a string literal in a view's
+        result is something like:</p>
       <codeblock>CREATE VIEW vista AS SELECT text 'Hello World' AS hello;</codeblock>
       <p>Access to tables referenced in the view is determined by permissions of the view owner not
         the current user (even if the current user is a superuser). This can be confusing in the

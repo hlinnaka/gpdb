@@ -72,11 +72,6 @@ extern Node *coerce_to_common_type(ParseState *pstate, Node *node,
 					  Oid targetTypeId,
 					  const char *context);
 
-extern void fixup_unknown_vars_in_exprlist(ParseState *pstate, List *exprlist);
-extern void fixup_unknown_vars_in_targetlist(ParseState *pstate, 
-											 List *targetlist);
-extern void fixup_unknown_vars_in_setop(ParseState *pstate, SetOperationStmt *stmt);
-
 extern bool check_generic_type_consistency(Oid *actual_arg_types,
 							   Oid *declared_arg_types,
 							   int nargs);

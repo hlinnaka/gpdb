@@ -126,3 +126,44 @@ INSERT INTO dml_timestamptz VALUES ('4714-01-27 BC'::timestamptz);
 SELECT * FROM dml_timestamptz ORDER BY 1;
 UPDATE dml_timestamptz SET a = '4714-01-27 BC'::timestamptz;
 SELECT * FROM dml_timestamptz ORDER BY 1;
+
+
+--
+-- Tests for implicit conversions between "unknown" and other types.
+--
+
+-- Test "unknown" from sub queries - MPP-2510
+select foo || 'bar'::text from (select 'bar' as foo) a;
+select foo || 'bar'::text from (select 'bar'::text as foo) a;
+select * from ( select 'a' as a) x join (select 'b' as b) y on a=b;
+
+-- Test "unknown" with typmod MPP-2658
+create table unknown_test (v varchar(20), n numeric(20, 2), t timestamp(2));
+insert into unknown_test select '100', '123.23', '2008-01-01 11:11:11';
+select 'foo'::varchar(10) || bar from (select 'bar' as bar) moo;
+-- Previously, the '123' literal in the subquery was implicitly converted
+-- to numeric, but we don't do that anymore. It's converted to text now.
+select '123'::numeric(4,1) + bar from (select '123' as bar) baz;
+drop table unknown_test;
+
+-- Test nested "unknown"s from MPP-2689
+select 'foo'::text || foo from ( select foo from (select 4.5, foo from ( select
+1, 'foo' as foo) a ) b ) c;
+select 'foo'::text || foo from ( select foo from
+ (select foo || bar as foo from ( select 'bar' as bar, 'foo' as foo) a ) b ) c;
+create domain u_d as text;
+prepare p1 as select $1::u_d || foo from (select 'foo' as foo) a;
+prepare p2 as select 'foo' || foo
+from (select $1::u_d || bar as foo from (select 'bar' as bar) a ) b;
+
+select 'a' as a, 'b' as b, 'c' as c, 1 as d union select * from (select 'a' as a, 'b' as b, 'c' as c, 1 as d)d;
+select * from (select 'a' as a, 'b' as b, 'c' as c, 1 as d)d union select 'a' as a, 'b' as b, 'c' as c, 1 as d;
+
+-- Make sure we can convert unknown to other useful types (MPP-4298)
+create table t as select j as a, 'abc' as i from
+generate_series(1, 10) j;
+select * from t order by a;
+alter table t alter i type int; -- should fail
+alter table t alter i type text; -- should work
+select * from t order by a;
+drop table t;

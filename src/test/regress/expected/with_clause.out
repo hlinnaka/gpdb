@@ -1378,9 +1378,9 @@ LINE 2: with my_group_sum(i, total) as (select i, sum(total) from wi...
         ^
 -- Test behavior with an unknown-type literal in the WITH
 WITH q AS (SELECT 'foo' AS x)
-SELECT x, x IS OF (unknown) as is_unknown FROM q;
-  x  | is_unknown 
------+------------
+SELECT x, x IS OF (text) AS is_text FROM q;
+  x  | is_text 
+-----+---------
  foo | t
 (1 row)
 

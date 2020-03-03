@@ -232,13 +232,15 @@ parse_analyze_varparams(Node *parseTree, const char *sourceText,
 Query *
 parse_sub_analyze(Node *parseTree, ParseState *parentParseState,
 				  CommonTableExpr *parentCTE,
-				  LockingClause *lockclause_from_parent)
+				  LockingClause *lockclause_from_parent,
+				  bool resolve_unknowns)
 {
 	ParseState *pstate = make_parsestate(parentParseState);
 	Query	   *query;
 
 	pstate->p_parent_cte = parentCTE;
 	pstate->p_lockclause_from_parent = lockclause_from_parent;
+	pstate->p_resolve_unknowns = resolve_unknowns;
 
 	query = transformStmt(pstate, parseTree);
 
@@ -695,10 +697,17 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		 * otherwise the behavior of SELECT within INSERT might be different
 		 * from a stand-alone SELECT. (Indeed, Postgres up through 6.5 had
 		 * bugs of just that nature...)
+		 *
+		 * The sole exception is that we prevent resolving unknown-type
+		 * outputs as TEXT.  This does not change the semantics since if the
+		 * column type matters semantically, it would have been resolved to
+		 * something else anyway.  Doing this lets us resolve such outputs as
+		 * the target column's type, which we handle below.
 		 */
 		sub_pstate->p_rtable = sub_rtable;
 		sub_pstate->p_joinexprs = NIL;	/* sub_rtable has no joins */
 		sub_pstate->p_namespace = sub_namespace;
+		sub_pstate->p_resolve_unknowns = false;
 
 		selectQuery = transformStmt(sub_pstate, stmt->selectStmt);
 
@@ -731,13 +740,35 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		 * separate from the subquery's tlist because we may add columns,
 		 * insert datatype coercions, etc.)
 		 *
-		 * Const and Param nodes of type UNKNOWN in the SELECT's targetlist
-		 * no longer need special treatment here.  They'll be assigned proper
-         * types later by coerce_type() upon assignment to the target columns.
-		 * Otherwise this fails:  INSERT INTO foo SELECT 'bar', ... FROM baz
+		 * HACK: unknown-type constants and params in the SELECT's targetlist
+		 * are copied up as-is rather than being referenced as subquery
+		 * outputs.  This is to ensure that when we try to coerce them to
+		 * the target column's datatype, the right things happen (see
+		 * special cases in coerce_type).  Otherwise, this fails:
+		 *		INSERT INTO foo SELECT 'bar', ... FROM baz
 		 *----------
 		 */
-		expandRTE(rte, rtr->rtindex, 0, -1, false, NULL, &exprList);
+		exprList = NIL;
+		foreach(lc, selectQuery->targetList)
+		{
+			TargetEntry *tle = (TargetEntry *) lfirst(lc);
+			Expr	   *expr;
+
+			if (tle->resjunk)
+				continue;
+			if (tle->expr &&
+				(IsA(tle->expr, Const) ||IsA(tle->expr, Param)) &&
+				exprType((Node *) tle->expr) == UNKNOWNOID)
+				expr = tle->expr;
+			else
+			{
+				Var		   *var = makeVarFromTargetEntry(rtr->rtindex, tle);
+
+				var->location = exprLocation((Node *) tle->expr);
+				expr = (Expr *) var;
+			}
+			exprList = lappend(exprList, expr);
+		}
 
 		/* Prepare row for assignment to target table */
 		exprList = transformInsertRow(pstate, exprList,
@@ -765,8 +796,12 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		{
 			List	   *sublist = (List *) lfirst(lc);
 
-			/* Do basic expression transformation (same as a ROW() expr) */
-			sublist = transformExpressionList(pstate, sublist, EXPR_KIND_VALUES);
+			/*
+			 * Do basic expression transformation (same as a ROW() expr, but
+			 * allow SetToDefault at top level)
+			 */
+			sublist = transformExpressionList(pstate, sublist,
+											  EXPR_KIND_VALUES, true);
 
 			/*
 			 * All the sublists must be the same length, *after*
@@ -876,7 +911,8 @@ transformInsertStmt(ParseState *pstate, InsertStmt *stmt)
 		/* Do basic expression transformation (same as a ROW() expr) */
 		exprList = transformExpressionList(pstate,
 										   (List *) linitial(valuesLists),
-										   EXPR_KIND_VALUES);
+										   EXPR_KIND_VALUES,
+										   true);
 
 		/* Prepare row for assignment to target table */
 		exprList = transformInsertRow(pstate, exprList,
@@ -1963,13 +1999,6 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->havingQual = transformWhereClause(pstate, stmt->havingClause,
 										   EXPR_KIND_HAVING, "HAVING");
 
-    /*
-     * CDB: Untyped Const or Param nodes in a subquery in the FROM clause
-     * might have been assigned proper types when we transformed the WHERE
-     * clause, targetlist, etc.  Bring targetlist Var types up to date.
-     */
-    fixup_unknown_vars_in_targetlist(pstate, qry->targetList);
-
 	/*
 	 * Transform sorting/grouping stuff.  Do ORDER BY first because both
 	 * transformGroupClause and transformDistinctClause need the results. Note
@@ -2055,6 +2084,10 @@ transformSelectStmt(ParseState *pstate, SelectStmt *stmt)
 	qry->windowClause = transformWindowDefinitions(pstate,
 												   pstate->p_windowdefs,
 												   &qry->targetList);
+
+	/* resolve any still-unresolved output columns as being type text */
+	if (pstate->p_resolve_unknowns)
+		resolveTargetListUnknowns(pstate, qry->targetList);
 
 	qry->rtable = pstate->p_rtable;
 	qry->jointree = makeFromExpr(pstate->p_joinlist, qual);
@@ -2153,7 +2186,7 @@ transformValuesClause(ParseState *pstate, SelectStmt *stmt)
 		List	   *sublist = (List *) lfirst(lc);
 
 		/* Do basic expression transformation (same as a ROW() expr) */
-		sublist = transformExpressionList(pstate, sublist, EXPR_KIND_VALUES);
+		sublist = transformExpressionList(pstate, sublist, EXPR_KIND_VALUES, true);
 
 		/*
 		 * All the sublists must be the same length, *after* transformation
@@ -2483,11 +2516,6 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	}
 
 	/*
-	 * Coerce the UNKNOWN type for target entries to its right type here.
-	 */
-	fixup_unknown_vars_in_setop(pstate, sostmt);
-
-	/*
 	 * As a first step towards supporting sort clauses that are expressions
 	 * using the output columns, generate a namespace entry that makes the
 	 * output columns visible.  A Join RTE node is handy for this, since we
@@ -2800,11 +2828,19 @@ transformSetOperationTree_internal(ParseState *pstate, SelectStmt *stmt,
 		/*
 		 * Transform SelectStmt into a Query.
 		 *
+		 * This works the same as SELECT transformation normally would, except
+		 * that we prevent resolving unknown-type outputs as TEXT.  This does
+		 * not change the subquery's semantics since if the column type
+		 * matters semantically, it would have been resolved to something else
+		 * anyway.  Doing this lets us resolve such outputs using
+		 * select_common_type(), below.
+		 *
 		 * Note: previously transformed sub-queries don't affect the parsing
 		 * of this sub-query, because they are not in the toplevel pstate's
 		 * namespace list.
 		 */
-		selectQuery = parse_sub_analyze((Node *) stmt, pstate, NULL, NULL);
+		selectQuery = parse_sub_analyze((Node *) stmt, pstate,
+										NULL, NULL, false);
 
 		/*
 		 * Check for bogus references to Vars on the current query level (but
@@ -3335,17 +3371,6 @@ transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt)
 
 	qry->returningList = transformReturningList(pstate, stmt->returningList);
 
-    /*
-     * CDB: Untyped Const or Param nodes in a subquery in the FROM clause
-     * could have been assigned proper types when we transformed the WHERE
-     * clause or targetlist above.  Bring targetlist Var types up to date.
-     */
-    if (stmt->fromClause)
-    {
-        fixup_unknown_vars_in_targetlist(pstate, qry->targetList);
-        fixup_unknown_vars_in_targetlist(pstate, qry->returningList);
-    }
-
 	/*
 	 * Now we are done with SELECT-like processing, and can get on with
 	 * transforming the target list to match the UPDATE target columns.
@@ -3475,6 +3500,10 @@ transformReturningList(ParseState *pstate, List *returningList)
 
 	/* mark column origins */
 	markTargetListOrigins(pstate, rlist);
+
+	/* resolve any still-unresolved output columns as being type text */
+	if (pstate->p_resolve_unknowns)
+		resolveTargetListUnknowns(pstate, rlist);
 
 	/* restore state */
 	pstate->p_next_resno = save_next_resno;

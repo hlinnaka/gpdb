@@ -4891,7 +4891,8 @@ transformAlterTable_all_PartitionStmt(
 				pid2->partiddef =
 						(Node *)transformExpressionList(
 							pstate, vallist,
-							EXPR_KIND_PARTITION_EXPRESSION);
+							EXPR_KIND_PARTITION_EXPRESSION,
+							false);
 			}
 
 			partDepth++;
@@ -4958,7 +4959,8 @@ transformAlterTable_all_PartitionStmt(
 				pid->partiddef =
 						(Node *)transformExpressionList(
 							pstate, vallist,
-							EXPR_KIND_PARTITION_EXPRESSION);
+							EXPR_KIND_PARTITION_EXPRESSION,
+							false);
 			}
 	break;
 		default:

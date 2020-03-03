@@ -480,18 +480,6 @@ COPY aocs_new (a,b,c,d,e,f) FROM stdin;
 select (case when b='13' then 'replacement' else d end) as d from aocs_new order by 1;
 select distinct (case when b='13' then 'replacement' else d end) as d from aocs_new where f='M' order by 1;
 
-create table aocs_unknown(
-    a int,
-    b unknown,
-    c unknown encoding (compresstype=rle_type)
-) with (appendonly=true, orientation=column)
-distributed by (a);
-
-insert into aocs_unknown
-select i, 'unknown' from generate_series(1, 10)i;
-
-select * from aocs_unknown;
-
 -- Check compression and distribution
 create table aocs_compress_table (id int, v varchar)
     with (appendonly=true, orientation=column, compresstype=zlib, compresslevel=1) distributed by (id);

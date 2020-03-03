@@ -110,7 +110,7 @@ static Node *transformCaseExpr(ParseState *pstate, CaseExpr *c);
 static Node *transformSubLink(ParseState *pstate, SubLink *sublink);
 static Node *transformArrayExpr(ParseState *pstate, A_ArrayExpr *a,
 				   Oid array_type, Oid element_type, int32 typmod);
-static Node *transformRowExpr(ParseState *pstate, RowExpr *r);
+static Node *transformRowExpr(ParseState *pstate, RowExpr *r, bool allowDefault);
 static Node *transformTableValueExpr(ParseState *pstate, TableValueExpr *t);
 static Node *transformCoalesceExpr(ParseState *pstate, CoalesceExpr *c);
 static Node *transformMinMaxExpr(ParseState *pstate, MinMaxExpr *m);
@@ -307,7 +307,7 @@ transformExprRecurse(ParseState *pstate, Node *expr)
 			break;
 
 		case T_RowExpr:
-			result = transformRowExpr(pstate, (RowExpr *) expr);
+			result = transformRowExpr(pstate, (RowExpr *) expr, false);
 			break;
 
 		case T_TableValueExpr:
@@ -1915,7 +1915,7 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 	/*
 	 * OK, let's transform the sub-SELECT.
 	 */
-	qtree = parse_sub_analyze(sublink->subselect, pstate, NULL, NULL);
+	qtree = parse_sub_analyze(sublink->subselect, pstate, NULL, NULL, true);
 
 	/*
 	 * Check that we got something reasonable.  Many of these conditions are
@@ -2219,7 +2219,7 @@ transformArrayExpr(ParseState *pstate, A_ArrayExpr *a,
 }
 
 static Node *
-transformRowExpr(ParseState *pstate, RowExpr *r)
+transformRowExpr(ParseState *pstate, RowExpr *r, bool allowDefault)
 {
 	RowExpr    *newr;
 	char		fname[16];
@@ -2229,7 +2229,8 @@ transformRowExpr(ParseState *pstate, RowExpr *r)
 	newr = makeNode(RowExpr);
 
 	/* Transform the field expressions */
-	newr->args = transformExpressionList(pstate, r->args, pstate->p_expr_kind);
+	newr->args = transformExpressionList(pstate, r->args,
+										 pstate->p_expr_kind, allowDefault);
 
 	/* Barring later casting, we consider the type RECORD */
 	newr->row_typeid = RECORDOID;
@@ -2266,7 +2267,7 @@ transformTableValueExpr(ParseState *pstate, TableValueExpr *t)
 	pstate->p_hasTblValueExpr = true;
 
 	/* Analyze and transform the subquery */
-	query = parse_sub_analyze(t->subquery, pstate, NULL, NULL);
+	query = parse_sub_analyze(t->subquery, pstate, NULL, NULL, true);
 
 	query->isTableValueSelect = true;
 

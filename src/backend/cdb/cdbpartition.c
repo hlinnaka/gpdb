@@ -4841,7 +4841,8 @@ get_part_rule1(Relation rel,
 
 				pval = (Node *) transformExpressionList(pstate,
 														(List *) pval,
-														EXPR_KIND_PARTITION_EXPRESSION);
+														EXPR_KIND_PARTITION_EXPRESSION,
+														false);
 
 				free_parsestate(pstate);
 
@@ -5644,7 +5645,8 @@ atpxPartAddList(Relation rel,
 					n1 = (Node *) copyObject(ri->partRangeVal);
 					n1 = (Node *) transformExpressionList(pstate,
 														  (List *) n1,
-														  EXPR_KIND_PARTITION_EXPRESSION);
+														  EXPR_KIND_PARTITION_EXPRESSION,
+														  false);
 
 					d_end =
 						magic_expr_to_datum(rel, pNode,
@@ -5810,7 +5812,8 @@ atpxPartAddList(Relation rel,
 					n1 = (Node *) copyObject(ri->partRangeVal);
 					n1 = (Node *) transformExpressionList(pstate,
 														  (List *) n1,
-														  EXPR_KIND_PARTITION_EXPRESSION);
+														  EXPR_KIND_PARTITION_EXPRESSION,
+														  false);
 
 					d_start =
 						magic_expr_to_datum(rel, pNode,
@@ -5953,7 +5956,8 @@ atpxPartAddList(Relation rel,
 				pid.partiddef =
 					(Node *) transformExpressionList(pstate,
 													 (List *) pid.partiddef,
-													 EXPR_KIND_PARTITION_EXPRESSION);
+													 EXPR_KIND_PARTITION_EXPRESSION,
+													 false);
 
 				prule = get_part_rule1(rel, &pid, false, false,
 									   &startSearchpoint,
@@ -6196,7 +6200,8 @@ atpxPartAddList(Relation rel,
 				pid.partiddef =
 					(Node *) transformExpressionList(pstate,
 													 (List *) pid.partiddef,
-													 EXPR_KIND_PARTITION_EXPRESSION);
+													 EXPR_KIND_PARTITION_EXPRESSION,
+													 false);
 
 				prule = get_part_rule1(rel, &pid, false, false,
 									   &endSearchpoint,

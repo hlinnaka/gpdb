@@ -152,6 +152,8 @@ struct ParseState
 	int			p_next_resno;	/* next targetlist resno to assign */
 	List	   *p_multiassign_exprs;	/* junk tlist entries for multiassign */
 	List	   *p_locking_clause;		/* raw FOR UPDATE/FOR SHARE info */
+	bool		p_resolve_unknowns;		/* resolve unknown-type SELECT outputs
+										 * as type text */
 	Node	   *p_value_substitute;		/* what to replace VALUE with, if any */
 	bool		p_hasAggs;
 	bool		p_hasWindowFuncs;

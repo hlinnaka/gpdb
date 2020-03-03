@@ -4818,7 +4818,8 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 						}
 
 						vals = (List *)transformExpressionList(pstate, vals,
-															   EXPR_KIND_PARTITION_EXPRESSION);
+															   EXPR_KIND_PARTITION_EXPRESSION,
+															   false);
 
 						foreach(lc2, vals)
 						{
