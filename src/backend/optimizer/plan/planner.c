@@ -63,6 +63,7 @@
 
 #include "catalog/gp_segment_config.h"
 #include "catalog/pg_proc.h"
+#include "cdb/cdbdistinctpaths.h"
 #include "cdb/cdbhash.h"
 #include "cdb/cdbllize.h"
 #include "cdb/cdbmutate.h"		/* apply_shareinput */
@@ -4881,105 +4882,10 @@ create_distinct_paths(PlannerInfo *root,
 	HashAggTableSizes hash_info = { 0 };
 	Path	   *path;
 	ListCell   *lc;
-	List	   *distinct_dist_pathkeys = NIL;
-	List	   *distinct_dist_exprs = NIL;
-	List	   *distinct_dist_opfamilies = NIL;
-	List	   *distinct_dist_sortrefs = NIL;
+	MppDistinctInfo distinct_dist_info;
 
 	/* For now, do all work in the (DISTINCT, NULL) upperrel */
 	distinct_rel = fetch_upper_rel(root, UPPERREL_DISTINCT, NULL);
-
-
-	/*
-	 * MPP: If there's a DISTINCT clause and we're not collocated on the
-	 * distinct key, we need to redistribute on that key.  In addition, we
-	 * need to consider whether to "pre-unique" by doing a Sort-Unique
-	 * operation on the data as currently distributed, redistributing on the
-	 * district key, and doing the Sort-Unique again. This 2-phase approach
-	 * will be a win, if the cost of redistributing the entire input exceeds
-	 * the cost of an extra Redistribute-Sort-Unique on the pre-uniqued
-	 * (reduced) input.
-	 */
-	make_distribution_exprs_for_groupclause(root,
-											parse->distinctClause,
-			make_tlist_from_pathtarget(root->upper_targets[UPPERREL_WINDOW]),
-											&distinct_dist_pathkeys,
-											&distinct_dist_exprs,
-											&distinct_dist_opfamilies,
-											&distinct_dist_sortrefs);
-
-#if 0
-	if (Gp_role == GP_ROLE_DISPATCH && CdbPathLocus_IsPartitioned(path->locus))
-	{
-		/* Apply the preunique optimization, if enabled and worthwhile. */
-		/* GPDB_84_MERGE_FIXME: pre-unique for hash distinct not implemented. */
-		/* GPDB_96_MERGE_FIXME: disabled altogether */
-		if (gp_enable_preunique && needMotion && !use_hashed_distinct)
-		{
-			double		base_cost,
-				alt_cost;
-			Path		sort_path;	/* dummy for result of cost_sort */
-
-			base_cost = motion_cost_per_row * result_plan->plan_rows;
-			alt_cost = motion_cost_per_row * numDistinct;
-			cost_sort(&sort_path, root, NIL, alt_cost,
-					  numDistinct, result_plan->plan_rows,
-					  0, work_mem, -1.0);
-			alt_cost += sort_path.startup_cost;
-			alt_cost += cpu_operator_cost * numDistinct
-				* list_length(parse->distinctClause);
-
-			if (alt_cost < base_cost || gp_eager_preunique)
-			{
-				/*
-				 * Reduce the number of rows to move by adding a [Sort
-				 * and] Unique prior to the redistribute Motion.
-				 */
-				if (root->sort_pathkeys)
-				{
-					if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
-					{
-						result_plan = (Plan *) make_sort_from_pathkeys(root,
-																	   result_plan,
-																	   root->sort_pathkeys,
-																	   limit_tuples,
-																	   true);
-						((Sort *) result_plan)->noduplicates = gp_enable_sort_distinct;
-						current_pathkeys = root->sort_pathkeys;
-					}
-				}
-
-				result_plan = (Plan *) make_unique(result_plan, parse->distinctClause);
-
-				result_plan->plan_rows = numDistinct;
-
-				/*
-				 * Our sort node (under the unique node), unfortunately
-				 * can't guarantee uniqueness -- so we aren't allowed to
-				 * push the limit into the sort; but we can avoid moving
-				 * the entire sorted result-set by plunking a limit on the
-				 * top of the unique-node.
-				 */
-				if (parse->limitCount)
-				{
-					/*
-					 * Our extra limit operation is basically a
-					 * third-phase on multi-phase limit (see 2-phase limit
-					 * below)
-					 */
-					result_plan = pushdown_preliminary_limit(result_plan, parse->limitCount, parse->limitOffset, limit_tuples);
-				}
-			}
-		}
-	}
-	else if ( result_plan->flow->flotype == FLOW_SINGLETON )
-		; /* Already collocated. */
-	else
-	{
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-						errmsg("unexpected input locus to distinct")));
-	}
-#endif
 
 	/*
 	 * We don't compute anything at this level, so distinct_rel will be
@@ -5024,6 +4930,9 @@ create_distinct_paths(PlannerInfo *root,
 											  NULL);
 	}
 
+	cdb_init_distinct_path_generation(root, numDistinctRows,
+									  &distinct_dist_info);
+
 	/*
 	 * Consider sort-based implementations of DISTINCT, if possible.
 	 */
@@ -5056,32 +4965,10 @@ create_distinct_paths(PlannerInfo *root,
 
 			if (pathkeys_contained_in(needed_pathkeys, path->pathkeys))
 			{
-				if (!cdbpathlocus_collocates_pathkeys(root, path->locus,
-													  distinct_dist_pathkeys, false /* exact_match */ ))
-				{
-					CdbPathLocus locus;
-
-					if (distinct_dist_exprs)
-					{
-						locus = cdbpathlocus_from_exprs(root,
-														distinct_dist_exprs,
-														distinct_dist_opfamilies,
-														distinct_dist_sortrefs,
-														getgpsegmentCount());
-					}
-					else
-					{
-						CdbPathLocus_MakeSingleQE(&locus, getgpsegmentCount());
-					}
-
-					path = cdbpath_create_motion_path(root, path, path->pathkeys, false, locus);
-				}
-
-				add_path(distinct_rel, (Path *)
-						 create_upper_unique_path(root, distinct_rel,
-												  path,
-										list_length(root->distinct_pathkeys),
-												  numDistinctRows));
+				create_distinct_sorted_paths(root,
+											 &distinct_dist_info,
+											 distinct_rel,
+											 path);
 			}
 		}
 
@@ -5100,61 +4987,19 @@ create_distinct_paths(PlannerInfo *root,
 		path = cheapest_input_path;
 		if (!pathkeys_contained_in(needed_pathkeys, path->pathkeys))
 		{
-			if (!cdbpathlocus_collocates_pathkeys(root, path->locus,
-												  distinct_dist_pathkeys, false /* exact_match */ ))
-			{
-				CdbPathLocus locus;
-
-				if (distinct_dist_exprs)
-				{
-					locus = cdbpathlocus_from_exprs(root,
-													distinct_dist_exprs,
-													distinct_dist_opfamilies,
-													distinct_dist_sortrefs,
-													getgpsegmentCount());
-				}
-				else
-				{
-					CdbPathLocus_MakeSingleQE(&locus, getgpsegmentCount());
-				}
-				/* we're about to sort the data, so don't try preserving any existing order. */
-				path = cdbpath_create_motion_path(root, path, NIL, false, locus);
-			}
-
-			path = (Path *) create_sort_path(root, distinct_rel,
-											 path,
-											 needed_pathkeys,
-											 -1.0);
+			create_distinct_sort_paths(root,
+									   &distinct_dist_info,
+									   distinct_rel,
+									   needed_pathkeys,
+									   path);
 		}
 		else
 		{
-			if (!cdbpathlocus_collocates_pathkeys(root, path->locus,
-												  distinct_dist_pathkeys, false /* exact_match */ ))
-			{
-				CdbPathLocus locus;
-
-				if (distinct_dist_exprs)
-				{
-					locus = cdbpathlocus_from_exprs(root,
-													distinct_dist_exprs,
-													distinct_dist_opfamilies,
-													distinct_dist_sortrefs,
-													getgpsegmentCount());
-				}
-				else
-				{
-					CdbPathLocus_MakeSingleQE(&locus, getgpsegmentCount());
-				}
-				/* preserve any existing order */
-				path = cdbpath_create_motion_path(root, path, path->pathkeys, false, locus);
-			}
+			create_distinct_sorted_paths(root,
+										 &distinct_dist_info,
+										 distinct_rel,
+										 path);
 		}
-
-		add_path(distinct_rel, (Path *)
-				 create_upper_unique_path(root, distinct_rel,
-										  path,
-										list_length(root->distinct_pathkeys),
-										  numDistinctRows));
 	}
 
 	/*
@@ -5214,43 +5059,11 @@ create_distinct_paths(PlannerInfo *root,
 	if (allow_hash && grouping_is_hashable(parse->distinctClause))
 	{
 		/* Generate hashed aggregate path --- no sort needed */
-		Path	   *path;
-
-		path = cheapest_input_path;
-		if (!cdbpathlocus_collocates_pathkeys(root, path->locus,
-											  distinct_dist_pathkeys, false /* exact_match */ ))
-		{
-			CdbPathLocus locus;
-
-			if (distinct_dist_exprs)
-			{
-				locus = cdbpathlocus_from_exprs(root,
-												distinct_dist_exprs,
-												distinct_dist_opfamilies,
-												distinct_dist_sortrefs,
-												getgpsegmentCount());
-			}
-			else
-			{
-				CdbPathLocus_MakeSingleQE(&locus, getgpsegmentCount());
-			}
-
-			path = cdbpath_create_motion_path(root, path, path->pathkeys, false, locus);
-		}
-
-		add_path(distinct_rel, (Path *)
-				 create_agg_path(root,
-								 distinct_rel,
-								 path,
-								 path->pathtarget,
-								 AGG_HASHED,
-								 AGGSPLIT_SIMPLE,
-								 false, /* streaming */
-								 parse->distinctClause,
-								 NIL,
-								 NULL,
-								 numDistinctRows,
-								 &hash_info));
+		create_distinct_hashed_paths(root,
+									 &distinct_dist_info,
+									 distinct_rel,
+									 cheapest_input_path,
+									 &hash_info);
 	}
 
 	/* Give a helpful error if we failed to find any implementation */
