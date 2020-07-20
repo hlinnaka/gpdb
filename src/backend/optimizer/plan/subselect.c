@@ -3007,18 +3007,7 @@ finalize_plan(PlannerInfo *root, Plan *plan,
 			break;
 
 		case T_PartitionSelector:
-			finalize_primnode((Node *) ((PartitionSelector *) plan)->levelEqExpressions,
-							  &context);
-			finalize_primnode((Node *) ((PartitionSelector *) plan)->levelExpressions,
-							  &context);
-			finalize_primnode(((PartitionSelector *) plan)->residualPredicate,
-							  &context);
-			finalize_primnode(((PartitionSelector *) plan)->propagationExpression,
-							  &context);
-			finalize_primnode(((PartitionSelector *) plan)->printablePredicate,
-							  &context);
-			finalize_primnode((Node *) ((PartitionSelector *) plan)->partkeyExpressions,
-							  &context);
+			/* GPDB_12_MERGE_FIXME: need to do something with the paramid here? */
 			break;
 			
 		case T_RecursiveUnion:

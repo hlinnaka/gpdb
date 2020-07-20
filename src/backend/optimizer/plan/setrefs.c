@@ -909,24 +909,32 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 				indexed_tlist *childplan_itlist =
 					build_tlist_index(plan->lefttree->targetlist);
 
-				set_dummy_tlist_references(plan, rtoffset);
-				ps->parentRTI += rtoffset;
-
 				Assert(ps->plan.qual == NIL);
 
-				ps->levelEqExpressions = (List *)
-					fix_upper_expr(root, (Node *) ps->levelEqExpressions, childplan_itlist, OUTER_VAR,rtoffset);
-				ps->levelExpressions = (List *)
-					fix_upper_expr(root, (Node *) ps->levelExpressions, childplan_itlist, OUTER_VAR,rtoffset);
-				ps->residualPredicate =
-					fix_upper_expr(root, ps->residualPredicate, childplan_itlist, OUTER_VAR,rtoffset);
-				ps->propagationExpression =
-					fix_upper_expr(root, ps->propagationExpression, childplan_itlist, OUTER_VAR,rtoffset);
-				ps->printablePredicate =
-					fix_upper_expr(root, ps->printablePredicate, childplan_itlist, OUTER_VAR,rtoffset);
+				set_dummy_tlist_references(plan, rtoffset);
 
-				ps->partkeyExpressions = (List *)
-					fix_upper_expr(root, (Node *) ps->partkeyExpressions, childplan_itlist, OUTER_VAR,rtoffset);
+				if (ps->part_prune_info)
+				{
+					foreach(l, ps->part_prune_info->prune_infos)
+					{
+						List	   *prune_infos = lfirst(l);
+						ListCell   *l2;
+
+						foreach(l2, prune_infos)
+						{
+							PartitionedRelPruneInfo *pinfo = lfirst(l2);
+
+							pinfo->rtindex += rtoffset;
+
+							pinfo->initial_pruning_steps = (List *)
+								fix_upper_expr(root, (Node *) pinfo->initial_pruning_steps,
+											   childplan_itlist, OUTER_VAR, rtoffset);
+							pinfo->exec_pruning_steps = (List *)
+								fix_upper_expr(root, (Node *) pinfo->exec_pruning_steps,
+											   childplan_itlist, OUTER_VAR, rtoffset);
+						}
+					}
+				}
 			}
 			break;
 

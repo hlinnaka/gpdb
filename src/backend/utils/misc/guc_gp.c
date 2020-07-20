@@ -227,10 +227,6 @@ bool		gp_resource_group_bypass;
 bool		vmem_process_interrupt = false;
 bool		execute_pruned_plan = false;
 
-/* partitioning GUC */
-bool		gp_partitioning_dynamic_selection_log;
-int			gp_max_partition_level;
-
 /* Upgrade & maintenance GUCs */
 bool		gp_maintenance_mode;
 bool		gp_maintenance_conn;
@@ -1637,17 +1633,6 @@ struct config_bool ConfigureNamesBool_gp[] =
 	},
 
 	{
-		{"gp_partitioning_dynamic_selection_log", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Print out debugging info for GPDB dynamic partition selection"),
-			NULL,
-			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
-		},
-		&gp_partitioning_dynamic_selection_log,
-		false,
-		NULL, NULL, NULL
-	},
-
-	{
 		{"gp_log_stack_trace_lines", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Control if file/line information is included in stack traces"),
 			NULL,
@@ -2995,17 +2980,6 @@ struct config_int ConfigureNamesInt_gp[] =
 		},
 		&gp_max_plan_size,
 		0, 0, MAX_KILOBYTES,
-		NULL, NULL, NULL
-	},
-
-	{
-		{"gp_max_partition_level", PGC_SUSET, PRESET_OPTIONS,
-			gettext_noop("Sets the maximum number of levels allowed when creating a partitioned table."),
-			gettext_noop("Use 0 for no limit."),
-			GUC_SUPERUSER_ONLY | GUC_NOT_IN_SAMPLE
-		},
-		&gp_max_partition_level,
-		0, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 

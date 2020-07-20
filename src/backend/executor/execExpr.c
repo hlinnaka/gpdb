@@ -2180,18 +2180,6 @@ ExecInitExprRec(Expr *node, ExprState *state,
 				break;
 			}
 
-		case T_PartSelectedExpr:
-			{
-				PartSelectedExpr *pse = (PartSelectedExpr *) node;
-
-				scratch.opcode = EEOP_PARTSELECTEDEXPR;
-				scratch.d.partselectedexpr.dynamicScanId = pse->dynamicScanId;
-				scratch.d.partselectedexpr.partOid = pse->partOid;
-
-				ExprEvalPushStep(state, &scratch);
-				break;
-			}
-
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));

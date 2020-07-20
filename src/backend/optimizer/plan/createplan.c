@@ -361,6 +361,8 @@ create_plan(PlannerInfo *root, Path *best_path, PlanSlice *curSlice)
 	/* Recursively process the path tree, demanding the correct tlist result */
 	plan = create_plan_recurse(root, best_path, CP_EXACT_TLIST);
 
+	Assert(root->partition_selector_candidates == NIL);
+
 	/*
 	 * Make sure the topmost plan node's targetlist exposes the original
 	 * column names and other decorative info.  Targetlists generated within
@@ -1076,16 +1078,6 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
 {
 	Plan	   *plan;
 	List	   *gating_clauses;
-	bool		partition_selector_created;
-	List	   *partSelectors;
-
-	/*
-	 * Try to inject Partition Selectors.
-	 */
-	partition_selector_created =
-		inject_partition_selectors_for_join(root,
-											best_path,
-											&partSelectors);
 
 	switch (best_path->path.pathtype)
 	{
@@ -1108,18 +1100,12 @@ create_join_plan(PlannerInfo *root, JoinPath *best_path)
 			break;
 	}
 
-	/*
-	 * If we injected a partition selector to the inner side, we must evaluate
-	 * the inner side before the outer side, so that the partition selector
-	 * can influence the execution of the outer side.
-	 */
-	Assert(plan->type == best_path->path.pathtype);
-	if (partition_selector_created)
-		((Join *) plan)->prefetch_inner = true;
-
 	/* CDB: if the join's locus is bottleneck which means the
 	 * join gang only contains one process, so there is no
 	 * risk for motion deadlock.
+	 *
+	 * FIXME: this overwrites the prefetch_inner flag that may have
+	 * been set for Partition Selectors. That's not cool, right?
 	 */
 	if (CdbPathLocus_IsBottleneck(best_path->path.locus))
 	{
@@ -1352,6 +1338,19 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path, int flags)
 										 best_path->subpaths,
 										 best_path->partitioned_rels,
 										 prunequal);
+
+		/*
+		 * GPDB: Also perform join-pruning, if possible
+		 *
+		 * XXX: Skip this for parameterized paths for now. We could probably
+		 * handle them somehow, but not implemented yet..
+		 */
+		if (!best_path->path.param_info)
+		{
+			plan->join_prune_paramids = make_partition_join_pruneinfos(root, rel,
+																	   best_path->subpaths,
+																	   best_path->partitioned_rels);
+		}
 	}
 
 	plan->appendplans = subplans;
@@ -1517,6 +1516,19 @@ create_merge_append_plan(PlannerInfo *root, MergeAppendPath *best_path,
 													 best_path->subpaths,
 													 best_path->partitioned_rels,
 													 prunequal);
+
+		/*
+		 * GPDB: Also perform join-pruning, if possible
+		 *
+		 * XXX: Skip this for parameterized paths for now. We could probably
+		 * handle them somehow, but not implemented yet..
+		 */
+		if (!best_path->path.param_info)
+		{
+			node->join_prune_paramids = make_partition_join_pruneinfos(root, rel,
+																	   best_path->subpaths,
+																	   best_path->partitioned_rels);
+		}
 	}
 
 	node->mergeplans = subplans;
@@ -4781,8 +4793,10 @@ create_nestloop_plan(PlannerInfo *root,
 	Relids		outerrelids;
 	List	   *nestParams;
 	Relids		saveOuterRels = root->curOuterRels;
-
+	bool		partition_selectors_created;
 	bool		prefetch = false;
+
+	push_partition_selector_candidate_for_join(root, best_path);
 
 #if  0
 	/*
@@ -4798,6 +4812,13 @@ create_nestloop_plan(PlannerInfo *root,
 
 	/* NestLoop can project, so no need to be picky about child tlists */
 	outer_plan = create_plan_recurse(root, best_path->outerjoinpath, 0);
+
+	/*
+	 * If the outer side contained Append nodes that can do partition pruning,
+	 * inject Partition Selectors to the inner side.
+	 */
+	partition_selectors_created =
+		pop_and_inject_partition_selectors(root, best_path);
 
 	/* For a nestloop, include outer relids in curOuterRels for inner side */
 	root->curOuterRels = bms_union(root->curOuterRels,
@@ -4928,6 +4949,14 @@ create_nestloop_plan(PlannerInfo *root,
 		join_plan->join.prefetch_inner = true;
 
 	/*
+	 * If we injected a partition selector to the inner side, we must evaluate
+	 * the inner side before the outer side, so that the partition selector
+	 * can influence the execution of the outer side.
+	 */
+	if (partition_selectors_created)
+		join_plan->join.prefetch_inner = true;
+
+	/*
 	 * A motion deadlock can also happen when outer and joinqual both contain
 	 * motions.  It is not easy to check for joinqual here, so we set the
 	 * prefetch_joinqual mark only according to outer motion, and check for
@@ -4971,6 +5000,9 @@ create_mergejoin_plan(PlannerInfo *root,
 	ListCell   *lip;
 	Path	   *outer_path = best_path->jpath.outerjoinpath;
 	Path	   *inner_path = best_path->jpath.innerjoinpath;
+	bool		partition_selectors_created;
+
+	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
 	/*
 	 * MergeJoin can project, so we don't have to demand exact tlists from the
@@ -4980,6 +5012,13 @@ create_mergejoin_plan(PlannerInfo *root,
 	 */
 	outer_plan = create_plan_recurse(root, best_path->jpath.outerjoinpath,
 									 (best_path->outersortkeys != NIL) ? CP_SMALL_TLIST : 0);
+
+	/*
+	 * If the outer side contained Append nodes that can do partition pruning,
+	 * inject Partition Selectors to the inner side.
+	 */
+	partition_selectors_created =
+		pop_and_inject_partition_selectors(root, &best_path->jpath);
 
 	inner_plan = create_plan_recurse(root, best_path->jpath.innerjoinpath,
 									 (best_path->innersortkeys != NIL) ? CP_SMALL_TLIST : 0);
@@ -5275,6 +5314,14 @@ create_mergejoin_plan(PlannerInfo *root,
 	join_plan->join.prefetch_inner = prefetch;
 
 	/*
+	 * If we injected a partition selector to the inner side, we must evaluate
+	 * the inner side before the outer side, so that the partition selector
+	 * can influence the execution of the outer side.
+	 */
+	if (partition_selectors_created)
+		join_plan->join.prefetch_inner = true;
+
+	/*
 	 * A motion deadlock can also happen when outer and joinqual both contain
 	 * motions.  It is not easy to check for joinqual here, so we set the
 	 * prefetch_joinqual mark only according to outer motion, and check for
@@ -5316,6 +5363,9 @@ create_hashjoin_plan(PlannerInfo *root,
 	Oid			skewTable = InvalidOid;
 	AttrNumber	skewColumn = InvalidAttrNumber;
 	bool		skewInherit = false;
+	bool		partition_selectors_created;
+
+	push_partition_selector_candidate_for_join(root, &best_path->jpath);
 
 	/*
 	 * HashJoin can project, so we don't have to demand exact tlists from the
@@ -5326,6 +5376,13 @@ create_hashjoin_plan(PlannerInfo *root,
 	 */
 	outer_plan = create_plan_recurse(root, best_path->jpath.outerjoinpath,
 									 (best_path->num_batches > 1) ? CP_SMALL_TLIST : 0);
+
+	/*
+	 * If the outer side contained Append nodes that can do partition pruning,
+	 * inject Partition Selectors to the inner side.
+	 */
+	partition_selectors_created =
+		pop_and_inject_partition_selectors(root, &best_path->jpath);
 
 	inner_plan = create_plan_recurse(root, best_path->jpath.innerjoinpath,
 									 CP_SMALL_TLIST);
@@ -5463,6 +5520,14 @@ create_hashjoin_plan(PlannerInfo *root,
 	{
 		join_plan->join.prefetch_inner = true;
 	}
+
+	/*
+	 * If we injected a partition selector to the inner side, we must evaluate
+	 * the inner side before the outer side, so that the partition selector
+	 * can influence the execution of the outer side.
+	 */
+	if (partition_selectors_created)
+		join_plan->join.prefetch_inner = true;
 
 	/*
 	 * A motion deadlock can also happen when outer and joinqual both contain

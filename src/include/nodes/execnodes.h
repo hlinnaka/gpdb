@@ -523,19 +523,6 @@ typedef struct ResultRelInfo
 } ResultRelInfo;
 
 /*
- * PartOidEntry
- *   Defines an entry in the shared partOid hash table.
- */
-typedef struct PartOidEntry
-{
-	/* oid of an individual leaf partition */
-	Oid			partOid;
-
-	/* list of partition selectors that produced the above part oid */
-	List	   *selectorList;
-} PartOidEntry;
-
-/*
  * DynamicTableScanInfo
  *   Encapsulate the information that is needed to maintain the pid indexes
  * for all dynamic table scans in a plan.
@@ -740,6 +727,9 @@ typedef struct EState
 
 	/*
 	 * Information relevant to dynamic table scans.
+	 */
+	/* GPDB_12_MERGE_FIXME: This is no longer used by PartitionSelectors.
+	 * But it's still referenced by DynamicHeapScan etc. nodes.
 	 */
 	DynamicTableScanInfo *dynamicTableScanInfo;
 
@@ -1020,14 +1010,6 @@ typedef struct SetExprState
 
 
 /* GPDB_12_MERGE_FIXME: These are legacy GPDB partitioning stuff. Can be removed? */
-/* ----------------
- *		PartSelectedExprState node
- * ----------------
- */
-typedef struct PartSelectedExprState
-{
-	ExprState	xprstate;
-} PartSelectedExprState;
 
 /* ----------------
  *		PartDefaultExprState node
@@ -3088,22 +3070,8 @@ typedef struct PartitionSelectorState
 {
 	PlanState	ps;				/* its first field is NodeTag */
 
-	/* GPDB_12_MERGE_FIXME: we only implement the mechanism used by the Postgres
-	 * planner at the moment, the one that uses PartSelected nodes.
-	 */
-#if 0
-	PartitionNode *rootPartitionNode;		/* PartitionNode for root table */
-	PartitionAccessMethods *accessMethods;	/* Access method for partition */
-	struct PartitionRule **levelPartRules;	/* accepted partitions for all levels */
-	List	   *levelEqExprStates;			/* ExprState for equality expressions for all levels */
-	List	   *levelExprStateLists;		/* ExprState list for general expressions for all levels */
-	List	   *residualPredicateExprStateList;	/* ExprState list for evaluating residual predicate */
-	ExprState  *propagationExprState;		/* ExprState for evaluating propagation expression */
-#endif
-
-	List	   *partkeyExpressions;		/* list of ExprStates to evaluate partitioning keys */
-
-	Relation	parentrel;			/* partitioned table we're selecting from */
+	struct PartitionPruneState *prune_state;
+	Bitmapset *part_prune_result;
 } PartitionSelectorState;
 
 #endif							/* EXECNODES_H */

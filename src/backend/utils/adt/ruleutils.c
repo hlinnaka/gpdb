@@ -9162,10 +9162,6 @@ get_rule_expr(Node *node, deparse_context *context,
 			get_tablefunc((TableFunc *) node, context, showimplicit);
 			break;
 
-		case T_PartSelectedExpr:
-			appendStringInfo(buf, "PartSelected");
-			break;
-
 		case T_DMLActionExpr:
 			appendStringInfo(buf, "DMLAction");
 			break;

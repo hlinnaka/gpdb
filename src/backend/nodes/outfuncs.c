@@ -596,6 +596,7 @@ _outAppend(StringInfo str, const Append *node)
 	WRITE_NODE_FIELD(appendplans);
 	WRITE_INT_FIELD(first_partial_plan);
 	WRITE_NODE_FIELD(part_prune_info);
+	WRITE_NODE_FIELD(join_prune_paramids);
 }
 
 static void
@@ -620,6 +621,7 @@ _outMergeAppend(StringInfo str, const MergeAppend *node)
 	WRITE_OID_ARRAY(collations, node->numCols);
 	WRITE_BOOL_ARRAY(nullsFirst, node->numCols);
 	WRITE_NODE_FIELD(part_prune_info);
+	WRITE_NODE_FIELD(join_prune_paramids);
 }
 
 static void
@@ -711,8 +713,7 @@ _outDynamicSeqScan(StringInfo str, const DynamicSeqScan *node)
 	WRITE_NODE_TYPE("DYNAMICSEQSCAN");
 
 	_outScanInfo(str, (Scan *)node);
-	WRITE_INT_FIELD(partIndex);
-	WRITE_INT_FIELD(partIndexPrintable);
+	WRITE_NODE_FIELD(partOids);
 }
 
 static void
@@ -797,8 +798,7 @@ _outDynamicIndexScan(StringInfo str, const DynamicIndexScan *node)
 	WRITE_NODE_TYPE("DYNAMICINDEXSCAN");
 
 	outIndexScanFields(str, &node->indexscan);
-	WRITE_INT_FIELD(partIndex);
-	WRITE_INT_FIELD(partIndexPrintable);
+	WRITE_NODE_FIELD(partOids);
 	outLogicalIndexInfo(str, node->logicalIndexInfo);
 }
 
@@ -827,8 +827,7 @@ _outDynamicBitmapIndexScan(StringInfo str, const DynamicBitmapIndexScan *node)
 	WRITE_NODE_TYPE("DYNAMICBITMAPINDEXSCAN");
 
 	_outBitmapIndexScanFields(str, &node->biscan);
-	WRITE_INT_FIELD(partIndex);
-	WRITE_INT_FIELD(partIndexPrintable);
+	WRITE_NODE_FIELD(partOids);
 	outLogicalIndexInfo(str, node->logicalIndexInfo);
 }
 
@@ -854,8 +853,7 @@ _outDynamicBitmapHeapScan(StringInfo str, const DynamicBitmapHeapScan *node)
 	WRITE_NODE_TYPE("DYNAMICBITMAPHEAPSCAN");
 
 	outBitmapHeapScanFields(str, &node->bitmapheapscan);
-	WRITE_INT_FIELD(partIndex);
-	WRITE_INT_FIELD(partIndexPrintable);
+	WRITE_NODE_FIELD(partOids);
 }
 
 static void
@@ -1371,19 +1369,8 @@ _outPartitionSelector(StringInfo str, const PartitionSelector *node)
 {
 	WRITE_NODE_TYPE("PartitionSelector");
 
-	WRITE_INT_FIELD(parentRTI);
-	WRITE_INT_FIELD(nLevels);
-	WRITE_INT_FIELD(scanId);
-	WRITE_INT_FIELD(selectorId);
-	WRITE_NODE_FIELD(levelEqExpressions);
-	WRITE_NODE_FIELD(levelExpressions);
-	WRITE_NODE_FIELD(residualPredicate);
-	WRITE_NODE_FIELD(propagationExpression);
-	WRITE_NODE_FIELD(printablePredicate);
-	WRITE_BOOL_FIELD(staticSelection);
-	WRITE_NODE_FIELD(staticPartOids);
-	WRITE_NODE_FIELD(staticScanIds);
-	WRITE_NODE_FIELD(partkeyExpressions);
+	WRITE_INT_FIELD(paramid);
+	WRITE_NODE_FIELD(part_prune_info);
 
 	_outPlanInfo(str, (Plan *) node);
 }
@@ -4129,15 +4116,6 @@ _outDMLActionExpr(StringInfo str, const DMLActionExpr *node)
 }
 
 static void
-_outPartSelectedExpr(StringInfo str, const PartSelectedExpr *node)
-{
-	WRITE_NODE_TYPE("PARTSELECTEDEXPR");
-
-	WRITE_INT_FIELD(dynamicScanId);
-	WRITE_OID_FIELD(partOid);
-}
-
-static void
 _outTriggerTransition(StringInfo str, const TriggerTransition *node)
 {
 	WRITE_NODE_TYPE("TRIGGERTRANSITION");
@@ -6407,10 +6385,6 @@ outNode(StringInfo str, const void *obj)
 
 			case T_DMLActionExpr:
 				_outDMLActionExpr(str, obj);
-				break;
-
-			case T_PartSelectedExpr:
-				_outPartSelectedExpr(str, obj);
 				break;
 
 			case T_CreateTrigStmt:

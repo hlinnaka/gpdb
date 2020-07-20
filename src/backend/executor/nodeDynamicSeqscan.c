@@ -8,6 +8,14 @@
  * DynamicSeqScan node scans each relation one after the other. For each
  * relation, it opens the table, scans the tuple, and returns relevant tuples.
  *
+ * GPDB_12_MERGE_FIXME: This is currently disabled altogether. If it is
+ * resurrected, some changes are needed to GPORCA. The way Partition
+ * Selectors work has been heavily rewritten, there's no global hash table
+ * of selected partitions anymore. For "static selection", there's a
+ * partOids field in the DynamicSeqScan plan node that holds the selected
+ * partitions; but none of the code in this file has been fixed to
+ * actually work that way. Same with all the other Dynamic*Scan nodes.
+ *
  * Portions Copyright (c) 2012 - present, EMC/Greenplum
  * Portions Copyright (c) 2012-Present Pivotal Software, Inc.
  *

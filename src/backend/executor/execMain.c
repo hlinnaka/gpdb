@@ -61,7 +61,6 @@
 #include "storage/lmgr.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
-#include "utils/builtins.h" /* dumpDynamicTableScanPidIndex() */
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/partcache.h"
@@ -1074,16 +1073,6 @@ standard_ExecutorEnd(QueryDesc *queryDesc)
 			case 2:
 				ereport(LOG, (errmsg("duration to ExecutorEnd starting: %s ms", msec_str)));
 				break;
-		}
-	}
-
-	if (gp_partitioning_dynamic_selection_log &&
-		estate->dynamicTableScanInfo != NULL &&
-		estate->dynamicTableScanInfo->numScans > 0)
-	{
-		for (int scanNo = 0; scanNo < estate->dynamicTableScanInfo->numScans; scanNo++)
-		{
-			dumpDynamicTableScanPidIndex(estate, scanNo);
 		}
 	}
 

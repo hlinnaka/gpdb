@@ -1463,6 +1463,35 @@ set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 	pfree(parent_attrsizes);
 }
 
+
+static void
+collect_leaf_relids(RelOptInfo *rel, Bitmapset **children)
+{
+	int			i;
+
+	/* Guard against stack overflow due to overly complex partitioning */
+	check_stack_depth();
+
+	if (rel->part_scheme)
+	{
+		for (i = 0; i < rel->nparts; i++)
+		{
+			/*
+			 * There can be holes in the 'part_rels' array, if some
+			 * partitions were pruned at plan time already.
+			 */
+			if (rel->part_rels[i])
+				collect_leaf_relids(rel->part_rels[i], children);
+		}
+	}
+	else
+	{
+		Assert(rel->reloptkind == RELOPT_BASEREL ||
+			   rel->reloptkind == RELOPT_OTHER_MEMBER_REL);
+		*children = bms_add_member(*children, rel->relid);
+	}
+}
+
 /*
  * set_append_rel_pathlist
  *	  Build access paths for an "append relation"

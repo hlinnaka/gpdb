@@ -408,33 +408,6 @@ expand_partitioned_rtentry(PlannerInfo *root, RelOptInfo *relinfo,
 		/* Close child relation, but keep locks */
 		table_close(childrel, NoLock);
 	}
-
-	/* GPDB: Build a DynamicScanInfo struct to remember this expansion.
-	 * This is used to possibly build PartitionSelector nodes for this
-	 * later.
-	 */
-	{
-		DynamicScanInfo *dsinfo;
-
-		dsinfo = palloc(sizeof(DynamicScanInfo));
-		dsinfo->parentOid = RelationGetRelid(parentrel);
-		dsinfo->rtindex = parentRTindex;
-		dsinfo->hasSelector = false;
-
-		dsinfo->children = NULL;
-		for (int i = 0; i < relinfo->nparts; i++)
-		{
-			RelOptInfo *childrelinfo = relinfo->part_rels[i];
-
-			if (childrelinfo)
-				dsinfo->children = bms_add_member(dsinfo->children, childrelinfo->relid);
-		}
-
-		dsinfo->partkey = RelationGetPartitionKey(parentrel);
-
-		root->dynamicScans = lappend(root->dynamicScans, dsinfo);
-		dsinfo->dynamicScanId = list_length(root->dynamicScans);
-	}
 }
 
 /*

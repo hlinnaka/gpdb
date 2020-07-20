@@ -428,6 +428,13 @@ typedef struct Append
 
 	/* Info for run-time subplan pruning; NULL if we're not doing that */
 	struct PartitionPruneInfo *part_prune_info;
+
+	/*
+	 * Info for run-time join pruning, using Partition Selector nodes.
+	 * These param IDs contain additional Bitmapsets containing selected
+	 * partitions.
+	 */
+	List	   *join_prune_paramids;
 } Append;
 
 /* ----------------
@@ -447,6 +454,13 @@ typedef struct MergeAppend
 	bool	   *nullsFirst;		/* NULLS FIRST/LAST directions */
 	/* Info for run-time subplan pruning; NULL if we're not doing that */
 	struct PartitionPruneInfo *part_prune_info;
+
+	/*
+	 * Info for run-time join pruning, using Partition Selector nodes.
+	 * These param IDs contain additional Bitmapsets containing selected
+	 * partitions.
+	 */
+	List	   *join_prune_paramids;
 } MergeAppend;
 
 /*
@@ -624,11 +638,9 @@ typedef struct DynamicIndexScan
 	IndexScan	indexscan;
 
 	/*
-	 * Index to arrays in EState->dynamicTableScanInfo, that contain information
-	 * about the partitiones that need to be scanned.
+	 * List of partition OIDs to scan.
 	 */
-	int32 		partIndex;
-	int32 		partIndexPrintable;
+	List	   *partOids;
 
 	/* logical index to use */
 	LogicalIndexInfo *logicalIndexInfo;
@@ -704,11 +716,9 @@ typedef struct DynamicBitmapIndexScan
 	BitmapIndexScan biscan;
 
 	/*
-	 * Index to arrays in EState->dynamicTableScanInfo, that contain information
-	 * about the partitiones that need to be scanned.
+	 * List of partition OIDs to scan.
 	 */
-	int32 		partIndex;
-	int32 		partIndexPrintable;
+	List	   *partOids;
 
 	/* logical index to use */
 	LogicalIndexInfo *logicalIndexInfo;
@@ -740,11 +750,9 @@ typedef struct DynamicBitmapHeapScan
 	BitmapHeapScan bitmapheapscan;
 
 	/*
-	 * Index to arrays in EState->dynamicTableScanInfo, that contain information
-	 * about the partitiones that need to be scanned.
+	 * List of partition OIDs to scan.
 	 */
-	int32 		partIndex;
-	int32 		partIndexPrintable;
+	List	   *partOids;
 } DynamicBitmapHeapScan;
 
 /*
@@ -757,11 +765,9 @@ typedef struct DynamicSeqScan
 	SeqScan		seqscan;
 
 	/*
-	 * Index to arrays in EState->dynamicTableScanInfo, that contain information
-	 * about the partitiones that need to be scanned.
+	 * List of partition OIDs to scan.
 	 */
-	int32 		partIndex;
-	int32 		partIndexPrintable;
+	List	   *partOids;
 } DynamicSeqScan;
 
 /* ----------------
@@ -1737,47 +1743,20 @@ typedef struct PlanInvalItem
 /* ----------------
  * PartitionSelector node
  *
- * PartitionSelector finds a set of leaf partition OIDs given the root table
- * OID and optionally selection predicates.
- *
- * It hides the logic of partition selection and propagation instead of
- * polluting the plan with it to make a plan look consistent and easy to
- * understand. It will be easy to locate where partition selection happens
- * in a plan.
- *
- * A PartitionSelection can work in three different ways:
- *
- * 1. Dynamic selection, based on tuples that pass through it.
- * 2. Dynamic selection, with a projected tuple.
- * 3. Static selection, performed at beginning of execution.
- *
+ * PartitionSelector performs partition pruning based on rows seen on
+ * the "other" side of a join. It performs partition pruning similar to
+ * run-time partition pruning in an Append node, but it is performed based
+ * on the rows seen, instead of executor params. The set of surviving
+ * partitions is made available to the Append node, by storing it in a
+ * special executor param, identified by 'paramid' field.
  * ----------------
  */
 typedef struct PartitionSelector
 {
 	Plan		plan;
-	Index		parentRTI;				/* index in range table of parent rel */
-	int 		nLevels;				/* number of partition levels */
-	int32 		scanId; 				/* id of the corresponding dynamic scan */
-	int32		selectorId;				/* id of this partition selector */
 
-	/* Fields for dynamic selection */
-	List		*levelEqExpressions;	/* equality expressions used for individual levels */
-	List		*levelExpressions;  	/* predicates used for individual levels */
-	Node		*residualPredicate; 	/* residual predicate (to be applied at the end) */
-	Node		*propagationExpression; /* propagation expression */
-	Node		*printablePredicate;	/* printable predicate (for explain purposes) */
-
-	/*
-	 * Fields for dynamic selection, by extracting partitioning keys from
-	 * input tuples.
-	 */
-	List	   *partkeyExpressions;
-
-	/* Fields for static selection */
-	bool		staticSelection;    	/* static selection performed? */
-	List		*staticPartOids;    	/* list of statically selected parts */
-	List		*staticScanIds;     	/* scan ids used to propagate statically selected part oids */
+	struct PartitionPruneInfo *part_prune_info;
+	int32		paramid;	/* result is stored here */
 
 } PartitionSelector;
 

@@ -363,7 +363,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_SQLVALUEFUNCTION,
 		&&CASE_EEOP_CURRENTOFEXPR,
 		&&CASE_EEOP_NEXTVALUEEXPR,
-		&&CASE_EEOP_PARTSELECTEDEXPR,
 		&&CASE_EEOP_ARRAYEXPR,
 		&&CASE_EEOP_ARRAYCOERCE,
 		&&CASE_EEOP_ROW,
@@ -1231,17 +1230,6 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			 * efficiency-wise.
 			 */
 			ExecEvalNextValueExpr(state, op);
-
-			EEO_NEXT();
-		}
-
-		EEO_CASE(EEOP_PARTSELECTEDEXPR)
-		{
-			/*
-			 * Doesn't seem worthwhile to have an inline implementation
-			 * efficiency-wise.
-			 */
-			ExecEvalPartSelectedExpr(state, op, econtext);
 
 			EEO_NEXT();
 		}
@@ -2547,67 +2535,6 @@ ExecEvalNextValueExpr(ExprState *state, ExprEvalStep *op)
 				 op->d.nextvalueexpr.seqtypid);
 	}
 	*op->resnull = false;
-}
-
-/*
- * createPidIndex
- *   Create the pid index for a given dynamic table scan.
- */
-static HTAB *
-createPidIndex(EState *estate, int index)
-{
-	Assert((estate->dynamicTableScanInfo->pidIndexes)[index - 1] == NULL);
-
-	HASHCTL hashCtl;
-	MemSet(&hashCtl, 0, sizeof(HASHCTL));
-	hashCtl.keysize = sizeof(Oid);
-	hashCtl.entrysize = sizeof(PartOidEntry);
-	hashCtl.hash = oid_hash;
-	hashCtl.hcxt = estate->es_query_cxt;
-
-	return hash_create("Dynamic Table Scan Pid Index",
-					   INITIAL_NUM_PIDS,
-					   &hashCtl,
-					   HASH_ELEM | HASH_CONTEXT | HASH_FUNCTION);
-}
-
-static bool
-isPartitionSelected(EState *estate, int index, Oid partOid)
-{
-	DynamicTableScanInfo *dynamicTableScanInfo = estate->dynamicTableScanInfo;
-	bool		found = false;
-
-	Assert(dynamicTableScanInfo != NULL);
-
-	/* It's 1 based indexing */
-	Assert(index > 0);
-
-	if (index > dynamicTableScanInfo->numScans)
-		elog(ERROR, "cannot execute PartSelectedExpr before PartitionSelector");
-
-	if ((dynamicTableScanInfo->pidIndexes)[index - 1] == NULL)
-	{
-		dynamicTableScanInfo->pidIndexes[index - 1] = createPidIndex(estate, index);
-	}
-
-	Assert(dynamicTableScanInfo->pidIndexes[index - 1] != NULL);
-
-	(void) hash_search(dynamicTableScanInfo->pidIndexes[index - 1],
-					   &partOid, HASH_FIND, &found);
-
-	return found;
-}
-
-/*
- * Evaluate PartSelectedExpr.
- */
-void
-ExecEvalPartSelectedExpr(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
-{
-	*op->resnull = false;
-	*op->resvalue = BoolGetDatum(isPartitionSelected(econtext->ecxt_estate,
-													 op->d.partselectedexpr.dynamicScanId,
-													 op->d.partselectedexpr.partOid));
 }
 
 /*

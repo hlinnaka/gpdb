@@ -955,7 +955,6 @@ exprCollation(const Node *expr)
 			break;
 
 		case T_DMLActionExpr:
-		case T_PartSelectedExpr:
 		case T_PartDefaultExpr:
 		case T_PartBoundExpr:
 		case T_PartBoundInclusionExpr:
@@ -1957,7 +1956,6 @@ expression_tree_walker(Node *node,
 		case T_RangeTblRef:
 		case T_SortGroupClause:
 		case T_DMLActionExpr:
-		case T_PartSelectedExpr:
 		case T_PartDefaultExpr:
 		case T_PartBoundExpr:
 		case T_PartBoundInclusionExpr:
@@ -2369,21 +2367,10 @@ expression_tree_walker(Node *node,
 
 		case T_PartitionSelector:
 			{
-				PartitionSelector *pselector = (PartitionSelector *) node;
+				//PartitionSelector *pselector = (PartitionSelector *) node;
 
-				if (expression_tree_walker((Node *) pselector->levelEqExpressions, walker,
-										   context))
-					return true;
-				if (expression_tree_walker((Node *) pselector->levelExpressions, walker,
-										   context))
-					return true;
-				if (walker((Node *) pselector->residualPredicate, context))
-					return true;
-				if (walker((Node *) pselector->printablePredicate, context))
-					return true;
-				if (expression_tree_walker((Node *) pselector->partkeyExpressions, walker,
-										   context))
-					return true;
+				/* GPDB_12_MERGE_FIXME: need to walk prune info? We don't do that
+				 * in Append either.. */
 			}
 			break;
 
@@ -2706,7 +2693,6 @@ expression_tree_mutator(Node *node,
 		case T_RangeTblRef:
 		case T_String:
 		case T_Null:
-		case T_PartSelectedExpr:
 		case T_PartDefaultExpr:
 		case T_PartBoundExpr:
 		case T_PartBoundInclusionExpr:
@@ -3393,11 +3379,6 @@ expression_tree_mutator(Node *node,
 				PartitionSelector *newnode;
 
 				FLATCOPY(newnode, pselector, PartitionSelector);
-				MUTATE(newnode->levelEqExpressions, pselector->levelEqExpressions, List *);
-				MUTATE(newnode->levelExpressions, pselector->levelExpressions, List *);
-				MUTATE(newnode->residualPredicate, pselector->residualPredicate, Node *);
-				MUTATE(newnode->printablePredicate, pselector->printablePredicate, Node *);
-				MUTATE(newnode->partkeyExpressions, pselector->partkeyExpressions, List *);
 				return (Node *) newnode;
 			}
 			break;

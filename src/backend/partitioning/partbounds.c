@@ -40,8 +40,6 @@
 #include "utils/ruleutils.h"
 #include "utils/syscache.h"
 
-#include "cdb/cdbvars.h"
-
 /*
  * When qsort'ing partition bounds after reading from the catalog, each bound
  * is represented with one of the following structs.

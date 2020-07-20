@@ -1684,18 +1684,6 @@ typedef struct DMLActionExpr
  * Can they all be removed now? */
 
 /*
- * PartSelectedExpr
- *
- * Returns true, if the PartitionSelector has selected this partition.
- */
-typedef struct PartSelectedExpr
-{
-	Expr		xpr;
-	int			dynamicScanId;
-	Oid			partOid;
-} PartSelectedExpr;
-
-/*
  * PartDefaultExpr
  * Represents the expression which determines whether this a part is a default part
  */

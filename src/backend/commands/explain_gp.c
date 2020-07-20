@@ -283,9 +283,6 @@ static int cdbexplain_countLeafPartTables(PlanState *planstate);
 static void show_motion_keys(PlanState *planstate, List *hashExpr, int nkeys,
 							 AttrNumber *keycols, const char *qlabel,
 							 List *ancestors, ExplainState *es);
-static void explain_partition_selector(PartitionSelector *ps,
-						   PlanState *parentstate,
-						   List *ancestors, ExplainState *es);
 static void
 gpexplain_formatSlicesOutput(struct CdbExplain_ShowStatCtx *showstatctx,
                              struct EState *estate,
@@ -2200,41 +2197,4 @@ show_motion_keys(PlanState *planstate, List *hashExpr, int nkeys, AttrNumber *ke
 	    exprstr = deparse_expression((Node *)hashExpr, context, useprefix, true);
 		ExplainPropertyText("Hash Key", exprstr, es);
     }
-}
-
-/*
- * Explain a partition selector node, including partition elimination
- * expression and number of statically selected partitions, if available.
- */
-static void
-explain_partition_selector(PartitionSelector *ps, PlanState *parentstate,
-						   List *ancestors, ExplainState *es)
-{
-	if (ps->printablePredicate)
-	{
-		List	   *context;
-		bool		useprefix;
-		char	   *exprstr;
-
-		/* Set up deparsing context */
-		context = set_deparse_context_planstate(es->deparse_cxt,
-												(Node *) parentstate,
-												ancestors);
-		useprefix = list_length(es->rtable) > 1;
-
-		/* Deparse the expression */
-		exprstr = deparse_expression(ps->printablePredicate, context, useprefix, false);
-
-		ExplainPropertyText("Filter", exprstr, es);
-	}
-
-	if (ps->staticSelection)
-	{
-		int nPartsSelected = list_length(ps->staticPartOids);
-		/* GDPB_12_MERGE_FIXME */
-		//int nPartsTotal = countLeafPartTables(ps->relid);
-		int nPartsTotal = -1;
-
-		ExplainPropertyStringInfo("Partitions selected", es, "%d (out of %d)", nPartsSelected, nPartsTotal);
-	}
 }

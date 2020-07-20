@@ -396,6 +396,7 @@ _copyAppend(const Append *from)
 	COPY_NODE_FIELD(appendplans);
 	COPY_SCALAR_FIELD(first_partial_plan);
 	COPY_NODE_FIELD(part_prune_info);
+	COPY_NODE_FIELD(join_prune_paramids);
 
 	return newnode;
 }
@@ -433,6 +434,7 @@ _copyMergeAppend(const MergeAppend *from)
 	COPY_POINTER_FIELD(collations, from->numCols * sizeof(Oid));
 	COPY_POINTER_FIELD(nullsFirst, from->numCols * sizeof(bool));
 	COPY_NODE_FIELD(part_prune_info);
+	COPY_NODE_FIELD(join_prune_paramids);
 
 	return newnode;
 }
@@ -614,8 +616,7 @@ _copyDynamicSeqScan(const DynamicSeqScan *from)
 	DynamicSeqScan *newnode = makeNode(DynamicSeqScan);
 
 	CopyScanFields((Scan *) from, (Scan *) newnode);
-	COPY_SCALAR_FIELD(partIndex);
-	COPY_SCALAR_FIELD(partIndexPrintable);
+	COPY_NODE_FIELD(partOids);
 
 	return newnode;
 }
@@ -702,8 +703,7 @@ _copyDynamicIndexScan(const DynamicIndexScan *from)
 
 	/* DynamicIndexScan has some content from IndexScan */
 	CopyIndexScanFields(&from->indexscan, &newnode->indexscan);
-	COPY_SCALAR_FIELD(partIndex);
-	COPY_SCALAR_FIELD(partIndexPrintable);
+	COPY_NODE_FIELD(partOids);
 	newnode->logicalIndexInfo = CopyLogicalIndexInfo(from->logicalIndexInfo);
 
 	return newnode;
@@ -768,8 +768,7 @@ _copyDynamicBitmapIndexScan(const DynamicBitmapIndexScan *from)
 	DynamicBitmapIndexScan *newnode = makeNode(DynamicBitmapIndexScan);
 
 	CopyBitmapIndexScanFields(&from->biscan, &newnode->biscan);
-	COPY_SCALAR_FIELD(partIndex);
-	COPY_SCALAR_FIELD(partIndexPrintable);
+	COPY_NODE_FIELD(partOids);
 	newnode->logicalIndexInfo = CopyLogicalIndexInfo(from->logicalIndexInfo);
 
 	return newnode;
@@ -811,8 +810,7 @@ _copyDynamicBitmapHeapScan(const DynamicBitmapHeapScan *from)
 	DynamicBitmapHeapScan *newnode = makeNode(DynamicBitmapHeapScan);
 
 	CopyBitmapHeapScanFields(&from->bitmapheapscan, &newnode->bitmapheapscan);
-	COPY_SCALAR_FIELD(partIndex);
-	COPY_SCALAR_FIELD(partIndexPrintable);
+	COPY_NODE_FIELD(partOids);
 
 	return newnode;
 }
@@ -1654,8 +1652,6 @@ _copyAssertOp(const AssertOp *from)
 	return newnode;
 }
 
-/* GPDB_12_MERGE_FIXME: Is PartitionSelector still needed? */
-#if 0
 /*
  * _copyPartitionSelector
  */
@@ -1669,23 +1665,11 @@ _copyPartitionSelector(const PartitionSelector *from)
 	 */
 	CopyPlanFields((Plan *) from, (Plan *) newnode);
 
-	COPY_SCALAR_FIELD(relid);
-	COPY_SCALAR_FIELD(nLevels);
-	COPY_SCALAR_FIELD(scanId);
-	COPY_SCALAR_FIELD(selectorId);
-	COPY_NODE_FIELD(levelEqExpressions);
-	COPY_NODE_FIELD(levelExpressions);
-	COPY_NODE_FIELD(residualPredicate);
-	COPY_NODE_FIELD(propagationExpression);
-	COPY_NODE_FIELD(printablePredicate);
-	COPY_SCALAR_FIELD(staticSelection);
-	COPY_NODE_FIELD(staticPartOids);
-	COPY_NODE_FIELD(staticScanIds);
-	COPY_NODE_FIELD(partTabTargetlist);
+	COPY_SCALAR_FIELD(paramid);
+	COPY_NODE_FIELD(part_prune_info);
 
 	return newnode;
 }
-#endif
 
 /* ****************************************************************
  *					   primnodes.h copy functions
@@ -3560,16 +3544,6 @@ static DMLActionExpr *
 _copyDMLActionExpr(const DMLActionExpr *from)
 {
 	DMLActionExpr *newnode = makeNode(DMLActionExpr);
-
-	return newnode;
-}
-
-static PartSelectedExpr *
-_copyPartSelectedExpr(const PartSelectedExpr *from)
-{
-	PartSelectedExpr *newnode = makeNode(PartSelectedExpr);
-	COPY_SCALAR_FIELD(dynamicScanId);
-	COPY_SCALAR_FIELD(partOid);
 
 	return newnode;
 }
@@ -6071,12 +6045,9 @@ copyObjectImpl(const void *from)
 		case T_AssertOp:
 			retval = _copyAssertOp(from);
 			break;
-/* GPDB_12_MERGE_FIXME: Is PartitionSelector still needed? */
-#if 0
 		case T_PartitionSelector:
 			retval = _copyPartitionSelector(from);
 			break;
-#endif
 
 			/*
 			 * PRIMITIVE NODES
@@ -6782,9 +6753,6 @@ copyObjectImpl(const void *from)
 			break;
 		case T_DMLActionExpr:
 			retval = _copyDMLActionExpr(from);
-			break;
-		case T_PartSelectedExpr:
-			retval = _copyPartSelectedExpr(from);
 			break;
 		case T_PartDefaultExpr:
 			retval = _copyPartDefaultExpr(from);

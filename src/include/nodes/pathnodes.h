@@ -432,7 +432,16 @@ struct PlannerInfo
 
 	PlannerConfig *config;		/* Planner configuration */
 
-	List	   *dynamicScans;	/* DynamicScanInfos */
+	/*
+	 * Join pruning bookkeeping for create_plan(). Stack of candidate joins
+	 * above current node that can be used for join partition pruning.
+	 *
+	 * GPDB_13_MERGE_FIXME: this is currently used as a stack with
+	 * lcons() and list_delete_first(). With v13 and commits 1cff1b95ab
+	 * and d97b714a21, we should use lappend() and list_delete_last()
+	 * instead, for performance.
+	 */
+	List	   *partition_selector_candidates;
 
 	/* optional private data for join_search_hook, e.g., GEQO */
 	void	   *join_search_private;
@@ -465,36 +474,27 @@ typedef struct CtePlanInfo
 	PlannerInfo *subroot;
 } CtePlanInfo;
 
-/*----------
- * DynamicScanInfo
- *		Information about scans on partitioned tables.
- *
- * Scans on partitioned tables are expanded into Append paths early
- * in the planning. For each such expansion, we create a DynamicScanInfo
- * struct.
- *----------
+/*
+ * This is used in create_plan_recurse() to keep track of joins above
+ * the current node that could be used for join partition pruning.
  */
 typedef struct
 {
-	/*
-	 * The scans are numbered, so that a Partition Selector can
-	 * refer to the scan.
-	 */
-	int			dynamicScanId;
+	List	   *joinrestrictinfo;
+	Relids		inner_relids;	/* rels on the inner side of the join
+								 * that can provide vars for pruning */
 
-	/* Parent relation this is for */
-	int			rtindex;
-	Oid			parentOid;
+	List	   *selectors;	/* list of PartitionSelectorInfos */
 
-	/* RTindexes of the leaf relations */
-	Relids		children;
+} PartitionSelectorCandidateInfo;
 
-	/* Partitioning key information */
-	PartitionKey partkey;
+typedef struct
+{
+	/* Has this selector been connected to an Append node? */
+	int			paramid;
+	struct PartitionPruneInfo *part_prune_info;
+} PartitionSelectorInfo;
 
-	/* Set to true, if a PartitionSelector has been created for this scan */
-	bool		hasSelector;
-} DynamicScanInfo;
 
 /*
  * In places where it's known that simple_rte_array[] must have been prepared
@@ -1385,9 +1385,8 @@ typedef struct PartitionSelectorPath
 
     Path	   *subpath;
 
-	DynamicScanInfo *dsinfo;
-	List	   *partKeyExprs;
-	List	   *partKeyAttnos;
+	int			paramid;
+	struct PartitionPruneInfo *part_prune_info;
 } PartitionSelectorPath;
 
 /* Macro for extracting a path's parameterization relids; beware double eval */

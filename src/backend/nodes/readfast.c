@@ -284,17 +284,6 @@ _readDMLActionExpr(void)
 	READ_DONE();
 }
 
-static PartSelectedExpr *
-_readPartSelectedExpr(void)
-{
-	READ_LOCALS(PartSelectedExpr);
-
-	READ_INT_FIELD(dynamicScanId);
-	READ_OID_FIELD(partOid);
-
-	READ_DONE();
-}
-
 static PartDefaultExpr *
 _readPartDefaultExpr(void)
 {
@@ -1028,8 +1017,7 @@ _readDynamicSeqScan(void)
 	READ_LOCALS(DynamicSeqScan);
 
 	ReadCommonScan(&local_node->seqscan);
-	READ_INT_FIELD(partIndex);
-	READ_INT_FIELD(partIndexPrintable);
+	READ_NODE_FIELD(partOids);
 
 	READ_DONE();
 }
@@ -1181,19 +1169,8 @@ _readPartitionSelector(void)
 {
 	READ_LOCALS(PartitionSelector);
 
-	READ_INT_FIELD(parentRTI);
-	READ_INT_FIELD(nLevels);
-	READ_INT_FIELD(scanId);
-	READ_INT_FIELD(selectorId);
-	READ_NODE_FIELD(levelEqExpressions);
-	READ_NODE_FIELD(levelExpressions);
-	READ_NODE_FIELD(residualPredicate);
-	READ_NODE_FIELD(propagationExpression);
-	READ_NODE_FIELD(printablePredicate);
-	READ_BOOL_FIELD(staticSelection);
-	READ_NODE_FIELD(staticPartOids);
-	READ_NODE_FIELD(staticScanIds);
-	READ_NODE_FIELD(partkeyExpressions);
+	READ_INT_FIELD(paramid);
+	READ_NODE_FIELD(part_prune_info);
 
 	ReadCommonPlan(&local_node->plan);
 
@@ -2417,9 +2394,6 @@ readNodeBinary(void)
 				break;
 			case T_DMLActionExpr:
 				return_value = _readDMLActionExpr();
-				break;
-			case T_PartSelectedExpr:
-				return_value = _readPartSelectedExpr();
 				break;
 			case T_PartDefaultExpr:
 				return_value = _readPartDefaultExpr();

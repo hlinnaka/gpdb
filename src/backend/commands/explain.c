@@ -132,6 +132,7 @@ static void show_instrumentation_count(const char *qlabel, int which,
 									   PlanState *planstate, ExplainState *es);
 static void show_foreignscan_info(ForeignScanState *fsstate, ExplainState *es);
 static void show_eval_params(Bitmapset *bms_params, ExplainState *es);
+static void show_join_pruning_info(List *join_prune_ids, ExplainState *es);
 static const char *explain_get_index_name(Oid indexId);
 static void show_buffer_usage(ExplainState *es, const BufferUsage *usage);
 static void ExplainIndexScanDetails(Oid indexid, ScanDirection indexorderdir,
@@ -2000,29 +2001,14 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_PartitionSelector:
 			{
 				PartitionSelector *ps = (PartitionSelector *) plan;
-				Index		rti = ps->parentRTI;
-				char	   *refname;
-				RangeTblEntry *rte;
-
-				rte = rt_fetch(rti, es->rtable);
-				refname = (char *) list_nth(es->rtable_names, rti - 1);
-				if (refname == NULL)
-					refname = rte->eref->aliasname;
 
 				if (es->format == EXPLAIN_FORMAT_TEXT)
 				{
-					if (ps->scanId != 0)
-						appendStringInfo(es->str, " for %s (dynamic scan id: %d)",
-										 quote_identifier(refname),
-										 ps->scanId);
-					else
-						appendStringInfo(es->str, " for %s", quote_identifier(refname));
+					appendStringInfo(es->str, " (selector id: $%d)", ps->paramid);
 				}
 				else
 				{
-					ExplainPropertyText("Alias", refname, es);
-					if (ps->scanId != 0)
-						ExplainPropertyInteger("Dynamic Scan Id", NULL, ps->scanId, es);
+					ExplainPropertyInteger("Selector ID", NULL, ps->paramid, es);
 				}
 			}
 			break;
@@ -2495,9 +2481,8 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_AssertOp:
 			show_upper_qual(plan->qual, "Assert Cond", planstate, ancestors, es);
 			break;
-		case T_PartitionSelector:
-			explain_partition_selector((PartitionSelector *) plan,
-									   parentplanstate, ancestors, es);
+		case T_Append:
+			show_join_pruning_info(((Append *) plan)->join_prune_paramids, es);
 			break;
 		default:
 			break;
@@ -3651,6 +3636,27 @@ show_eval_params(Bitmapset *bms_params, ExplainState *es)
 
 	if (params)
 		ExplainPropertyList("Params Evaluated", params, es);
+}
+
+static void
+show_join_pruning_info(List *join_prune_ids, ExplainState *es)
+{
+	List	   *params = NIL;
+	ListCell   *lc;
+
+	if (!join_prune_ids)
+		return;
+
+	foreach(lc, join_prune_ids)
+	{
+		int			paramid = lfirst_int(lc);
+		char		param[32];
+
+		snprintf(param, sizeof(param), "$%d", paramid);
+		params = lappend(params, pstrdup(param));
+	}
+
+	ExplainPropertyList("Partition Selectors", params, es);
 }
 
 /*

@@ -2003,18 +2003,87 @@ ExecFindInitialMatchingSubPlans(PartitionPruneState *prunestate, int nsubplans)
 }
 
 /*
+ * Like ExecFindMatchingSubPlans, but adds the matching partitions
+ * to an existing Bitmapset.
+ */
+Bitmapset *
+ExecAddMatchingSubPlans(PartitionPruneState *prunestate, Bitmapset *result)
+{
+	Bitmapset *thisresult;
+
+	/* GPDB_12_MERGE_FIXME: Currently, this just calls
+	 * ExecFindMatchingSubPlans() and adds the new result to
+	 * the passed-in Bitmapset. That's a bit inefficient.
+	 */
+	thisresult = ExecFindMatchingSubPlans(prunestate, NULL, NIL);
+
+	result = bms_add_members(result, thisresult);
+
+	bms_free(thisresult);
+
+	return result;
+}
+
+/*
  * ExecFindMatchingSubPlans
  *		Determine which subplans match the pruning steps detailed in
  *		'prunestate' for the current comparison expression values.
  *
  * Here we assume we may evaluate PARAM_EXEC Params.
+ *
+ * GPDB: 'join_prune_paramids' can contain a list of PARAM_EXEC Param IDs
+ * containing results that were computed earlier by PartitionSelector
+ * nodes.
  */
 Bitmapset *
-ExecFindMatchingSubPlans(PartitionPruneState *prunestate)
+ExecFindMatchingSubPlans(PartitionPruneState *prunestate,
+						 EState *estate,
+						 List *join_prune_paramids)
 {
 	Bitmapset  *result = NULL;
 	MemoryContext oldcontext;
 	int			i;
+	Bitmapset  *join_selected = NULL;
+
+	if (join_prune_paramids)
+	{
+		ListCell   *lc;
+
+		foreach (lc,  join_prune_paramids)
+		{
+			int			paramid = lfirst_int(lc);
+			ParamExecData *param;
+			PartitionSelectorState *psstate;
+
+			param = &(estate->es_param_exec_vals[paramid]);
+			Assert(param->execPlan == NULL);
+			Assert(!param->isnull);
+			psstate = (PartitionSelectorState *) DatumGetPointer(param->value);
+
+			if (psstate == NULL)
+			{
+				/*
+				 * The planner should have ensured that the Partition Selector
+				 * is fully executed before the Append.
+				 */
+				elog(WARNING, "partition selector was not fully executed");
+			}
+			else
+			{
+				Assert(IsA(psstate, PartitionSelectorState));
+
+				join_selected = bms_add_members(join_selected,
+												psstate->part_prune_result);
+			}
+		}
+
+
+		if (!prunestate)
+		{
+			/* rely entirely on partition selectors */
+			return join_selected;
+		}
+	}
 
 	/*
 	 * If !do_exec_prune, we've got problems because
@@ -2051,10 +2120,17 @@ ExecFindMatchingSubPlans(PartitionPruneState *prunestate)
 	/* Add in any subplans that partition pruning didn't account for */
 	result = bms_add_members(result, prunestate->other_subplans);
 
+	/* XXX: subtract subplans that were eliminated by the Partition Selector */
+
 	MemoryContextSwitchTo(oldcontext);
 
 	/* Copy result out of the temp context before we reset it */
 	result = bms_copy(result);
+
+	if (join_prune_paramids)
+	{
+		result = bms_intersect(result, join_selected);
+	}
 
 	MemoryContextReset(prunestate->prune_context);
 

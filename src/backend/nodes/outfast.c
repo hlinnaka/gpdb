@@ -1813,9 +1813,6 @@ _outNode(StringInfo str, void *obj)
 			case T_RowIdExpr:
 				_outRowIdExpr(str, obj);
 				break;
-			case T_PartSelectedExpr:
-				_outPartSelectedExpr(str, obj);
-				break;
 			case T_RestrictInfo:
 				_outRestrictInfo(str, obj);
 				break;

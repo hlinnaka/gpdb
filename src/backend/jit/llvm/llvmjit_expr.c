@@ -1588,12 +1588,6 @@ llvm_compile_expr(ExprState *state)
 				LLVMBuildBr(b, opblocks[i + 1]);
 				break;
 
-			case EEOP_PARTSELECTEDEXPR:
-				build_EvalXFunc(b, mod, "ExecEvalPartSelectedExpr",
-								v_state, v_econtext, op);
-				LLVMBuildBr(b, opblocks[i + 1]);
-				break;
-
 			case EEOP_ARRAYEXPR:
 				build_EvalXFunc(b, mod, "ExecEvalArrayExpr",
 								v_state, v_econtext, op);

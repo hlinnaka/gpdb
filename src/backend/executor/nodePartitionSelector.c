@@ -1,9 +1,52 @@
 /*-------------------------------------------------------------------------
  *
  * nodePartitionSelector.c
- *	  implement the execution of PartitionSelector for selecting partition
- *	  Oids based on a given set of predicates. It works for both constant
- *	  partition elimination and join partition elimination
+ *	  implement the execution of PartitionSelector for pruning partitions
+ *	  based on rows seen by the inner side of a join.
+ *
+ * For example:
+ *
+ * explain (costs off, timing off, analyze)
+ *   select * from t, pt where tid = ptid;
+ *                                             QUERY PLAN                                                    
+ * ---------------------------------------------------------------------------------------------
+ *  Gather Motion 3:1  (slice1; segments: 3) (actual rows=2 loops=1)
+ *    ->  Hash Join (actual rows=2 loops=1)
+ *          Hash Cond: (pt_1_prt_2.ptid = t.tid)
+ *          ->  Append (actual rows=2 loops=1)
+ *                ->  Seq Scan on pt_1_prt_2 (actual rows=1 loops=1)
+ *                ->  Seq Scan on pt_1_prt_3 (actual rows=1 loops=1)
+ *                ->  Seq Scan on pt_1_prt_4 (never executed)
+ *                ->  Seq Scan on pt_1_prt_5 (never executed)
+ *                ->  Seq Scan on pt_1_prt_6 (never executed)
+ *                ->  Seq Scan on pt_1_prt_junk_data (never executed)
+ *          ->  Hash (actual rows=2 loops=1)
+ *                Buckets: 524288  Batches: 1  Memory Usage: 4097kB
+ *                ->  Partition Selector for pt (dynamic scan id: 1) (actual rows=2 loops=1)
+ *                      ->  Broadcast Motion 3:3  (slice2; segments: 3) (actual rows=2 loops=1)
+ *                            ->  Seq Scan on t (actual rows=2 loops=1)
+ * (15 rows)
+ *
+ * In this example, the 't' table is scanned first, and the Hash table is
+ * built. All the rows also pased through the Partition Selector node. For
+ * each row, the Partition Selector computes the corresponding partition in
+ * the 'pt' table. Based on the rows seen, the Append node can skip partitions
+ * that cannot contain any matching rows.
+ *
+ * The Partition Selector has a PartitionPruneInfo struct that contains
+ * the logic used to compute the matching partition for each input row.
+ * In PostgreSQL, the partition pruning is performed entirely based on
+ * constants (at planning time), or based on constants and Params (run-time
+ * pruning). The pruning steps used in Partition Selectors can also
+ * contain Vars referring to the columns of the outer side of the join
+ * that are available at the Partition Selector.
+ *
+ * The Partition Selector performs the pruning and stores the result in a
+ * special executor Param to make it available to the Append node. When doing
+ * join pruning using a Partition Selector, the Append node doesn't perform
+ * the pruning steps, but uses the pre-computed result Bitmapset. (A mix of
+ * upstream-style pruning based on Params, an join pruning using a Partition
+ * Seletor, is possible however).
  *
  * Copyright (c) 2014-Present Pivotal Software, Inc.
  *
@@ -15,26 +58,14 @@
  */
 
 #include "postgres.h"
-#include "miscadmin.h"
 
 #include "access/table.h"
 #include "executor/executor.h"
 #include "executor/execPartition.h"
-#include "executor/instrument.h"
 #include "executor/nodePartitionSelector.h"
 #include "partitioning/partdesc.h"
 #include "utils/builtins.h"
-#include "utils/guc.h"
-#include "utils/lsyscache.h"
-#include "utils/partcache.h"
 #include "utils/rel.h"
-
-static void LogPartitionSelection(EState *estate, int32 selectorId);
-
-static void
-partition_propagation(EState *estate, List *partOids, List *scanIds, int32 selectorId);
-
-PartitionSelectorState *initPartitionSelection(PartitionSelector *node, EState *estate);
 
 static TupleTableSlot *ExecPartitionSelector(PlanState *pstate);
 
@@ -57,22 +88,9 @@ ExecInitPartitionSelector(PartitionSelector *node, EState *estate, int eflags)
 	psstate = makeNode(PartitionSelectorState);
 	psstate->ps.plan = (Plan *) node;
 	psstate->ps.state = estate;
-	//psstate->levelPartRules = (PartitionRule **) palloc0(node->nLevels * sizeof(PartitionRule *));
 
 	/* ExprContext initialization */
 	ExecAssignExprContext(estate, &psstate->ps);
-
-	/* initialize ExprState for evaluating expressions */
-	/* GPDB_12_MERGE_FIXME: these ways of selecting partitions have not been re-implemented yet */
-#if 0
-	psstate->levelEqExprStates = ExecInitExprList(node->levelEqExpressions, &psstate->ps);
-	psstate->levelExprStateLists = ExecInitExprList(node->levelExpressions, &psstate->ps);
-
-	ExprState *residualPredicateExprState = ExecInitExpr((Expr *) node->residualPredicate,
-														 (PlanState *) psstate);
-	psstate->residualPredicateExprStateList = list_make1(residualPredicateExprState);
-	psstate->propagationExprState = ExecInitExpr((Expr *) node->propagationExpression, (PlanState *) psstate);
-#endif
 
 	psstate->ps.ExecProcNode = ExecPartitionSelector;
 
@@ -80,21 +98,14 @@ ExecInitPartitionSelector(PartitionSelector *node, EState *estate, int eflags)
 	ExecInitResultTypeTL(&psstate->ps);
 	ExecAssignProjectionInfo(&psstate->ps, NULL);
 
-	/* initialize child nodes */
-	/* No inner plan for PartitionSelector */
-	Assert(NULL == innerPlan(node));
-	if (NULL != outerPlan(node))
-	{
-		outerPlanState(psstate) = ExecInitNode(outerPlan(node), estate, eflags);
-	}
-
 	/*
-	 * Initialize expressions to extract the partitioning keys from an input tuple.
+	 * initialize outer plan
 	 */
-	psstate->partkeyExpressions = ExecInitExprList(node->partkeyExpressions, &psstate->ps);
+	outerPlanState(psstate) = ExecInitNode(outerPlan(node), estate, eflags);
 
-	/* we should have a lock already */
-	psstate->parentrel = ExecGetRangeTableRelation(estate, node->parentRTI);
+	/* Create the working data structure for pruning. */
+	psstate->prune_state = ExecCreatePartitionPruneState(&psstate->ps,
+														 node->part_prune_info);
 
 	return psstate;
 }
@@ -144,64 +155,34 @@ ExecPartitionSelector(PlanState *pstate)
 	PartitionSelector *ps = (PartitionSelector *) node->ps.plan;
 	EState	   *estate = node->ps.state;
 	ExprContext *econtext = node->ps.ps_ExprContext;
-	TupleTableSlot *inputSlot = NULL;
+	PlanState *outerPlan = outerPlanState(node);
+	TupleTableSlot *inputSlot;
 
-	if (ps->staticSelection)
+	/* Join partition elimination */
+	/* get tuple from outer children */
+	Assert(outerPlan);
+	inputSlot = ExecProcNode(outerPlan);
+
+	if (TupIsNull(inputSlot))
 	{
-		elog(ERROR, "PartitionSelector static selection not implemented");
-#if 0
-		/* propagate the part oids obtained via static partition selection */
-		partition_propagation(estate, ps->staticPartOids, ps->staticScanIds, ps->selectorId);
+		/* no more tuples from outerPlan */
+
+		/*
+		 * Make sure we have an entry for this scan id in
+		 * dynamicTableScanInfo. Normally, this would've been done the
+		 * first time a partition is selected, but we must ensure that
+		 * there is an entry even if no partitions were selected.
+		 * (The traditional Postgres planner uses this method.)
+		 * FIXME comment
+		 */
+		ParamExecData *param;
+
+		param = &(estate->es_param_exec_vals[ps->paramid]);
+		Assert(param->execPlan == NULL);
+		Assert(!param->isnull);
+		param->value = PointerGetDatum(node);
+
 		return NULL;
-#endif
-	}
-
-	/* Retrieve PartitionNode and access method from root table.
-	 * We cannot do it during node initialization as
-	 * DynamicTableScanInfo is not properly initialized yet.
-	 */
-	/* GPDB_12_MERGE_FIXME: dead? */
-#if 0
-	if (NULL == node->rootPartitionNode)
-	{
-		Assert(NULL != estate->dynamicTableScanInfo);
-		getPartitionNodeAndAccessMethod
-									(
-									ps->relid,
-									estate->dynamicTableScanInfo->partsMetadata,
-									estate->es_query_cxt,
-									&node->rootPartitionNode,
-									&node->accessMethods
-									);
-	}
-#endif
-
-	if (NULL != outerPlanState(node))
-	{
-		/* Join partition elimination */
-		/* get tuple from outer children */
-		PlanState *outerPlan = outerPlanState(node);
-		Assert(outerPlan);
-		inputSlot = ExecProcNode(outerPlan);
-
-		if (TupIsNull(inputSlot))
-		{
-			/* no more tuples from outerPlan */
-
-			/*
-			 * Make sure we have an entry for this scan id in
-			 * dynamicTableScanInfo. Normally, this would've been done the
-			 * first time a partition is selected, but we must ensure that
-			 * there is an entry even if no partitions were selected.
-			 * (The traditional Postgres planner uses this method.)
-			 */
-			if (node->partkeyExpressions)
-				InsertPidIntoDynamicTableScanInfo(estate, ps->scanId, InvalidOid, ps->selectorId);
-			else
-				LogPartitionSelection(estate, ps->selectorId);
-
-			return NULL;
-		}
 	}
 
 	/* partition elimination with the given input tuple */
@@ -214,112 +195,10 @@ ExecPartitionSelector(PlanState *pstate)
 	 * selectPartitionMulti() to select the partitions. (The traditional
 	 * Postgres planner uses this method.)
 	 */
-	if (node->partkeyExpressions)
-	{
-		Datum		values[PARTITION_MAX_KEYS];
-		bool		isnull[PARTITION_MAX_KEYS];
-		int			partidx;
-		PartitionKey partkey = RelationGetPartitionKey(node->parentrel);
-		PartitionDesc partdesc = RelationGetPartitionDesc(node->parentrel);
-		int			i;
-		ListCell   *lc;
-
-		Assert(list_length(node->partkeyExpressions) == partkey->partnatts);
-
-		i = 0;
-		foreach(lc, node->partkeyExpressions)
-		{
-			ExprState  *estate = (ExprState *) lfirst(lc);
-
-			values[i] = ExecEvalExpr(estate, econtext, &isnull[i]);
-			i++;
-		}
-		partidx = get_partition_for_tuple(partkey,
-										  partdesc,
-										  values,
-										  isnull);
-
-		InsertPidIntoDynamicTableScanInfo(estate, ps->scanId, partdesc->oids[partidx],
-										  ps->selectorId);
-	}
-	else
-	{
-		/*
-		 * Select the partitions based on levelEqExpressions and
-		 * levelExpressions. (ORCA uses this method)
-		 */
-		elog(ERROR, "PartitionSelector selection with levelEqExpressions not implemented");
-#if 0
-		SelectedParts *selparts = processLevel(node, 0 /* level */, inputSlot);
-
-		/* partition propagation */
-		if (NULL != ps->propagationExpression)
-		{
-			partition_propagation(estate, selparts->partOids, selparts->scanIds, ps->selectorId);
-		}
-		list_free(selparts->partOids);
-		list_free(selparts->scanIds);
-		pfree(selparts);
-#endif
-	}
+	node->part_prune_result = ExecAddMatchingSubPlans(node->prune_state,
+													  node->part_prune_result);
 
 	return inputSlot;
-}
-
-static void LogSelectedPartitionsForScan(int32 selectorId, HTAB *pidIndex, const int32 scanId);
-
-void LogPartitionSelection(EState *estate, int32 selectorId)
-{
-	if (optimizer_partition_selection_log == false)
-		return;
-
-	DynamicTableScanInfo *dynamicTableScanInfo = estate->dynamicTableScanInfo;
-
-	Assert(dynamicTableScanInfo != NULL);
-
-	HTAB **pidIndexes = dynamicTableScanInfo->pidIndexes;
-
-	for (int32 scanIdMinusOne = 0; scanIdMinusOne < dynamicTableScanInfo->numScans; ++scanIdMinusOne)
-	{
-		HTAB *const pidIndex = pidIndexes[scanIdMinusOne];
-		if (pidIndex == NULL)
-			continue;
-		const int32 scanId = scanIdMinusOne + 1;
-
-		LogSelectedPartitionsForScan(selectorId, pidIndex, scanId);
-	}
-}
-
-void LogSelectedPartitionsForScan(int32 selectorId, HTAB *pidIndex, const int32 scanId)
-{
-	int32 numPartitionsSelected = 0;
-	Datum *selectedPartOids = palloc(sizeof(Datum) * hash_get_num_entries(pidIndex));
-
-	HASH_SEQ_STATUS status;
-	PartOidEntry *partOidEntry;
-	hash_seq_init(&status, pidIndex);
-
-	while ((partOidEntry = hash_seq_search(&status)) != NULL)
-	{
-		if (list_member_int(partOidEntry->selectorList, selectorId))
-			selectedPartOids[numPartitionsSelected++] = ObjectIdGetDatum(partOidEntry->partOid);
-	}
-
-	// GPDB_12_MERGE_FIXME: DebugPartitionOid is gone
-#if 0
-	if (numPartitionsSelected > 0)
-	{
-		char *debugPartitionOid = DebugPartitionOid(selectedPartOids, numPartitionsSelected);
-		ereport(LOG,
-				(errmsg_internal("scanId: %d, partitions: %s, selector: %d",
-								 scanId,
-								 debugPartitionOid,
-								 selectorId)));
-		pfree(debugPartitionOid);
-	}
-#endif
-
-	pfree(selectedPartOids);
 }
 
 /* ----------------------------------------------------------------
@@ -331,27 +210,6 @@ void LogSelectedPartitionsForScan(int32 selectorId, HTAB *pidIndex, const int32 
 void
 ExecReScanPartitionSelector(PartitionSelectorState *node)
 {
-	/* reset PartitionSelectorState */
-#if 0
-	PartitionSelector *ps = (PartitionSelector *) node->ps.plan;
-
-	// GPDB_12_MERGE_FIXME
-	for(int iter = 0; iter < ps->nLevels; iter++)
-	{
-		node->levelPartRules[iter] = NULL;
-	}
-
-	/* free result tuple slot */
-	ExecClearTuple(node->ps.ps_ResultTupleSlot);
-#endif
-
-	/* If the PartitionSelector is in the inner side of a nest loop join,
-	 * it should be constant partition elimination and thus has no child node.*/
-#if USE_ASSERT_CHECKING
-	PlanState  *outerPlan = outerPlanState(node);
-	Assert (NULL == outerPlan);
-#endif
-
 }
 
 /* ----------------------------------------------------------------
@@ -373,31 +231,6 @@ ExecEndPartitionSelector(PartitionSelectorState *node)
 		ExecEndNode(outerPlanState(node));
 	}
 }
-
-/* ----------------------------------------------------------------
- *		partition_propagation
- *
- *		Propagate a list of leaf part Oids to the corresponding dynamic scans
- *
- * ----------------------------------------------------------------
- */
-#if 0
-static void
-partition_propagation(EState *estate, List *partOids, List *scanIds, int32 selectorId)
-{
-	Assert (list_length(partOids) == list_length(scanIds));
-
-	ListCell *lcOid = NULL;
-	ListCell *lcScanId = NULL;
-	forboth (lcOid, partOids, lcScanId, scanIds)
-	{
-		Oid partOid = lfirst_oid(lcOid);
-		int scanId = lfirst_int(lcScanId);
-
-		InsertPidIntoDynamicTableScanInfo(estate, scanId, partOid, selectorId);
-	}
-}
-#endif
 
 /* EOF */
 

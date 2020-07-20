@@ -185,16 +185,6 @@ plan_tree_walker(Node *node,
 		case T_PartitionSelector:
 			if (walk_plan_node_fields((Plan *) node, walker, context))
 				return true;
-			if (walker((Node *) ((PartitionSelector *) node)->levelEqExpressions, context))
-				return true;
-			if (walker((Node *) ((PartitionSelector *) node)->levelExpressions, context))
-				return true;
-			if (walker(((PartitionSelector *) node)->residualPredicate, context))
-				return true;
-			if (walker(((PartitionSelector *) node)->propagationExpression, context))
-				return true;
-			if (walker(((PartitionSelector *) node)->partkeyExpressions, context))
-				return true;
 			break;
 
 		case T_Append:
@@ -579,7 +569,6 @@ plan_tree_walker(Node *node,
 		case T_SetOperationStmt:
 		case T_SpecialJoinInfo:
 		case T_TableValueExpr:
-		case T_PartSelectedExpr:
 		case T_PartDefaultExpr:
 		case T_PartBoundExpr:
 		case T_PartBoundInclusionExpr:

@@ -2574,6 +2574,7 @@ _readAppend(void)
 	READ_NODE_FIELD(appendplans);
 	READ_INT_FIELD(first_partial_plan);
 	READ_NODE_FIELD(part_prune_info);
+	READ_NODE_FIELD(join_prune_paramids);
 
 	READ_DONE();
 }
@@ -2595,6 +2596,7 @@ _readMergeAppend(void)
 	READ_OID_ARRAY(collations, local_node->numCols);
 	READ_BOOL_ARRAY(nullsFirst, local_node->numCols);
 	READ_NODE_FIELD(part_prune_info);
+	READ_NODE_FIELD(join_prune_paramids);
 
 	READ_DONE();
 }
@@ -2728,8 +2730,7 @@ _readDynamicIndexScan(void)
 
 	/* DynamicIndexScan has some content from IndexScan. */
 	readIndexScanFields(&local_node->indexscan);
-	READ_INT_FIELD(partIndex);
-	READ_INT_FIELD(partIndexPrintable);
+	READ_NODE_FIELD(partOids);
 	local_node->logicalIndexInfo = readLogicalIndexInfo();
 
 	READ_DONE();
@@ -2824,8 +2825,7 @@ _readDynamicBitmapIndexScan(void)
 
 	/* DynamicBitmapIndexScan has some content from BitmapIndexScan. */
 	readBitmapIndexScanFields(&local_node->biscan);
-	READ_INT_FIELD(partIndex);
-	READ_INT_FIELD(partIndexPrintable);
+	READ_NODE_FIELD(partOids);
 	local_node->logicalIndexInfo = readLogicalIndexInfo();
 
 	READ_DONE();
@@ -2862,8 +2862,7 @@ _readDynamicBitmapHeapScan(void)
 	/* DynamicBitmapHeapScan has some content from BitmapHeapScan. */
 	readBitmapHeapScanFields(&local_node->bitmapheapscan);
 
-	READ_INT_FIELD(partIndex);
-	READ_INT_FIELD(partIndexPrintable);
+	READ_NODE_FIELD(partOids);
 
 	READ_DONE();
 }
