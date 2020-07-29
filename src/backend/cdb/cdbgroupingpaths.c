@@ -3,7 +3,7 @@
  * cdbgroupingpaths.c
  *	  Routines to aid in planning grouping queries for parallel
  *    execution.  This is, essentially, an extension of the file
- *    optimizer/prep/planner.c, although some functions are not
+ *    optimizer/plan/planner.c, although some functions are not
  *    externalized.
  *
  * Portions Copyright (c) 2019-Present Pivotal Software, Inc.
@@ -356,7 +356,6 @@ add_twostage_group_agg_path(PlannerInfo *root,
 							RelOptInfo *output_rel)
 {
 	Query	   *parse = root->parse;
-	CdbPathLocus singleQE_locus;
 	Path	   *initial_agg_path = NULL;
 	DQAType     dqa_type;
 	CdbPathLocus group_locus;
@@ -436,15 +435,16 @@ add_twostage_group_agg_path(PlannerInfo *root,
 									 (Expr *)gsetid, groupref);
 	}
 
-	group_locus = choose_grouping_locus(root, path, ctx->target,
-										parse->groupClause,
-										ctx->rollup_lists,
-										ctx->rollup_groupclauses,
-										&need_redistribute);
 	/*
-	 * If the distribution of this path is suitable, two-stage aggregation
-	 * is not applicable.
+	 * If the input is already neatly distributed along the GROUP BY columns,
+	 * the one-stage plan will run in parallel and there's no need for two
+	 * stages.
 	 */
+	(void) choose_grouping_locus(root, path, ctx->target,
+								 parse->groupClause,
+								 ctx->rollup_lists,
+								 ctx->rollup_groupclauses,
+								 &need_redistribute);
 	if (!need_redistribute)
 		return;
 
@@ -537,35 +537,29 @@ add_twostage_group_agg_path(PlannerInfo *root,
 		Assert(false);
 	}
 
-	/*
-	 * GroupAgg -> GATHER MOTION -> GroupAgg.
-	 *
-	 * This has the advantage that it retains the input order. The
-	 * downside is that it gathers everything to a single node. If that's
-	 * where the final result is needed anyway, that's quite possibly better
-	 * than scattering the partial aggregate results and having another
-	 * motion to gather the final results, though,
-	 *
-	 * Alternatively, we could redistribute based on the GROUP BY key. That
-	 * would have the advantage that the Finalize Agg stage could run in
-	 * parallel. However, it would destroy the sort order, so it's probaly
-	 * not a good idea.
-	 */
-	CdbPathLocus_MakeSingleQE(&singleQE_locus, getgpsegmentCount());
-	path = cdbpath_create_motion_path(root,
-									  initial_agg_path,
-									  motion_pathkeys,
-									  false,
-									  singleQE_locus);
-
 	if (parse->groupingSets)
 	{
-
 		List		*pathkeys;
+		CdbPathLocus singleQE_locus;
 
 		pathkeys = make_pathkeys_for_sortclauses(root,
 												 grouping_sets_groupClause,
 												 grouping_sets_tlist);
+
+		/*
+		 * Alternative #1:
+		 *   Partial GroupAgg -> GATHER MOTION -> Finalize GroupAgg.
+		 *
+		 * The Partial Agg stage computes the partial aggregates for each
+		 * grouping set. The partial results are then Gathered, and
+		 * the final aggregates are computed.
+		 */
+		CdbPathLocus_MakeSingleQE(&singleQE_locus, getgpsegmentCount());
+		path = cdbpath_create_motion_path(root,
+										  initial_agg_path,
+										  motion_pathkeys,
+										  false,
+										  singleQE_locus);
 
 		path = (Path *) create_sort_path(root,
 										 output_rel,
@@ -585,9 +579,75 @@ add_twostage_group_agg_path(PlannerInfo *root,
 										ctx->agg_final_costs,
 										ctx->dNumGroupsTotal,
 										NULL);
+		elog(NOTICE, "alt1: %g", path->total_cost);
+		add_path(output_rel, path);
+
+		/*
+		 * Alternative #2:
+		 *   Partial GroupAgg -> REDISTRIBUTE MOTION -> Finalize GroupAgg -> GATHER MOTION.
+		 *
+		 * This is like the previous plan, but the final stage is parallelized.
+		 * That's a win if there are a lot of groups. We'll generate both paths and
+		 * let add_path() keep the cheaper one.
+		 */
+		group_locus = choose_grouping_locus(root, initial_agg_path,
+											grouping_sets_partial_target,
+											grouping_sets_groupClause, NIL, NIL,
+											&need_redistribute);
+		if (need_redistribute)
+		{
+			path = cdbpath_create_motion_path(root,
+											  initial_agg_path,
+											  motion_pathkeys,
+											  false,
+											  group_locus);
+
+			path = (Path *) create_sort_path(root,
+											 output_rel,
+											 path,
+											 pathkeys,
+											 -1.0);
+
+			path = (Path *) create_agg_path(root,
+											output_rel,
+											path,
+											ctx->target,
+											AGG_SORTED,
+											AGGSPLIT_FINAL_DESERIAL,
+											false, /* streaming */
+											grouping_sets_groupClause,
+											(List *) parse->havingQual,
+											ctx->agg_final_costs,
+											ctx->dNumGroupsTotal,
+											NULL);
+			elog(NOTICE, "alt2: %g", path->total_cost);
+			add_path(output_rel, path);
+		}
 	}
 	else if (parse->hasAggs || parse->groupClause)
 	{
+		CdbPathLocus singleQE_locus;
+
+		/*
+		 * GroupAgg -> GATHER MOTION -> GroupAgg.
+		 *
+		 * This has the advantage that it retains the input order. The
+		 * downside is that it gathers everything to a single node. If that's
+		 * where the final result is needed anyway, that's quite possibly better
+		 * than scattering the partial aggregate results and having another
+		 * motion to gather the final results, though,
+		 *
+		 * Alternatively, we could redistribute based on the GROUP BY key. That
+		 * would have the advantage that the Finalize Agg stage could run in
+		 * parallel. However, it would destroy the sort order, so it's probaly
+		 * not a good idea.
+		 */
+		CdbPathLocus_MakeSingleQE(&singleQE_locus, getgpsegmentCount());
+		path = cdbpath_create_motion_path(root,
+										  initial_agg_path,
+										  motion_pathkeys,
+										  false,
+										  singleQE_locus);
 		path = (Path *) create_agg_path(root,
 										output_rel,
 										path,
@@ -600,13 +660,12 @@ add_twostage_group_agg_path(PlannerInfo *root,
 										ctx->agg_final_costs,
 										ctx->dNumGroupsTotal,
 										NULL);
+		add_path(output_rel, path);
 	}
 	else
 	{
 		Assert(false);
 	}
-
-	add_path(output_rel, path);
 }
 
 static void
