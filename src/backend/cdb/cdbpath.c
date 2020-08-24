@@ -92,12 +92,12 @@ cdbpath_cost_motion(PlannerInfo *root, CdbMotionPath *motionpath)
 	cost_per_row = (gp_motion_cost_per_row > 0.0)
 		? gp_motion_cost_per_row
 		: 2.0 * cpu_tuple_cost;
-	sendrows = subpath->rows;
+	sendrows = subpath->rows * send_segments;
 	recvrows = motionpath->path.rows;
 	motioncost = cost_per_row * 0.5 * (sendrows + recvrows);
 
-	motionpath->path.total_cost = motioncost + subpath->total_cost;
-	motionpath->path.startup_cost = subpath->startup_cost;
+	motionpath->path.total_cost = motioncost + subpath->total_cost + 1000;
+	motionpath->path.startup_cost = subpath->startup_cost + 1000;
 	motionpath->path.memory = subpath->memory;
 }								/* cdbpath_cost_motion */
 

@@ -507,8 +507,17 @@ add_path(RelOptInfo *parent_rel, Path *new_path)
 			List	   *old_path_pathkeys;
 
 			old_path_pathkeys = old_path->param_info ? NIL : old_path->pathkeys;
+
 			keyscmp = compare_pathkeys(new_path_pathkeys,
 									   old_path_pathkeys);
+
+			if (keyscmp != PATHKEYS_DIFFERENT &&
+				!cdbpathlocus_equal(new_path->locus, old_path->locus))
+			{
+				elog(NOTICE, "keeping, different locus");
+				keyscmp = PATHKEYS_DIFFERENT;
+			}
+
 			if (keyscmp != PATHKEYS_DIFFERENT)
 			{
 				switch (costcmp)
@@ -4154,7 +4163,19 @@ create_groupingsets_path(PlannerInfo *root,
 	pathnode->path.total_cost += target->cost.startup +
 		target->cost.per_tuple * pathnode->path.rows;
 
-	pathnode->path.locus = subpath->locus;
+	/*
+	 * If this is a one-stage aggregate, the caller should already have
+	 * ensured that the data is distributed so that a one-stage aggregate
+	 * works, and the distribution is preserved. But if this is the first
+	 * stage of a multi-stage aggregate, if any distribution key columns
+	 * are part of rollups, they will be set to NULLs for the rolled up
+	 * rows. That breaks the distribution.
+	 */
+	if (aggsplit != AGGSPLIT_SIMPLE && CdbPathLocus_IsPartitioned(subpath->locus))
+		CdbPathLocus_MakeStrewn(&pathnode->path.locus,
+								CdbPathLocus_NumSegments(subpath->locus));
+	else
+		pathnode->path.locus = subpath->locus;
 
 	return pathnode;
 }

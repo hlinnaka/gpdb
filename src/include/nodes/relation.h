@@ -333,6 +333,8 @@ typedef struct PlannerInfo
 	List	   *distinct_pathkeys;		/* distinctClause pathkeys, if any */
 	List	   *sort_pathkeys;	/* sortClause pathkeys, if any */
 
+	CdbPathLocus final_locus;
+
 	List	   *initial_rels;	/* RelOptInfos we are now trying to join */
 
 	/* Use fetch_upper_rel() to get any particular upper rel */

@@ -736,6 +736,11 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	root->non_recursive_path = NULL;
 	root->is_correlated_subplan = false;
 
+	if (!parent_root && (parse->commandType == CMD_SELECT || parse->returningList))
+	{
+		CdbPathLocus_MakeEntry(&root->final_locus);
+	}
+
 	/*
 	 * If there is a WITH list, process each WITH query and build an initplan
 	 * SubPlan structure for it.
@@ -2633,6 +2638,16 @@ grouping_planner(PlannerInfo *root, bool inheritance_update,
 										rowMarks,
 										parse->onConflict,
 										SS_assign_special_param(root));
+		}
+
+		if (!CdbPathLocus_IsNull(root->final_locus))
+		{
+			path = cdbpath_create_motion_path(root, path,
+											  root->sort_pathkeys,
+											  false, // FIXME
+											  root->final_locus);
+			if (!path)
+				elog(ERROR, "could not create ordered path");
 		}
 
 		/* And shove it into final_rel */

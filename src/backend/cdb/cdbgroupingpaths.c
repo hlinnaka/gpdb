@@ -677,6 +677,7 @@ add_twostage_hash_agg_path(PlannerInfo *root,
 	Query	   *parse = root->parse;
 	Path	   *initial_agg_path;
 	CdbPathLocus group_locus;
+	CdbPathLocus singleQE_locus;
 	bool		need_redistribute;
 	HashAggTableSizes hash_info;
 	double		dNumGroups;
@@ -724,8 +725,10 @@ add_twostage_hash_agg_path(PlannerInfo *root,
 	/*
 	 * HashAgg -> Redistribute or Gather Motion -> HashAgg.
 	 */
+	CdbPathLocus_MakeSingleQE(&singleQE_locus, getgpsegmentCount());
+
 	path = cdbpath_create_motion_path(root, initial_agg_path, NIL, false,
-									  group_locus);
+									  singleQE_locus);
 
 	path = (Path *) create_agg_path(root,
 									output_rel,
@@ -737,9 +740,31 @@ add_twostage_hash_agg_path(PlannerInfo *root,
 									parse->groupClause,
 									(List *) parse->havingQual,
 									ctx->agg_final_costs,
-									dNumGroups,
+									ctx->dNumGroupsTotal,
 									&hash_info);
+	elog(NOTICE, "adding singleqe %g", path->total_cost);
 	add_path(output_rel, path);
+
+	if (!CdbPathLocus_IsBottleneck(group_locus))
+	{
+		path = cdbpath_create_motion_path(root, initial_agg_path, NIL, false,
+										  group_locus);
+
+		path = (Path *) create_agg_path(root,
+										output_rel,
+										path,
+										ctx->target,
+										AGG_HASHED,
+										AGGSPLIT_FINAL_DESERIAL,
+										false, /* streaming */
+										parse->groupClause,
+										(List *) parse->havingQual,
+										ctx->agg_final_costs,
+										dNumGroups,
+										&hash_info);
+		elog(NOTICE, "adding grouped %g", path->total_cost);
+		add_path(output_rel, path);
+	}
 }
 
 static Node *
