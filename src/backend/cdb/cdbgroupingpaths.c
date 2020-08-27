@@ -366,6 +366,19 @@ add_twostage_group_agg_path(PlannerInfo *root,
 	PathTarget	*grouping_sets_partial_target = NULL;
 
 	/*
+	 * If the input is already neatly distributed along the GROUP BY columns,
+	 * the one-stage plan will run in parallel and there's no need for two
+	 * stages.
+	 */
+	(void) choose_grouping_locus(root, path, ctx->target,
+								 parse->groupClause,
+								 ctx->rollup_lists,
+								 ctx->rollup_groupclauses,
+								 &need_redistribute);
+	if (!need_redistribute)
+		return;
+
+	/*
 	 * For twostage grouping sets, we perform grouping sets aggregation in
 	 * partial stage and normal aggregation in final stage.
 	 *
@@ -434,19 +447,6 @@ add_twostage_group_agg_path(PlannerInfo *root,
 			add_column_to_pathtarget(grouping_sets_partial_target,
 									 (Expr *)gsetid, groupref);
 	}
-
-	/*
-	 * If the input is already neatly distributed along the GROUP BY columns,
-	 * the one-stage plan will run in parallel and there's no need for two
-	 * stages.
-	 */
-	(void) choose_grouping_locus(root, path, ctx->target,
-								 parse->groupClause,
-								 ctx->rollup_lists,
-								 ctx->rollup_groupclauses,
-								 &need_redistribute);
-	if (!need_redistribute)
-		return;
 
 	if (ctx->agg_costs->distinctAggrefs)
 	{
