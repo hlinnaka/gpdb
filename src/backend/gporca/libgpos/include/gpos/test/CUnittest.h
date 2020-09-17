@@ -24,10 +24,6 @@
 #define GPOS_UNITTEST_EXT(x) \
 	gpos::CUnittest(#x, CUnittest::EttExtended, x::EresUnittest)
 
-// helper for subtest identified by ULONG parameter
-#define GPOS_UNITTEST_STD_SUBTEST(x, i) \
-	gpos::CUnittest(#x "_" #i, CUnittest::EttStandard, x::EresSubtest, i)
-
 // helpers for test that are expected to fail
 #define GPOS_UNITTEST_FUNC_THROW(x, major, minor) \
 	gpos::CUnittest(#x, CUnittest::EttStandard, x, major, minor)
@@ -104,11 +100,6 @@ private:
 	// test function
 	GPOS_RESULT (*m_pfunc)(void);
 
-	// subtest function
-	GPOS_RESULT (*m_pfuncSubtest)(ULONG);
-	ULONG m_ulSubtest;
-
-
 	// flag whether to expect the test to throw
 	BOOL m_fExcep;
 
@@ -140,9 +131,6 @@ public:
 
 	CUnittest(const CHAR *szTitle, ETestType ett, GPOS_RESULT (*pfunc)(void),
 			  ULONG major, ULONG minor);
-
-	CUnittest(const CHAR *szTitle, ETestType ett,
-			  GPOS_RESULT (*pfuncSubtest)(ULONG), ULONG ulSubtest);
 
 	// copy ctor
 	CUnittest(const CUnittest &ut);

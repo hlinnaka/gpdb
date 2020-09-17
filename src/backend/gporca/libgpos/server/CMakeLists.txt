@@ -103,8 +103,3 @@ add_gpos_test(CStringTest)
 
 # task
 add_gpos_test(CTaskLocalStorageTest)
-
-# test
-add_gpos_test(CUnittestTest_1)
-add_gpos_test(CUnittestTest_2)
-add_gpos_test(CUnittestTest_3)

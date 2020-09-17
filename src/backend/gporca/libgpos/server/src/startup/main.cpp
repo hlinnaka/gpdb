@@ -58,8 +58,6 @@
 
 #include "unittest/gpos/task/CTaskLocalStorageTest.h"
 
-#include "unittest/gpos/test/CUnittestTest.h"
-
 
 using namespace gpos;
 
@@ -110,11 +108,6 @@ static gpos::CUnittest rgut[] = {
 
 	// task
 	GPOS_UNITTEST_STD(CTaskLocalStorageTest),
-
-	// test
-	GPOS_UNITTEST_STD_SUBTEST(CUnittestTest, 0),
-	GPOS_UNITTEST_STD_SUBTEST(CUnittestTest, 1),
-	GPOS_UNITTEST_STD_SUBTEST(CUnittestTest, 2),
 };
 
 // static variable counting the number of failed tests; PvExec overwrites with

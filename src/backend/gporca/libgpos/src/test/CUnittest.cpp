@@ -48,8 +48,6 @@ CUnittest::CUnittest(const CHAR *szTitle, ETestType ett,
 	: m_szTitle(szTitle),
 	  m_ett(ett),
 	  m_pfunc(pfunc),
-	  m_pfuncSubtest(NULL),
-	  m_ulSubtest(0),
 	  m_fExcep(false),
 	  m_ulMajor(CException::ExmaInvalid),
 	  m_ulMinor(CException::ExmiInvalid)
@@ -70,35 +68,11 @@ CUnittest::CUnittest(const CHAR *szTitle, ETestType ett,
 	: m_szTitle(szTitle),
 	  m_ett(ett),
 	  m_pfunc(pfunc),
-	  m_pfuncSubtest(NULL),
-	  m_ulSubtest(0),
 	  m_fExcep(true),
 	  m_ulMajor(major),
 	  m_ulMinor(minor)
 {
 }
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CUnittest::CUnittest
-//
-//	@doc:
-//		Constructor for subtest identified by ULONG id
-//
-//---------------------------------------------------------------------------
-CUnittest::CUnittest(const CHAR *szTitle, ETestType ett,
-					 GPOS_RESULT (*pfuncSubtest)(ULONG), ULONG ulSubtest)
-	: m_szTitle(szTitle),
-	  m_ett(ett),
-	  m_pfunc(NULL),
-	  m_pfuncSubtest(pfuncSubtest),
-	  m_ulSubtest(ulSubtest),
-	  m_fExcep(false),
-	  m_ulMajor(CException::ExmaInvalid),
-	  m_ulMinor(CException::ExmiInvalid)
-{
-}
-
 
 //---------------------------------------------------------------------------
 //	@function:
@@ -112,8 +86,6 @@ CUnittest::CUnittest(const CUnittest &ut)
 	: m_szTitle(ut.m_szTitle),
 	  m_ett(ut.m_ett),
 	  m_pfunc(ut.m_pfunc),
-	  m_pfuncSubtest(ut.m_pfuncSubtest),
-	  m_ulSubtest(ut.m_ulSubtest),
 	  m_fExcep(ut.m_fExcep),
 	  m_ulMajor(ut.m_ulMajor),
 	  m_ulMinor(ut.m_ulMinor)
@@ -186,8 +158,7 @@ CUnittest::EresExecTest(const CUnittest &ut)
 		// reset cancellation flag
 		CTask::Self()->ResetCancel();
 
-		eres = ut.m_pfunc != NULL ? ut.m_pfunc()
-								  : ut.m_pfuncSubtest(ut.m_ulSubtest);
+		eres = ut.m_pfunc();
 
 		// check if this was expected to throw
 		if (ut.FThrows())
