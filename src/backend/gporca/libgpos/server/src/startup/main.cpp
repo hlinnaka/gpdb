@@ -144,7 +144,7 @@ INT
 main(INT iArgs, const CHAR **rgszArgs)
 {
 	// setup args for unittest params
-	CMainArgs ma(iArgs, rgszArgs, "cuU:xT:");
+	CMainArgs ma(iArgs, rgszArgs, "uU:xT:");
 
 	struct gpos_init_params init_params = {NULL};
 	gpos_init(&init_params);

@@ -44,12 +44,6 @@ function(add_gpos_test TEST_NAME)
   add_test(NAME gpos_test_${TEST_NAME}
            COMMAND gpos_test -U ${TEST_NAME})
 endfunction()
-# Adaptation of the add_gpos_test for setting up a custom allocator instead of
-# using CMemoryPoolMalloc in gpos_init().
-function(add_gpos_custom_alloc_test TEST_NAME)
-  add_test(NAME gpos_custom_alloc_test_${TEST_NAME}
-           COMMAND gpos_test -U ${TEST_NAME} "-c")
-endfunction()
 
 # Individual unit tests are added here in the same order they appear in
 # src/startup/main.cpp
@@ -92,10 +86,6 @@ add_gpos_test(CFileTest)
 # memory
 add_gpos_test(CMemoryPoolBasicTest)
 add_gpos_test(CCacheTest)
-
-# custom allocator
-add_gpos_custom_alloc_test(CMemoryPoolBasicTest)
-add_gpos_custom_alloc_test(CCacheTest)
 
 # string
 add_gpos_test(CWStringTest)
