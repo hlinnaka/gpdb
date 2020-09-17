@@ -1,14 +1,14 @@
-#!/usr/local/bin/python
+#!/usr/bin/env python
 #
 # updates plan and plan size in mdp files. Run ./fix_mdps.py --help for detailed description
 # Should be run from within <orca_src>/build directory
 #
 # usage: fix_mdps.py input.txt
-# where input.txt is a file containing failed tests, one per line (ctest output)
-# in the form 56 - gporca_test_CIndexScanTest (Failed)
+# where input.txt is a file containing failed tests, one per line
+# in the form "server/src/unittest/gpopt/operators/CExpressionPreprocessorTest.cpp"
 #
 # or
-# fix_mdps.py --logFile <path_to_ctest_output>
+# fix_mdps.py --logFile <path_to_test_list>
 #
 
 import sys
@@ -28,9 +28,7 @@ def parseInputFile(inputFile):
     failed_tests = []
     with open(inputFile, "r") as fp:
         for line in fp:
-            failed_test = re.search(r'.*gporca_test_(.*) .*', line)
-            if failed_test:
-                failed_tests.append(failed_test.group(1))
+            failed_tests.append(line)
     return failed_tests
 
 def replacePlanSize(filename, actual, expected):
@@ -59,7 +57,7 @@ def processLogFile(logFileLines):
     actualSize = 0
 
     for line in logFileLines:
-        fileNameMatch = re.match(r'.*../data/dxl/minidump/*.', line)
+        fileNameMatch = re.match(r'.*data/dxl/minidump/*.', line)
         actualPlanMatch = re.match(r'Actual:', line)
         planBegin = re.match(r'.*<dxl:Plan*.', line)
         planEnd = re.match(r'.*</dxl:Plan>*.', line)
@@ -115,7 +113,7 @@ def processLogFile(logFileLines):
 def runTests(testFileNames):
     tests_to_fix = parseInputFile(testFileNames)
     for test in tests_to_fix:
-        command = "./server/gporca_test -U " + test
+        command = "./gporca_test -f " + test
         print "Running test: " + test
         command = command.split()
         all_lines = run_command(command)
@@ -127,11 +125,11 @@ def processExistingLogFile(logFileName):
 
 def main():
     parser = argparse.ArgumentParser(description='Fix test failures in MDP files')
-    parser.add_argument('failed_tests_file', nargs = '?', help='a file containing failed tests, one per line (ctest output)')
+    parser.add_argument('failed_tests_file', nargs = '?', help='a file containing failed tests, one per line')
     parser.add_argument('--dryRun', action='store_true',
                         help='dry run only, do not actually change MDP files')
     parser.add_argument('--logFile',
-                        help='Log file created with ctest --output-on-failure command')
+                        help='Log file created with gporca_test command')
 
     args = parser.parse_args()
 

@@ -65,11 +65,11 @@ GPOS_RESULT
 CMissingStatsTest::EresUnittest_RunTests()
 {
 	SMissingStatsTestCase rgtc[] = {
-		{"../data/dxl/minidump/MissingStats.mdp", 2},
-		{"../data/dxl/minidump/NoMissingStatsAfterDroppedCol.mdp", 0},
-		{"../data/dxl/minidump/NoMissingStats.mdp", 0},
-		{"../data/dxl/minidump/NoMissingStatsForEmptyTable.mdp", 0},
-		{"../data/dxl/minidump/NoMissingStatsAskingForSystemColFOJ.mdp", 0},
+		{"data/dxl/minidump/MissingStats.mdp", 2},
+		{"data/dxl/minidump/NoMissingStatsAfterDroppedCol.mdp", 0},
+		{"data/dxl/minidump/NoMissingStats.mdp", 0},
+		{"data/dxl/minidump/NoMissingStatsForEmptyTable.mdp", 0},
+		{"data/dxl/minidump/NoMissingStatsAskingForSystemColFOJ.mdp", 0},
 	};
 
 	CAutoMemoryPool amp(CAutoMemoryPool::ElcNone);

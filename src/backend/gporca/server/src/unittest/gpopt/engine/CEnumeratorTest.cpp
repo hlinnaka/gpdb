@@ -45,88 +45,88 @@ ULONG CEnumeratorTest::m_ulSamplingTestNoOneStageAgg = 0;
 
 // minidump files
 const CHAR *rgszSamplePlans[] = {
-	"../data/dxl/tpch/q1.mdp",
-	"../data/dxl/tpch/q3.mdp",
+	"data/dxl/tpch/q1.mdp",
+	"data/dxl/tpch/q3.mdp",
 #ifndef GPOS_DEBUG
 	// run the following queries in optimized build to keep small test execution time
-	//		"../data/dxl/tpch/q2.mdp",
-	"../data/dxl/tpch/q4.mdp",
-	"../data/dxl/tpch/q5.mdp",
-	"../data/dxl/tpch/q6.mdp",
-	"../data/dxl/tpch/q7.mdp",
-	"../data/dxl/tpch/q8.mdp",
+	//		"data/dxl/tpch/q2.mdp",
+	"data/dxl/tpch/q4.mdp",
+	"data/dxl/tpch/q5.mdp",
+	"data/dxl/tpch/q6.mdp",
+	"data/dxl/tpch/q7.mdp",
+	"data/dxl/tpch/q8.mdp",
 	// TODO:  - Jan 26, 2013; enable q9 after figuring out why it does not finish
-	//		"../data/dxl/tpch/q9.mdp",
-	"../data/dxl/tpch/q10.mdp",
-	"../data/dxl/tpch/q11.mdp",
-	"../data/dxl/tpch/q12.mdp",
-	"../data/dxl/tpch/q13.mdp",
-	"../data/dxl/tpch/q14.mdp",
-	"../data/dxl/tpch/q15.mdp",
-	"../data/dxl/tpch/q16.mdp",
-	"../data/dxl/tpch/q17.mdp",
-	//		"../data/dxl/tpch/q18.mdp",
-	//		"../data/dxl/tpch/q19.mdp",
-	"../data/dxl/tpch/q20.mdp",
-	"../data/dxl/tpch/q21.mdp",
-	"../data/dxl/tpch/q22.mdp",
+	//		"data/dxl/tpch/q9.mdp",
+	"data/dxl/tpch/q10.mdp",
+	"data/dxl/tpch/q11.mdp",
+	"data/dxl/tpch/q12.mdp",
+	"data/dxl/tpch/q13.mdp",
+	"data/dxl/tpch/q14.mdp",
+	"data/dxl/tpch/q15.mdp",
+	"data/dxl/tpch/q16.mdp",
+	"data/dxl/tpch/q17.mdp",
+	//		"data/dxl/tpch/q18.mdp",
+	//		"data/dxl/tpch/q19.mdp",
+	"data/dxl/tpch/q20.mdp",
+	"data/dxl/tpch/q21.mdp",
+	"data/dxl/tpch/q22.mdp",
 //		re-enable after regenerating minidump
-//		"../data/dxl/minidump/LargeJoins.mdp", // a test for joining all tables
+//		"data/dxl/minidump/LargeJoins.mdp", // a test for joining all tables
 #endif	// GPOS_DEBUG
 };
 
 // minidump files that should not generate plans with unsatisfied required properties
 const CHAR *rgszCompatibleDistributions[] = {
 	// SINGLETON and UNIVERSAL distributions should be compatible as join children
-	"../data/dxl/minidump/JoinWithSingletonAndUniversalBranches.mdp",
+	"data/dxl/minidump/JoinWithSingletonAndUniversalBranches.mdp",
 	// SINGLETON and SINGLETON distributions should be compatible as join children
-	"../data/dxl/minidump/JoinWithSingletonAndSingletonBranches.mdp",
+	"data/dxl/minidump/JoinWithSingletonAndSingletonBranches.mdp",
 };
 
 
 // minidump files raising an exception because required properties are not satisfied
 const CHAR *rgszUnsatisfiedRequiredPropertiesPlans[] = {
-	"../data/dxl/minidump/InvalidUpdatePlan.mdp",
-	"../data/dxl/minidump/InvalidDeleteGather.mdp",
-	"../data/dxl/minidump/InvalidPlan_CTE-2-all-plans.mdp",
-	"../data/dxl/minidump/InvalidPlan_MotionGatherFromMasterToMaster.mdp",
-	"../data/dxl/minidump/InvalidPlan_MotionGatherFromMasterToMaster-ScalarDQA.mdp",
-	"../data/dxl/minidump/InvalidPlan_IncompatibleDistributionOnJoinBranches.mdp",
+	"data/dxl/minidump/InvalidUpdatePlan.mdp",
+	"data/dxl/minidump/InvalidDeleteGather.mdp",
+	"data/dxl/minidump/InvalidPlan_CTE-2-all-plans.mdp",
+	"data/dxl/minidump/InvalidPlan_MotionGatherFromMasterToMaster.mdp",
+	"data/dxl/minidump/InvalidPlan_MotionGatherFromMasterToMaster-ScalarDQA.mdp",
+	"data/dxl/minidump/InvalidPlan_IncompatibleDistributionOnJoinBranches.mdp",
 };
 
 #ifdef GPOS_DEBUG
 // minidump files for checking generated plan
 const CHAR *rgszCheckPlansNoMotions[] = {
-	"../data/dxl/minidump/NoMotionsPlan.mdp",
+	"data/dxl/minidump/NoMotionsPlan.mdp",
 };
 
 const CHAR *rgszCheckPlansNoMotionBroadcast[] = {
-	"../data/dxl/minidump/JoinPlan.mdp",
+	"data/dxl/minidump/JoinPlan.mdp",
 };
 
 const CHAR *rgszCheckPlansNoMotionRedistribute[] = {
-	"../data/dxl/minidump/JoinPlan.mdp",
-	"../data/dxl/minidump/JoinPlanWithRedistribute.mdp",
+	"data/dxl/minidump/JoinPlan.mdp",
+	"data/dxl/minidump/JoinPlanWithRedistribute.mdp",
 };
 
 const CHAR *rgszCheckPlansNoMotionGather[] = {
-	"../data/dxl/minidump/NoMotionsPlan.mdp",
+	"data/dxl/minidump/NoMotionsPlan.mdp",
 };
 
 const CHAR *rgszCheckPlansNoSort[] = {
-	"../data/dxl/minidump/NoSortPlan.mdp",
+	"data/dxl/minidump/NoSortPlan.mdp",
 };
 
 const CHAR *rgszCheckPlansNoSpool[] = {
-	"../data/dxl/minidump/JoinPlan.mdp",
+	"data/dxl/minidump/JoinPlan.mdp",
 };
 
 const CHAR *rgszCheckPlansNoPartPropagation[] = {
-	"../data/dxl/minidump/NoPartPropagationPlan.mdp",
+	"data/dxl/minidump/NoPartPropagationPlan.mdp",
 };
 
 const CHAR *rgszCheckPlansNoOneStageAgg[] = {
-	"../data/dxl/tpch/q1.mdp",
+	"data/dxl/tpch/q1.mdp",
 };
 #endif	// GPOS_DEBUG
 

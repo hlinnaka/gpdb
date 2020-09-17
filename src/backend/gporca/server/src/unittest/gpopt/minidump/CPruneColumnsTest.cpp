@@ -28,19 +28,19 @@ ULONG CPruneColumnsTest::m_ulPruneColumnsTestCounter =
 
 // minidump files
 const CHAR *rgszPruneColumnsFileNames[] = {
-	"../data/dxl/minidump/RemoveUnusedProjElementsInGbAgg.mdp",
-	"../data/dxl/minidump/RemoveUnusedProjElements.mdp",
-	"../data/dxl/minidump/CPruneColumnsTest/PruneIntermediateUnusedColumns.mdp",  // prune all unused columns
-	"../data/dxl/minidump/CPruneColumnsTest/AggTopOfSingleSetRetFuncs.mdp",	 // no pruning done
-	"../data/dxl/minidump/CPruneColumnsTest/AggTopOfSetRetFuncsAndUnusedScalar.mdp",  // partial pruning
-	"../data/dxl/minidump/CPruneColumnsTest/AggTopOfMultipleSetRetFuncs.mdp",  // no pruning done
-	"../data/dxl/minidump/CPruneColumnsTest/AggTopOfMultipleSetRetFuncsAndUnusedScalar.mdp",  // partial prune
-	"../data/dxl/minidump/CPruneColumnsTest/AggTopOfSetRefFuncsOnTopTbl.mdp",  // no pruning done
-	"../data/dxl/minidump/CPruneColumnsTest/AllColsUsed.mdp",  // no pruning done
-	"../data/dxl/minidump/CPruneColumnsTest/UsedSetRetFuncAndUnusedScalarFunc.mdp",	 // partial pruning
-	"../data/dxl/minidump/CPruneColumnsTest/UnusedSetRetFuncAndUsedScalarFunc.mdp",	 // partial pruning ---> BUG
-	"../data/dxl/minidump/CPruneColumnsTest/MultiLevelSubqueryWithSetRetFuncs.mdp",	 // expect error in optimizer and planner: "Expected no more than one row to be returned by expression"
-	"../data/dxl/minidump/CPruneColumnsTest/MultiLevelSubqueryWithSetRetFuncsAndScalarFuncs.mdp",  // if pruning subquery is handled then we should prune some columns
+	"data/dxl/minidump/RemoveUnusedProjElementsInGbAgg.mdp",
+	"data/dxl/minidump/RemoveUnusedProjElements.mdp",
+	"data/dxl/minidump/CPruneColumnsTest/PruneIntermediateUnusedColumns.mdp",  // prune all unused columns
+	"data/dxl/minidump/CPruneColumnsTest/AggTopOfSingleSetRetFuncs.mdp",  // no pruning done
+	"data/dxl/minidump/CPruneColumnsTest/AggTopOfSetRetFuncsAndUnusedScalar.mdp",  // partial pruning
+	"data/dxl/minidump/CPruneColumnsTest/AggTopOfMultipleSetRetFuncs.mdp",	// no pruning done
+	"data/dxl/minidump/CPruneColumnsTest/AggTopOfMultipleSetRetFuncsAndUnusedScalar.mdp",  // partial prune
+	"data/dxl/minidump/CPruneColumnsTest/AggTopOfSetRefFuncsOnTopTbl.mdp",	// no pruning done
+	"data/dxl/minidump/CPruneColumnsTest/AllColsUsed.mdp",	// no pruning done
+	"data/dxl/minidump/CPruneColumnsTest/UsedSetRetFuncAndUnusedScalarFunc.mdp",  // partial pruning
+	"data/dxl/minidump/CPruneColumnsTest/UnusedSetRetFuncAndUsedScalarFunc.mdp",  // partial pruning ---> BUG
+	"data/dxl/minidump/CPruneColumnsTest/MultiLevelSubqueryWithSetRetFuncs.mdp",  // expect error in optimizer and planner: "Expected no more than one row to be returned by expression"
+	"data/dxl/minidump/CPruneColumnsTest/MultiLevelSubqueryWithSetRetFuncsAndScalarFuncs.mdp",	// if pruning subquery is handled then we should prune some columns
 };
 
 

@@ -35,7 +35,7 @@
 #include "unittest/gpopt/CTestUtils.h"
 
 
-const CHAR *szMDFileName = "../data/dxl/metadata/md.xml";
+const CHAR *szMDFileName = "data/dxl/metadata/md.xml";
 
 //---------------------------------------------------------------------------
 //	@function:

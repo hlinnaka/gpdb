@@ -17,7 +17,7 @@
 
 #define EXPECTED_BINDING 2
 static const CHAR *szQueryFile =
-	"../data/dxl/minidump/ExtractOneBindingFromScalarGroups.mdp";
+	"data/dxl/minidump/ExtractOneBindingFromScalarGroups.mdp";
 
 GPOS_RESULT
 CBindingTest::EresUnittest()

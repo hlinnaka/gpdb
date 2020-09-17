@@ -27,14 +27,14 @@ ULONG CTVFTest::m_ulTVFTestCounter = 0;	 // start from first test
 
 // minidump files
 const CHAR *rgszTVFFileNames[] = {
-	"../data/dxl/minidump/TVF.mdp",
-	"../data/dxl/minidump/TVFAnyelement.mdp",
-	"../data/dxl/minidump/TVFVolatileJoin.mdp",
-	"../data/dxl/minidump/TVFRandom.mdp",
-	"../data/dxl/minidump/TVFGenerateSeries.mdp",
-	"../data/dxl/minidump/TVF-With-Deep-Subq-Args.mdp",
-	"../data/dxl/minidump/TVFCorrelatedExecution.mdp",
-	"../data/dxl/minidump/CSQ-VolatileTVF.mdp",
+	"data/dxl/minidump/TVF.mdp",
+	"data/dxl/minidump/TVFAnyelement.mdp",
+	"data/dxl/minidump/TVFVolatileJoin.mdp",
+	"data/dxl/minidump/TVFRandom.mdp",
+	"data/dxl/minidump/TVFGenerateSeries.mdp",
+	"data/dxl/minidump/TVF-With-Deep-Subq-Args.mdp",
+	"data/dxl/minidump/TVFCorrelatedExecution.mdp",
+	"data/dxl/minidump/CSQ-VolatileTVF.mdp",
 };
 
 //---------------------------------------------------------------------------

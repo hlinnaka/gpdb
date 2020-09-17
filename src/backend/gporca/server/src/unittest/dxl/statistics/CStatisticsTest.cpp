@@ -51,8 +51,8 @@
 
 using namespace gpopt;
 
-const CHAR *szQuerySelect = "../data/dxl/statistics/SelectQuery.xml";
-const CHAR *szPlanSelect = "../data/dxl/statistics/SelectPlan.xml";
+const CHAR *szQuerySelect = "data/dxl/statistics/SelectQuery.xml";
+const CHAR *szPlanSelect = "data/dxl/statistics/SelectPlan.xml";
 
 // unittest for statistics objects
 GPOS_RESULT
@@ -112,8 +112,8 @@ CStatisticsTest::EresUnittest_UnionAll()
 	CMDAccessor *md_accessor = COptCtxt::PoctxtFromTLS()->Pmda();
 
 	SStatsUnionAllSTestCase rgstatsunionalltc[] = {
-		{"../data/dxl/statistics/UnionAll-Input-1.xml",
-		 "../data/dxl/statistics/UnionAll-Output-1.xml"},
+		{"data/dxl/statistics/UnionAll-Input-1.xml",
+		 "data/dxl/statistics/UnionAll-Output-1.xml"},
 	};
 
 	const ULONG ulTestCases = GPOS_ARRAY_SIZE(rgstatsunionalltc);

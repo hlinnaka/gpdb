@@ -39,7 +39,7 @@
 
 #include <fstream>
 
-static const CHAR *szQueryFile = "../data/dxl/minidump/Query.xml";
+static const CHAR *szQueryFile = "data/dxl/minidump/Query.xml";
 
 //---------------------------------------------------------------------------
 //	@function:
@@ -244,7 +244,7 @@ CMiniDumperDXLTest::EresUnittest_Load()
 	CMemoryPool *mp = amp.Pmp();
 
 	const CHAR *rgszMinidumps[] = {
-		"../data/dxl/minidump/Minidump.xml",
+		"data/dxl/minidump/Minidump.xml",
 	};
 	ULONG ulTestCounter = 0;
 

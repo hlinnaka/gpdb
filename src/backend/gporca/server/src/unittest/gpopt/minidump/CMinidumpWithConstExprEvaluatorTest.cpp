@@ -39,9 +39,9 @@ ULONG CMinidumpWithConstExprEvaluatorTest::m_ulTestCounter = 0;
 
 // minidump files we run with constant expression evaluator on
 const CHAR *rgszConstExprEvaluatorOnFileNames[] = {
-	"../data/dxl/minidump/DynamicIndexScan-Homogenous-EnabledDateConstraint.mdp",
-	"../data/dxl/minidump/DynamicIndexScan-Heterogenous-EnabledDateConstraint.mdp",
-	"../data/dxl/minidump/RemoveImpliedPredOnBCCPredicates.mdp"};
+	"data/dxl/minidump/DynamicIndexScan-Homogenous-EnabledDateConstraint.mdp",
+	"data/dxl/minidump/DynamicIndexScan-Heterogenous-EnabledDateConstraint.mdp",
+	"data/dxl/minidump/RemoveImpliedPredOnBCCPredicates.mdp"};
 
 
 //---------------------------------------------------------------------------

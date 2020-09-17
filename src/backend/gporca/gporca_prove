@@ -1,0 +1,105 @@
+#!/usr/bin/perl -w
+#
+# gporca_prove is a wrapper around the standard 'prove' TAP test runner
+# program. It does two things:
+#
+# - adds one option, --schedule=file, for reading list of tests from a file
+# - adds default option "--exec=./gporca_test -f"
+#
+# See prove --help for information on other options
+
+use strict;
+use warnings;
+use App::Prove;
+use Getopt::Long;
+
+my $app = App::Prove->new;
+
+# set default --exec option. It will be overridden by process_args() if the
+# user gave the --exec option explicitly.
+$app->{exec} = './gporca_test -f';
+
+# let 'prove' process the arguments first
+$app->process_args(@ARGV);
+
+# $app->{ərgv} now contains all the test names and options that 'prove' did
+# not recognize. Check if it contains any --schedule options.
+$app->{argv} = expand_argv_with_schedules($app->{argv});
+
+# Run 'prove'
+exit( $app->run ? 0 : 1 );
+
+
+# Parse any --schedule options, and expand them to a list of tests read from the
+# schedule file.
+sub expand_argv_with_schedules
+{
+    my $argv = shift;
+
+    my $schedules;
+
+    local @ARGV = @{$argv};
+    Getopt::Long::Configure(qw(no_ignore_case bundling pass_through));
+    GetOptions(
+      'schedule=s@' => \$schedules,
+      ) or croak ("Failed to parse command line options");
+
+    my @tests = ();
+    foreach ( @{$schedules} ) {
+        push (@tests, load_schedule($_));
+    }
+
+    $argv = [@ARGV, @tests];
+    return $argv;
+}
+
+sub load_schedule
+{
+    my $fname = shift;
+
+    my @tests = ();
+
+    open SCHED, '<', "$fname" or die "can't open $fname: $!";
+
+    while (my $line = <SCHED>)
+    {
+        chomp($line);
+        next if $line =~ /^#/;       # ignore comments
+        next if $line =~ /^\s*$/;    # ignore blank lines
+
+        push @tests, $line;
+    }
+    close SCHED;
+
+    return @tests;
+}
+
+
+__END__
+
+=head1 NAME
+
+gporca_prove - Wrapper over 'prove' to run GPORCA tests
+
+=head1 USAGE
+
+ gporca_prove [options] [tests]
+
+=head1 OPTIONS
+
+gporca_prove accepts all the same option as 'prove', they are passed
+through to the underlying 'prove' program. See:
+
+ prove --help
+
+for those options.
+
+Options specific to gporca_prove:
+
+ --schedule=file        Load list of tests from file
+
+The schedule file must contain a list of tests on separate lines. A test can
+specified as a path to .cpp files containing the test, or as a path to
+a .mdp minidump file. Lines beginning with '#' are ignored.
+
+=cut

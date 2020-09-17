@@ -33,45 +33,45 @@ using namespace gpopt;
 
 // DXL files
 const CHAR *szInputDXLFileName =
-	"../data/dxl/statistics/Basic-Statistics-Input.xml";
+	"data/dxl/statistics/Basic-Statistics-Input.xml";
 const CHAR *szOutputDXLFileName =
-	"../data/dxl/statistics/Basic-Statistics-Output.xml";
+	"data/dxl/statistics/Basic-Statistics-Output.xml";
 
 const CTestUtils::STestCase rgtcStatistics[] = {
-	{"../data/dxl/statistics/Numeric-Input.xml",
-	 "../data/dxl/statistics/Numeric-Output-LT-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input.xml",
-	 "../data/dxl/statistics/Numeric-Output-LTE-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input.xml",
-	 "../data/dxl/statistics/Numeric-Output-E-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input.xml",
-	 "../data/dxl/statistics/Numeric-Output-GT-MaxBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input.xml",
-	 "../data/dxl/statistics/Numeric-Output-GTE-MaxBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input.xml",
-	 "../data/dxl/statistics/Numeric-Output-E-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input.xml",
+	 "data/dxl/statistics/Numeric-Output-LT-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input.xml",
+	 "data/dxl/statistics/Numeric-Output-LTE-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input.xml",
+	 "data/dxl/statistics/Numeric-Output-E-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input.xml",
+	 "data/dxl/statistics/Numeric-Output-GT-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input.xml",
+	 "data/dxl/statistics/Numeric-Output-GTE-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input.xml",
+	 "data/dxl/statistics/Numeric-Output-E-MaxBoundary.xml"},
 
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-LT-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-LTE-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-E-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-GT-MinBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-GTE-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-LT-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-LTE-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-E-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-GT-MinBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-GTE-MinBoundary.xml"},
 
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-LT-MaxBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-LTE-MaxBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-GT-MaxBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-GTE-MaxBoundary.xml"},
-	{"../data/dxl/statistics/Numeric-Input2.xml",
-	 "../data/dxl/statistics/Numeric-Output-2-E-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-LT-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-LTE-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-GT-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-GTE-MaxBoundary.xml"},
+	{"data/dxl/statistics/Numeric-Input2.xml",
+	 "data/dxl/statistics/Numeric-Output-2-E-MaxBoundary.xml"},
 };
 
 // unittest for statistics objects
@@ -181,14 +181,14 @@ GPOS_RESULT
 CFilterCardinalityTest::EresUnittest_CStatisticsFilter()
 {
 	SStatsFilterSTestCase rgstatstc[] = {
-		{"../data/dxl/statistics/Select-Statistics-Input-Null-Bucket.xml",
-		 "../data/dxl/statistics/Select-Statistics-Output-Null-Bucket.xml",
+		{"data/dxl/statistics/Select-Statistics-Input-Null-Bucket.xml",
+		 "data/dxl/statistics/Select-Statistics-Output-Null-Bucket.xml",
 		 PstatspredNullableCols},
-		{"../data/dxl/statistics/Select-Statistics-Input-Null-Bucket.xml",
-		 "../data/dxl/statistics/Select-Statistics-Output-Null-Constant.xml",
+		{"data/dxl/statistics/Select-Statistics-Input-Null-Bucket.xml",
+		 "data/dxl/statistics/Select-Statistics-Output-Null-Constant.xml",
 		 PstatspredWithNullConstant},
-		{"../data/dxl/statistics/Select-Statistics-Input-Null-Bucket.xml",
-		 "../data/dxl/statistics/Select-Statistics-Output-NotNull-Constant.xml",
+		{"data/dxl/statistics/Select-Statistics-Input-Null-Bucket.xml",
+		 "data/dxl/statistics/Select-Statistics-Output-NotNull-Constant.xml",
 		 PstatspredNotNull},
 	};
 
@@ -238,11 +238,11 @@ GPOS_RESULT
 CFilterCardinalityTest::EresUnittest_CStatisticsFilterArrayCmpAny()
 {
 	SStatsFilterSTestCase rgstatsdisjtc[] = {
-		{"../data/dxl/statistics/ArrayCmpAny-Input-1.xml",
-		 "../data/dxl/statistics/ArrayCmpAny-Output-1.xml",
+		{"data/dxl/statistics/ArrayCmpAny-Input-1.xml",
+		 "data/dxl/statistics/ArrayCmpAny-Output-1.xml",
 		 PstatspredArrayCmpAnySimple},
-		{"../data/dxl/statistics/ArrayCmpAny-Input-1.xml",
-		 "../data/dxl/statistics/ArrayCmpAny-Output-1.xml",
+		{"data/dxl/statistics/ArrayCmpAny-Input-1.xml",
+		 "data/dxl/statistics/ArrayCmpAny-Output-1.xml",
 		 PstatspredArrayCmpAnyDuplicate}};
 
 	const ULONG ulTestCases = GPOS_ARRAY_SIZE(rgstatsdisjtc);
@@ -298,24 +298,24 @@ GPOS_RESULT
 CFilterCardinalityTest::EresUnittest_CStatisticsFilterDisj()
 {
 	SStatsFilterSTestCase rgstatsdisjtc[] = {
-		{"../data/dxl/statistics/Disj-Input-1.xml",
-		 "../data/dxl/statistics/Disj-Output-1.xml", PstatspredDisj1},
-		{"../data/dxl/statistics/Disj-Input-1.xml",
-		 "../data/dxl/statistics/Disj-Output-1.xml", PstatspredDisj2},
-		{"../data/dxl/statistics/Disj-Input-1.xml",
-		 "../data/dxl/statistics/Disj-Output-1.xml", PstatspredDisj3},
-		{"../data/dxl/statistics/Disj-Input-2.xml",
-		 "../data/dxl/statistics/Disj-Output-2-1.xml", PstatspredDisj4},
-		{"../data/dxl/statistics/Disj-Input-2.xml",
-		 "../data/dxl/statistics/Disj-Output-2-2.xml", PstatspredDisj5},
-		{"../data/dxl/statistics/Disj-Input-2.xml",
-		 "../data/dxl/statistics/Disj-Output-2-3.xml", PstatspredDisj6},
-		{"../data/dxl/statistics/Disj-Input-2.xml",
-		 "../data/dxl/statistics/Disj-Output-2-4.xml", PstatspredDisj7},
-		{"../data/dxl/statistics/NestedPred-Input-10.xml",
-		 "../data/dxl/statistics/Disj-Output-8.xml", PstatspredDisj8},
-		{"../data/dxl/statistics/Disj-Input-2.xml",
-		 "../data/dxl/statistics/Disj-Output-2-5.xml", PstatspredDisj9},
+		{"data/dxl/statistics/Disj-Input-1.xml",
+		 "data/dxl/statistics/Disj-Output-1.xml", PstatspredDisj1},
+		{"data/dxl/statistics/Disj-Input-1.xml",
+		 "data/dxl/statistics/Disj-Output-1.xml", PstatspredDisj2},
+		{"data/dxl/statistics/Disj-Input-1.xml",
+		 "data/dxl/statistics/Disj-Output-1.xml", PstatspredDisj3},
+		{"data/dxl/statistics/Disj-Input-2.xml",
+		 "data/dxl/statistics/Disj-Output-2-1.xml", PstatspredDisj4},
+		{"data/dxl/statistics/Disj-Input-2.xml",
+		 "data/dxl/statistics/Disj-Output-2-2.xml", PstatspredDisj5},
+		{"data/dxl/statistics/Disj-Input-2.xml",
+		 "data/dxl/statistics/Disj-Output-2-3.xml", PstatspredDisj6},
+		{"data/dxl/statistics/Disj-Input-2.xml",
+		 "data/dxl/statistics/Disj-Output-2-4.xml", PstatspredDisj7},
+		{"data/dxl/statistics/NestedPred-Input-10.xml",
+		 "data/dxl/statistics/Disj-Output-8.xml", PstatspredDisj8},
+		{"data/dxl/statistics/Disj-Input-2.xml",
+		 "data/dxl/statistics/Disj-Output-2-5.xml", PstatspredDisj9},
 	};
 
 	const ULONG ulTestCases = GPOS_ARRAY_SIZE(rgstatsdisjtc);
@@ -451,8 +451,8 @@ GPOS_RESULT
 CFilterCardinalityTest::EresUnittest_CStatisticsFilterConj()
 {
 	SStatsFilterSTestCase rgstatsdisjtc[] = {
-		{"../data/dxl/statistics/NestedPred-Input-9.xml",
-		 "../data/dxl/statistics/NestedPred-Output-9.xml", PstatspredConj},
+		{"data/dxl/statistics/NestedPred-Input-9.xml",
+		 "data/dxl/statistics/NestedPred-Output-9.xml", PstatspredConj},
 	};
 
 	const ULONG ulTestCases = GPOS_ARRAY_SIZE(rgstatsdisjtc);
@@ -489,38 +489,38 @@ GPOS_RESULT
 CFilterCardinalityTest::EresUnittest_CStatisticsNestedPred()
 {
 	SStatsFilterSTestCase rgstatsdisjtc[] = {
-		{"../data/dxl/statistics/NestedPred-Input-1.xml",
-		 "../data/dxl/statistics/NestedPred-Output-1.xml",
+		{"data/dxl/statistics/NestedPred-Input-1.xml",
+		 "data/dxl/statistics/NestedPred-Output-1.xml",
 		 PstatspredNestedPredDiffCol1},
-		{"../data/dxl/statistics/NestedPred-Input-1.xml",
-		 "../data/dxl/statistics/NestedPred-Output-1.xml",
+		{"data/dxl/statistics/NestedPred-Input-1.xml",
+		 "data/dxl/statistics/NestedPred-Output-1.xml",
 		 PstatspredNestedPredDiffCol2},
-		{"../data/dxl/statistics/NestedPred-Input-2.xml",
-		 "../data/dxl/statistics/NestedPred-Output-2.xml",
+		{"data/dxl/statistics/NestedPred-Input-2.xml",
+		 "data/dxl/statistics/NestedPred-Output-2.xml",
 		 PstatspredNestedPredCommonCol1},
-		{"../data/dxl/statistics/NestedPred-Input-1.xml",
-		 "../data/dxl/statistics/NestedPred-Output-3.xml",
+		{"data/dxl/statistics/NestedPred-Input-1.xml",
+		 "data/dxl/statistics/NestedPred-Output-3.xml",
 		 PstatspredNestedSharedCol},
-		{"../data/dxl/statistics/NestedPred-Input-3.xml",
-		 "../data/dxl/statistics/NestedPred-Output-4.xml",
+		{"data/dxl/statistics/NestedPred-Input-3.xml",
+		 "data/dxl/statistics/NestedPred-Output-4.xml",
 		 PstatspredDisjOverConjSameCol1},
-		{"../data/dxl/statistics/NestedPred-Input-3.xml",
-		 "../data/dxl/statistics/NestedPred-Input-3.xml",
+		{"data/dxl/statistics/NestedPred-Input-3.xml",
+		 "data/dxl/statistics/NestedPred-Input-3.xml",
 		 PstatspredDisjOverConjSameCol2},
-		{"../data/dxl/statistics/NestedPred-Input-1.xml",
-		 "../data/dxl/statistics/NestedPred-Output-5.xml",
+		{"data/dxl/statistics/NestedPred-Input-1.xml",
+		 "data/dxl/statistics/NestedPred-Output-5.xml",
 		 PstatspredDisjOverConjDifferentCol1},
-		{"../data/dxl/statistics/NestedPred-Input-1.xml",
-		 "../data/dxl/statistics/NestedPred-Output-6.xml",
+		{"data/dxl/statistics/NestedPred-Input-1.xml",
+		 "data/dxl/statistics/NestedPred-Output-6.xml",
 		 PstatspredDisjOverConjMultipleIdenticalCols},
-		{"../data/dxl/statistics/NestedPred-Input-2.xml",
-		 "../data/dxl/statistics/NestedPred-Output-7.xml",
+		{"data/dxl/statistics/NestedPred-Input-2.xml",
+		 "data/dxl/statistics/NestedPred-Output-7.xml",
 		 PstatspredNestedPredCommonCol2},
-		{"../data/dxl/statistics/NestedPred-Input-8.xml",
-		 "../data/dxl/statistics/NestedPred-Output-8.xml",
+		{"data/dxl/statistics/NestedPred-Input-8.xml",
+		 "data/dxl/statistics/NestedPred-Output-8.xml",
 		 PstatspredDisjOverConjSameCol3},
-		{"../data/dxl/statistics/NestedPred-Input-10.xml",
-		 "../data/dxl/statistics/NestedPred-Output-10.xml",
+		{"data/dxl/statistics/NestedPred-Input-10.xml",
+		 "data/dxl/statistics/NestedPred-Output-10.xml",
 		 PstatspredDisjOverConjSameCol4},
 	};
 

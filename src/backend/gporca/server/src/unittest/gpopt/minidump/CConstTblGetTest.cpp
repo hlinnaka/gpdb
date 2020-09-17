@@ -21,15 +21,15 @@ ULONG CConstTblGetTest::m_ulTestCounter = 0;  // start from first test
 
 // minidump files
 const CHAR *rgszCTGMdpFiles[] = {
-	"../data/dxl/minidump/ConstTblGetUnderSubqWithOuterRef.mdp",
-	"../data/dxl/minidump/ConstTblGetUnderSubqWithNoOuterRef.mdp",
-	"../data/dxl/minidump/ConstTblGetUnderSubqUnderProjectNoOuterRef.mdp",
-	"../data/dxl/minidump/ConstTblGetUnderSubqUnderProjectWithOuterRef.mdp",
-	"../data/dxl/minidump/CTG-Filter.mdp",
-	"../data/dxl/minidump/CTG-Join.mdp",
-	"../data/dxl/minidump/Sequence-With-Universal-Outer.mdp",
-	"../data/dxl/minidump/UseDistributionSatisfactionForUniversalInnerChild.mdp",
-	"../data/dxl/minidump/Join_OuterChild_DistUniversal.mdp",
+	"data/dxl/minidump/ConstTblGetUnderSubqWithOuterRef.mdp",
+	"data/dxl/minidump/ConstTblGetUnderSubqWithNoOuterRef.mdp",
+	"data/dxl/minidump/ConstTblGetUnderSubqUnderProjectNoOuterRef.mdp",
+	"data/dxl/minidump/ConstTblGetUnderSubqUnderProjectWithOuterRef.mdp",
+	"data/dxl/minidump/CTG-Filter.mdp",
+	"data/dxl/minidump/CTG-Join.mdp",
+	"data/dxl/minidump/Sequence-With-Universal-Outer.mdp",
+	"data/dxl/minidump/UseDistributionSatisfactionForUniversalInnerChild.mdp",
+	"data/dxl/minidump/Join_OuterChild_DistUniversal.mdp",
 };
 
 

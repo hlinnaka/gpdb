@@ -34,7 +34,7 @@ using namespace gpopt;
 
 // DXL files
 const CHAR *szMCVSortExpectedFileName =
-	"../data/dxl/statistics/MCV-Sort-Output.xml";
+	"data/dxl/statistics/MCV-Sort-Output.xml";
 
 
 // unittest for statistics objects
@@ -158,13 +158,13 @@ GPOS_RESULT
 CMCVTest::EresUnittest_MergeHistMCV()
 {
 	SMergeTestElem rgMergeTestElem[] = {
-		{"../data/dxl/statistics/Merge-Input-MCV-Int.xml",
-		 "../data/dxl/statistics/Merge-Input-Histogram-Int.xml",
-		 "../data/dxl/statistics/Merge-Output-Int.xml"},
+		{"data/dxl/statistics/Merge-Input-MCV-Int.xml",
+		 "data/dxl/statistics/Merge-Input-Histogram-Int.xml",
+		 "data/dxl/statistics/Merge-Output-Int.xml"},
 
-		{"../data/dxl/statistics/Merge-Input-MCV-Numeric.xml",
-		 "../data/dxl/statistics/Merge-Input-Histogram-Numeric.xml",
-		 "../data/dxl/statistics/Merge-Output-Numeric.xml"}};
+		{"data/dxl/statistics/Merge-Input-MCV-Numeric.xml",
+		 "data/dxl/statistics/Merge-Input-Histogram-Numeric.xml",
+		 "data/dxl/statistics/Merge-Output-Numeric.xml"}};
 
 	// create memory pool
 	CAutoMemoryPool amp;

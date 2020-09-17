@@ -33,14 +33,14 @@ ULONG CCorrelatedExecutionTest::m_ulTestCounter = 0;  // start from first test
 
 // files for testing of different queries with correlated subqueries
 const CHAR *rgszPositiveTests[] = {
-	"../data/dxl/csq_tests/dxl-q1.xml",	 "../data/dxl/csq_tests/dxl-q2.xml",
-	"../data/dxl/csq_tests/dxl-q3.xml",	 "../data/dxl/csq_tests/dxl-q4.xml",
-	"../data/dxl/csq_tests/dxl-q5.xml",	 "../data/dxl/csq_tests/dxl-q6.xml",
-	"../data/dxl/csq_tests/dxl-q7.xml",	 "../data/dxl/csq_tests/dxl-q8.xml",
-	"../data/dxl/csq_tests/dxl-q9.xml",	 "../data/dxl/csq_tests/dxl-q10.xml",
-	"../data/dxl/csq_tests/dxl-q11.xml", "../data/dxl/csq_tests/dxl-q12.xml",
-	"../data/dxl/csq_tests/dxl-q13.xml", "../data/dxl/csq_tests/dxl-q14.xml",
-	"../data/dxl/csq_tests/dxl-q15.xml", "../data/dxl/csq_tests/dxl-q16.xml",
+	"data/dxl/csq_tests/dxl-q1.xml",  "data/dxl/csq_tests/dxl-q2.xml",
+	"data/dxl/csq_tests/dxl-q3.xml",  "data/dxl/csq_tests/dxl-q4.xml",
+	"data/dxl/csq_tests/dxl-q5.xml",  "data/dxl/csq_tests/dxl-q6.xml",
+	"data/dxl/csq_tests/dxl-q7.xml",  "data/dxl/csq_tests/dxl-q8.xml",
+	"data/dxl/csq_tests/dxl-q9.xml",  "data/dxl/csq_tests/dxl-q10.xml",
+	"data/dxl/csq_tests/dxl-q11.xml", "data/dxl/csq_tests/dxl-q12.xml",
+	"data/dxl/csq_tests/dxl-q13.xml", "data/dxl/csq_tests/dxl-q14.xml",
+	"data/dxl/csq_tests/dxl-q15.xml", "data/dxl/csq_tests/dxl-q16.xml",
 };
 
 //---------------------------------------------------------------------------

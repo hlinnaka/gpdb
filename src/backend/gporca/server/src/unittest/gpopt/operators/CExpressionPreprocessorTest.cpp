@@ -565,14 +565,14 @@ CExpressionPreprocessorTest::EresUnittest_PreProcessOuterJoinMinidumps()
 {
 	// tests where OuterJoin must be converted to InnerJoin
 	const CHAR *rgszOuterJoinPositiveTests[] = {
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q1.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q3.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q5.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q7.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q9.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q11.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q13.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q15.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q1.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q3.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q5.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q7.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q9.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q11.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q13.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q15.xml",
 	};
 
 	for (ULONG ul = 0; ul < GPOS_ARRAY_SIZE(rgszOuterJoinPositiveTests); ul++)
@@ -583,14 +583,14 @@ CExpressionPreprocessorTest::EresUnittest_PreProcessOuterJoinMinidumps()
 
 	// tests where OuterJoin must NOT be converted to InnerJoin
 	const CHAR *rgszOuterJoinNegativeTests[] = {
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q2.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q4.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q6.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q8.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q10.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q12.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q14.xml",
-		"../data/dxl/expressiontests/LOJ-TO-InnerJoin-Q16.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q2.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q4.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q6.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q8.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q10.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q12.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q14.xml",
+		"data/dxl/expressiontests/LOJ-TO-InnerJoin-Q16.xml",
 	};
 
 	for (ULONG ul = 0; ul < GPOS_ARRAY_SIZE(rgszOuterJoinNegativeTests); ul++)
@@ -936,8 +936,8 @@ GPOS_RESULT
 CExpressionPreprocessorTest::EresUnittest_PreProcessWindowFuncWithOuterRefs()
 {
 	const CHAR *rgszTestsNoOuterRefs[] = {
-		"../data/dxl/expressiontests/WinFunc-OuterRef-Partition-Query.xml",
-		"../data/dxl/expressiontests/WinFunc-OuterRef-Partition-Order-Query.xml",
+		"data/dxl/expressiontests/WinFunc-OuterRef-Partition-Query.xml",
+		"data/dxl/expressiontests/WinFunc-OuterRef-Partition-Order-Query.xml",
 	};
 
 	for (ULONG ul = 0; ul < GPOS_ARRAY_SIZE(rgszTestsNoOuterRefs); ul++)
@@ -948,7 +948,7 @@ CExpressionPreprocessorTest::EresUnittest_PreProcessWindowFuncWithOuterRefs()
 	}
 
 	const CHAR *rgszTestsOuterRefs[] = {
-		"../data/dxl/expressiontests/WinFunc-OuterRef-Partition-Order-Frames-Query.xml",
+		"data/dxl/expressiontests/WinFunc-OuterRef-Partition-Order-Frames-Query.xml",
 	};
 
 	for (ULONG ul = 0; ul < GPOS_ARRAY_SIZE(rgszTestsOuterRefs); ul++)
@@ -1051,40 +1051,39 @@ CExpressionPreprocessorTest::EresUnittest_PreProcessWindowFuncWithDistinctAggs()
 
 	// tests where preprocessing removes SeqPrj nodes
 	const CHAR *rgszTestsDistinctAggsRemoveWindow[] = {
-		"../data/dxl/expressiontests/WinFunc-Single-DQA-Query.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-2.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-3.xml",
+		"data/dxl/expressiontests/WinFunc-Single-DQA-Query.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-2.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-3.xml",
 	};
 
 	// tests where preprocessing removes SeqPrj nodes and adds join with INDF condition
 	const CHAR *rgszTestsDistinctAggsRemoveWindowINDF[] = {
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-SameColumn.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-SameColumn-2.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-DifferentColumn.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-DifferentColumn-2.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-SameColumn.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-SameColumn-2.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-DifferentColumn.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-PartitionBy-DifferentColumn-2.xml",
 	};
 
 	// tests where preprocessing does not remove SeqPrj nodes
 	const CHAR *rgszTestsDistinctAggsDoNotRemoveWindow[] = {
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-2.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-2.xml",
 	};
 
 	// tests where preprocessing does not remove SeqPrj nodes and add join with INDF condition
 	const CHAR *rgszTestsDistinctAggsDoNotRemoveWindowINDF[] = {
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-PartitionBy-SameColumn.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-PartitionBy-SameColumn-2.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-OrderBy-PartitionBy-SameColumn.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-OrderBy-PartitionBy-SameColumn-2.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-Distinct-Different-Columns.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-Distinct-ParitionBy-Different-Columns.xml",
-		"../data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-Multiple-ParitionBy-Columns.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-PartitionBy-SameColumn.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-PartitionBy-SameColumn-2.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-OrderBy-PartitionBy-SameColumn.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-OrderBy-PartitionBy-SameColumn-2.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-Distinct-Different-Columns.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-Distinct-ParitionBy-Different-Columns.xml",
+		"data/dxl/expressiontests/WinFunc-Multiple-DQA-Query-RowNumber-Multiple-ParitionBy-Columns.xml",
 	};
 
 	// path to metadata file of the previous tests
-	const CHAR *szMDFilePath =
-		"../data/dxl/expressiontests/WinFunc-Tests-MD.xml";
+	const CHAR *szMDFilePath = "data/dxl/expressiontests/WinFunc-Tests-MD.xml";
 
 	// reset metadata cache
 	CMDCache::Reset();

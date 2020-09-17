@@ -300,97 +300,67 @@ CUnittest::UllParsePlanId(const CHAR *szPlanId)
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CUnittest::EresExecute
+//		CUnittest::DriverTAP
 //
 //	@doc:
-//		Execute requested unittests
+//		Execute requested unittests, producing TAP output
 //
 //---------------------------------------------------------------------------
+
 ULONG
-CUnittest::Driver(CBitVector *pbv)
+CUnittest::DriverTAP(CBitVector *pbv)
 {
-	CAutoConfig ac(m_pfConfig, m_pfCleanup, m_ulNested);
-	ULONG ulOk = 0;
+	CUnittest **tests = new CUnittest *[pbv->CountSetBits()];
+	int ntests;
 
-	// scope of timer
+	ntests = 0;
+
+	for (ULONG i = 0; i < CUnittest::m_ulTests; i++)
 	{
-		gpos::CAutoTimer timer("total test run time", true /*fPrint*/);
-
-		for (ULONG i = 0; i < CUnittest::m_ulTests; i++)
+		if (pbv->Get(i))
 		{
-			if (pbv->Get(i))
-			{
-				CUnittest &ut = CUnittest::m_rgut[i];
-				GPOS_RESULT eres = EresExecute(&ut, 1 /*size*/);
-				GPOS_ASSERT((GPOS_OK == eres || GPOS_FAILED == eres) &&
-							"Unexpected result from unittest");
+			CUnittest &ut = CUnittest::m_rgut[i];
 
-				if (GPOS_OK == eres)
-				{
-					++ulOk;
-				}
+			tests[ntests++] = &ut;
+		}
+	}
+	return DriverTAP(tests, ntests);
+}
+
+ULONG
+CUnittest::DriverTAP(CUnittest **tests, int ntests)
+{
+	printf("1..%d\n", ntests);
+
+	CAutoConfig ac(m_pfConfig, m_pfCleanup, m_ulNested);
+	ULONG nfailed = 0;
+
+	for (int i = 0; i < ntests; i++)
+	{
+		CUnittest *ut = tests[i];
+		GPOS_RESULT eres = EresExecute(ut, 1 /*size*/);
+		GPOS_ASSERT((GPOS_OK == eres || GPOS_FAILED == eres) &&
+					"Unexpected result from unittest");
+
+		if (GPOS_OK == eres)
+			printf("ok %d\n", i + 1);
+		else
+		{
+			printf("not ok %d\n", i + 1);
+			nfailed++;
+		}
 
 #ifdef GPOS_DEBUG
-				{
-					CAutoMemoryPool amp;
-					CMemoryPoolManager::GetMemoryPoolMgr()->PrintOverSizedPools(
-						amp.Pmp(), GPOS_OVERSIZED_POOL_SIZE);
-				}
-#endif	// GPOS_DEBUG
-			}
-		}
-	}
-
-	GPOS_TRACE_FORMAT("Tests succeeded: %d", ulOk);
-	GPOS_TRACE_FORMAT("Tests failed:    %d", pbv->CountSetBits() - ulOk);
-
-	return pbv->CountSetBits() - ulOk;
-}
-
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CUnittest::EresExecute
-//
-//	@doc:
-//		Execute unittests by parsing input arguments
-//
-//---------------------------------------------------------------------------
-ULONG
-CUnittest::Driver(CMainArgs *pma)
-{
-	CBitVector bv(ITask::Self()->Pmp(), CUnittest::UlTests());
-
-	CHAR ch = '\0';
-	while (pma->Getopt(&ch))
-	{
-		CHAR *szTestName = NULL;
-
-		switch (ch)
 		{
-			case 'U':
-				szTestName = optarg;
-				// fallthru
-			case 'u':
-				FindTest(bv, EttStandard, szTestName);
-				break;
-
-			case 'x':
-				FindTest(bv, EttExtended, NULL /*szTestName*/);
-				break;
-
-			case 'T':
-				SetTraceFlag(optarg);
-
-			default:
-				// ignore other parameters
-				break;
+			CAutoMemoryPool amp;
+			CMemoryPoolManager::GetMemoryPoolMgr()->PrintOverSizedPools(
+				amp.Pmp(), GPOS_OVERSIZED_POOL_SIZE);
 		}
+#endif	// GPOS_DEBUG
 	}
 
-	return Driver(&bv);
+	return nfailed;
 }
-
 
 //---------------------------------------------------------------------------
 //	@function:

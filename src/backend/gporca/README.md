@@ -20,11 +20,6 @@ To understand the objectives and architecture of GPORCA please refer to the foll
 
 Want to [Contribute](#contribute)?
 
-GPORCA supports various build types: debug, release with debug info, release.
-You'll need CMake 3.1 or higher to build the gporca_test and gpos_test
-utilities to test GPORCA. Get it from cmake.org, or your operating system's
-package manager.
-
 # First Time Setup
 
 ## Build and install GPORCA
@@ -33,50 +28,63 @@ ORCA is built automatically with GPDB as long as `--disable-orca` is not used.
 <a name="test"></a>
 
 ## Test GPORCA
-To test GPORCA, first go into the `gporca` directory:
+
+The GPORCA unit tests use the `gporca_prove` utility as the driver to run the
+tests. It is a wrapper around the standard perl `prove` program which is also
+used to run the TAP tests in GPDB.
+
+To test GPORCA, first go into the `gporca` directory and build GPORCA and the
+test executable, `gporca_test`:
 
 ```
-cmake -GNinja -H. -Bbuild
+make gporca_test
 ```
 
-
-To run all GPORCA tests, simply use the `ctest` command from the build directory
+To run all GPORCA tests, use the `gporca_prove` command from the gporca directory
 after build finishes.
 
 ```
-cd build
-ctest
+./gporca_prove --schedule=tap-schedule.txt
 ```
 
-Much like `make`, `ctest` has a -j option that allows running multiple tests in
+The test are also run automatically as part of the `unittest-check` make target,
+along with all the other GPDB unit tests.
+
+Much like `make`, `prove` has a -j option that allows running multiple tests in
 parallel to save time. Using it is recommended for faster testing.
 
 ```
-ctest -j8
+./gporca_prove --schedule=tap-schedule.txt -j8
 ```
 
-By default, `ctest` does not print the output of failed tests. To print the
-output of failed tests, use the `--output-on-failure` flag like so (this is
+By default, `gporca_prove` does not print the output of failed tests. To print the
+output of failed tests, use the `--verbose` flag like so (this is
 useful for debugging failed tests):
 
 ```
-ctest -j8 --output-on-failure
+./gporca_prove --schedule=tap-schedule.txt -j8 --verbose
 ```
 
-To run only the previously failed ctests, use the `--rerun-failed` flag.
+To run only the previously failed tests, you can use `prove`'s option to save the
+list of tests. First run the tests with:
 ```
-ctest -j8 --rerun-failed --output-on-failure
-```
-
-To run a specific individual test, use the `gporca_test` executable directly.
-
-```
-./server/gporca_test -U CAggTest
+./gporca_prove --schedule=tap-schedule.txt -j8 --state=save
 ```
 
-To run a specific minidump, for example for `../data/dxl/minidump/TVFRandom.mdp`:
+You can then re-run the failed tests with:
 ```
-./server/gporca_test -d ../data/dxl/minidump/TVFRandom.mdp
+./gporca_prove --schedule=tap-schedule.txt -j8 --state=failed
+```
+
+To run a specific individual test:
+
+```
+./gporca_prove CAggTest
+```
+
+To run a specific minidump, for example for `data/dxl/minidump/TVFRandom.mdp`:
+```
+./gporca_prove data/dxl/minidump/TVFRandom.mdp
 ```
 
 Note that some tests use assertions that are only enabled for DEBUG builds, so
@@ -124,26 +132,27 @@ xmllint --format $MASTER_DATA_DIRECTORY/minidumps/Minidump_20160610_220222_4_14.
 --- a/server/src/unittest/gpopt/minidump/CICGTest.cpp
 +++ b/server/src/unittest/gpopt/minidump/CICGTest.cpp
 @@ -217,6 +217,7 @@ const CHAR *rgszFileNames[] =
-                "../data/dxl/minidump/EffectsOfJoinFilter.mdp",
-                "../data/dxl/minidump/Join-IDF.mdp",
-                "../data/dxl/minidump/CoerceToDomain.mdp",
-+               "../data/dxl/minidump/Mytest.mdp",
-                "../data/dxl/minidump/LeftOuter2InnerUnionAllAntiSemiJoin.mdp",
+                "data/dxl/minidump/EffectsOfJoinFilter.mdp",
+                "data/dxl/minidump/Join-IDF.mdp",
+                "data/dxl/minidump/CoerceToDomain.mdp",
++               "data/dxl/minidump/Mytest.mdp",
+                "data/dxl/minidump/LeftOuter2InnerUnionAllAntiSemiJoin.mdp",
  #ifndef GPOS_DEBUG
                 // TODO:  - Jul 14 2015; disabling it for debug build to reduce testing time
 ```
 
-Alternatively, it could also be added to the proper test suite in `server/CMakeLists.txt` as follows:
+Alternatively, it could also be added to the `tap-schedule.txt` file as follows:
 ```
---- a/server/CMakeLists.txt
-+++ b/server/CMakeLists.txt
-@@ -183,7 +183,8 @@ CPartTbl5Test:
- PartTbl-IsNullPredicate PartTbl-IsNotNullPredicate PartTbl-IndexOnDefPartOnly
- PartTbl-SubqueryOuterRef PartTbl-CSQ-PartKey PartTbl-CSQ-NonPartKey
- PartTbl-LeftOuterHashJoin-DPE-IsNull PartTbl-LeftOuterNLJoin-DPE-IsNull
--PartTbl-List-DPE-Varchar-Predicates PartTbl-List-DPE-Int-Predicates;
-+PartTbl-List-DPE-Varchar-Predicates PartTbl-List-DPE-Int-Predicates
-+Mytest;
+--- a/src/backend/gporca/tap-schedule.txt
++++ b/src/backend/gporca/tap-schedule.txt
+@@ -448,6 +448,7 @@ data/dxl/minidump/PartTbl-SubqueryOuterRef.mdp
+ data/dxl/minidump/PartTbl-CSQ-PartKey.mdp
+ data/dxl/minidump/PartTbl-CSQ-NonPartKey.mdp
+ data/dxl/minidump/PartTbl-AggWithExistentialSubquery.mdp
++data/dxl/minidump/Mytest.mdp
+ 
+ #CPartTbl6Test
+ data/dxl/minidump/PartTbl-PredicateWithCast.mdp
 ```
 
 <a name="updatetest"></a>
@@ -153,44 +162,30 @@ In some situations, a failing test does not necessarily imply that the fix is
 wrong. Occasionally, existing tests need to be updated. There is now a script
 that allows for users to quickly and easily update existing mdps. This script
 takes in a logfile that it will use to update the mdps. This logfile can be
-obtained from running ctest as shown below.
+obtained from running `gporca_prove` as shown below.
 
 Existing minidumps can be updated by running the following:
 
 
-1. Run `ctest -j8`.
+1. Run `./gporca_prove -j8 --state=save`.
 
 2. If there are failing tests, run
 ```
-ctest -j8 --rerun-failed --output-on-failure | tee /tmp/failures.out
+./gporca_prove --state=failed -D > /tmp/failures.out
 ```
 
 3. The output file can then be used with the `fix_mdps.py` script.
 ```
-gporca/scripts/fix_mdps.py --logFile /tmp/failures.out
+./scripts/fix_mdps.py /tmp/failures.out
 ```
 Note: This will overwrite existing mdp files. This is best used after
 committing existing changes, so you can more easily see the diff.
-Alternatively, you can use `gporca/scripts/fix_mdps.py --dryRun` to not change
+Alternatively, you can use `scripts/fix_mdps.py --dryRun` to not change
 mdp files
 
 4. Ensure that all changes are valid and as expected.
 
 # Advanced Setup
-
-## How to generate build files with different options
-
-Here are a few build flavors (commands run from the ORCA checkout directory):
-
-```
-# debug build
-cmake -GNinja -D CMAKE_BUILD_TYPE=Debug -H. -Bbuild.debug
-```
-
-```
-# release build with debug info
-cmake -GNinja -D CMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
-```
 
 ## Explicitly Specifying Xerces For Build
 
@@ -200,26 +195,6 @@ location other than the default under `/usr/local/`, because you may have other
 software that depends on the platform's version of Xerces-C. Installing in a
 non-default prefix allows you to have GP-Xerces installed side-by-side with
 unpatched Xerces without incompatibilities.
-
-You can point cmake at your custom Xerces installation using the
-`XERCES_INCLUDE_DIR` and `XERCES_LIBRARY` options like so:
-
-However, to use the current build scripts in GPDB, Xerces will need to be
-placed on the /usr path.
-
-```
-cmake -GNinja -D XERCES_INCLUDE_DIR=/opt/gp_xerces/include -D XERCES_LIBRARY=/opt/gp_xerces/lib/libxerces-c.so ..
-```
-
-Again, on Mac OS X, the library name will end with `.dylib` instead of `.so`.
-
-## How to debug the build
-
-Show all command lines while building (for debugging purpose)
-
-```
-ninja -v -C build
-```
 
 <a name="contribute"></a>
 # How to Contribute

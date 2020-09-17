@@ -28,15 +28,15 @@ ULONG CCollapseProjectTest::m_ulCollapseProjectTestCounter =
 
 // minidump files
 const CHAR *rgszCollapseProjectFileNames[] = {
-	"../data/dxl/minidump/MultipleSetReturningFunction-1.mdp",	// project list has multiple set returning functions but one of them cannot be collapsed
-	"../data/dxl/minidump/MultipleSetReturningFunction-2.mdp",	// project list has multiple set returning functions that can be collapsed
-	"../data/dxl/minidump/MultipleSetReturningFunction-3.mdp",	// both child's and parent's project list has collapsible set returning functions, but we should not
-	"../data/dxl/minidump/DMLCollapseProject.mdp",
-	"../data/dxl/minidump/CollapseCascadeProjects2of2.mdp",
-	"../data/dxl/minidump/CollapseCascadeProjects2of3.mdp",
-	"../data/dxl/minidump/CannotCollapseCascadeProjects.mdp",
-	"../data/dxl/minidump/CollapseProject-SetReturning.mdp",
-	"../data/dxl/minidump/CollapseProject-SetReturning-CTE.mdp",
+	"data/dxl/minidump/MultipleSetReturningFunction-1.mdp",	 // project list has multiple set returning functions but one of them cannot be collapsed
+	"data/dxl/minidump/MultipleSetReturningFunction-2.mdp",	 // project list has multiple set returning functions that can be collapsed
+	"data/dxl/minidump/MultipleSetReturningFunction-3.mdp",	 // both child's and parent's project list has collapsible set returning functions, but we should not
+	"data/dxl/minidump/DMLCollapseProject.mdp",
+	"data/dxl/minidump/CollapseCascadeProjects2of2.mdp",
+	"data/dxl/minidump/CollapseCascadeProjects2of3.mdp",
+	"data/dxl/minidump/CannotCollapseCascadeProjects.mdp",
+	"data/dxl/minidump/CollapseProject-SetReturning.mdp",
+	"data/dxl/minidump/CollapseProject-SetReturning-CTE.mdp",
 
 };
 

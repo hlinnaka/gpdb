@@ -290,7 +290,7 @@ CCostTest::EresUnittest_Parsing()
 	CAutoMemoryPool amp;
 	CMemoryPool *mp = amp.Pmp();
 	CParseHandlerDXL *pphDXL = CDXLUtils::GetParseHandlerForDXLFile(
-		mp, "../data/dxl/cost/cost0.xml", NULL);
+		mp, "data/dxl/cost/cost0.xml", NULL);
 	ICostModelParams *pcp = pphDXL->GetCostModelParams();
 
 	{
@@ -318,7 +318,7 @@ CCostTest::EresUnittest_ParsingWithException()
 	CAutoMemoryPool amp;
 	CMemoryPool *mp = amp.Pmp();
 	CParseHandlerDXL *pphDXL = CDXLUtils::GetParseHandlerForDXLFile(
-		mp, "../data/dxl/cost/wrong-cost.xml", NULL);
+		mp, "data/dxl/cost/wrong-cost.xml", NULL);
 	GPOS_DELETE(pphDXL);
 
 	return GPOS_OK;

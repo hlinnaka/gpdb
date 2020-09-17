@@ -106,7 +106,7 @@ static gpos::GPOS_RESULT
 Eres_ParseCalibratedCostModel()
 {
 	const CHAR dxl_filename[] =
-		"../data/dxl/parse_tests/CostModelConfigCalibrated.xml";
+		"data/dxl/parse_tests/CostModelConfigCalibrated.xml";
 	Fixture fixture;
 
 	CMemoryPool *mp = fixture.Pmp();
@@ -168,7 +168,7 @@ static gpos::GPOS_RESULT
 Eres_ParseLegacyCostModel()
 {
 	const CHAR dxl_filename[] =
-		"../data/dxl/parse_tests/CostModelConfigLegacy.xml";
+		"data/dxl/parse_tests/CostModelConfigLegacy.xml";
 	Fixture fixture;
 
 	CMemoryPool *mp = fixture.Pmp();

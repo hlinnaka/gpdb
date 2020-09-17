@@ -28,17 +28,17 @@ ULONG CDirectDispatchTest::m_ulDirectDispatchCounter =
 
 // minidump files
 const CHAR *rgszDirectDispatchFileNames[] = {
-	"../data/dxl/minidump/DirectDispatch-SingleCol.mdp",
-	"../data/dxl/minidump/DirectDispatch-GpSegmentId.mdp",
-	"../data/dxl/minidump/DirectDispatch-SingleCol-Disjunction.mdp",
-	"../data/dxl/minidump/DirectDispatch-SingleCol-Disjunction-IsNull.mdp",
-	"../data/dxl/minidump/DirectDispatch-SingleCol-Disjunction-Negative.mdp",
-	"../data/dxl/minidump/DirectDispatch-MultiCol.mdp",
-	"../data/dxl/minidump/DirectDispatch-MultiCol-Disjunction.mdp",
-	"../data/dxl/minidump/DirectDispatch-MultiCol-Negative.mdp",
-	"../data/dxl/minidump/DirectDispatch-IndexScan.mdp",
-	"../data/dxl/minidump/DirectDispatch-DynamicIndexScan.mdp",
-	"../data/dxl/minidump/InsertDirectedDispatchNullValue.mdp",
+	"data/dxl/minidump/DirectDispatch-SingleCol.mdp",
+	"data/dxl/minidump/DirectDispatch-GpSegmentId.mdp",
+	"data/dxl/minidump/DirectDispatch-SingleCol-Disjunction.mdp",
+	"data/dxl/minidump/DirectDispatch-SingleCol-Disjunction-IsNull.mdp",
+	"data/dxl/minidump/DirectDispatch-SingleCol-Disjunction-Negative.mdp",
+	"data/dxl/minidump/DirectDispatch-MultiCol.mdp",
+	"data/dxl/minidump/DirectDispatch-MultiCol-Disjunction.mdp",
+	"data/dxl/minidump/DirectDispatch-MultiCol-Negative.mdp",
+	"data/dxl/minidump/DirectDispatch-IndexScan.mdp",
+	"data/dxl/minidump/DirectDispatch-DynamicIndexScan.mdp",
+	"data/dxl/minidump/InsertDirectedDispatchNullValue.mdp",
 };
 
 //---------------------------------------------------------------------------

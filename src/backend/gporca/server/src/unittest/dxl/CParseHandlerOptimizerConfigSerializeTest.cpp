@@ -79,7 +79,7 @@ SerializeOptimizerConfig(CMemoryPool *mp, COptimizerConfig *optimizer_config,
 namespace gpdxl
 {
 // Optimizer Config request file
-const CHAR *dxl_filename = "../data/dxl/parse_tests/OptimizerConfig.xml";
+const CHAR *dxl_filename = "data/dxl/parse_tests/OptimizerConfig.xml";
 
 // Parse an optimizer config and verify correctness of serialization.
 // Serialization of COptimizerConfig is only done for writing to a DXL file as part of creating a minidump

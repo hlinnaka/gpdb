@@ -34,14 +34,14 @@ ULONG CExternalTableTest::m_ulTestCounter = 0;	// start from first test
 
 // minidump files
 const CHAR *rgszExternalTableFileNames[] = {
-	"../data/dxl/minidump/ExternalTable1.mdp",
-	"../data/dxl/minidump/ExternalTable2.mdp",
-	"../data/dxl/minidump/ExternalTable3.mdp",
-	"../data/dxl/minidump/ExternalTable4.mdp",
-	"../data/dxl/minidump/ExternalTableWithFilter.mdp",
-	"../data/dxl/minidump/CTAS-with-randomly-distributed-external-table.mdp",
-	"../data/dxl/minidump/CTAS-with-hashed-distributed-external-table.mdp",
-	"../data/dxl/minidump/AggonExternalTableNoMotion.mdp"};
+	"data/dxl/minidump/ExternalTable1.mdp",
+	"data/dxl/minidump/ExternalTable2.mdp",
+	"data/dxl/minidump/ExternalTable3.mdp",
+	"data/dxl/minidump/ExternalTable4.mdp",
+	"data/dxl/minidump/ExternalTableWithFilter.mdp",
+	"data/dxl/minidump/CTAS-with-randomly-distributed-external-table.mdp",
+	"data/dxl/minidump/CTAS-with-hashed-distributed-external-table.mdp",
+	"data/dxl/minidump/AggonExternalTableNoMotion.mdp"};
 
 
 //---------------------------------------------------------------------------

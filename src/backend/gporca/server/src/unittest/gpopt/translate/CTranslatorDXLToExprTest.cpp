@@ -45,23 +45,23 @@
 #define GPDB_INT4_ADD_OP OID(551)
 
 const CHAR *szQueryDroppedColumn =
-	"../data/dxl/expressiontests/NullableDroppedColumn.xml";
-const CHAR *szQueryTableScan = "../data/dxl/expressiontests/TableScan.xml";
-const CHAR *szQueryLimit = "../data/dxl/expressiontests/LimitQuery.xml";
+	"data/dxl/expressiontests/NullableDroppedColumn.xml";
+const CHAR *szQueryTableScan = "data/dxl/expressiontests/TableScan.xml";
+const CHAR *szQueryLimit = "data/dxl/expressiontests/LimitQuery.xml";
 const CHAR *szQueryLimitNoOffset =
-	"../data/dxl/expressiontests/LimitQueryNoOffset.xml";
+	"data/dxl/expressiontests/LimitQueryNoOffset.xml";
 const CHAR *szQueryTVF =
-	"../data/dxl/expressiontests/TableValuedFunctionQuery.xml";
+	"data/dxl/expressiontests/TableValuedFunctionQuery.xml";
 static const CHAR *szQueryScalarSubquery =
-	"../data/dxl/expressiontests/ScalarSubqueryQuery.xml";
+	"data/dxl/expressiontests/ScalarSubqueryQuery.xml";
 const CHAR *szScalarConstArray =
-	"../data/dxl/expressiontests/CScalarConstArray.xml";
+	"data/dxl/expressiontests/CScalarConstArray.xml";
 
 static const CHAR *m_rgszDXLFileNames[] = {
-	"../data/dxl/query/dxl-q17.xml",
-	"../data/dxl/query/dxl-q18.xml",
-	"../data/dxl/query/dxl-q19.xml",
-	"../data/dxl/query/dxl-q23.xml",
+	"data/dxl/query/dxl-q17.xml",
+	"data/dxl/query/dxl-q18.xml",
+	"data/dxl/query/dxl-q19.xml",
+	"data/dxl/query/dxl-q23.xml",
 };
 //---------------------------------------------------------------------------
 //	@function:

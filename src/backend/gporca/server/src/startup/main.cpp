@@ -32,6 +32,49 @@
 // test headers
 
 #include "unittest/base.h"
+
+// test headers
+
+#include "unittest/gpos/common/CAutoPTest.h"
+#include "unittest/gpos/common/CAutoRefTest.h"
+#include "unittest/gpos/common/CAutoRgTest.h"
+#include "unittest/gpos/common/CBitSetIterTest.h"
+#include "unittest/gpos/common/CBitSetTest.h"
+#include "unittest/gpos/common/CBitVectorTest.h"
+#include "unittest/gpos/common/CDynamicPtrArrayTest.h"
+#include "unittest/gpos/common/CEnumSetTest.h"
+#include "unittest/gpos/common/CDoubleTest.h"
+#include "unittest/gpos/common/CHashMapTest.h"
+#include "unittest/gpos/common/CHashMapIterTest.h"
+#include "unittest/gpos/common/CHashSetTest.h"
+#include "unittest/gpos/common/CHashSetIterTest.h"
+#include "unittest/gpos/common/CListTest.h"
+#include "unittest/gpos/common/CRefCountTest.h"
+#include "unittest/gpos/common/CStackTest.h"
+#include "unittest/gpos/common/CSyncHashtableTest.h"
+#include "unittest/gpos/common/CSyncListTest.h"
+
+#include "unittest/gpos/error/CErrorHandlerTest.h"
+#include "unittest/gpos/error/CExceptionTest.h"
+#include "unittest/gpos/error/CLoggerTest.h"
+#include "unittest/gpos/error/CMessageTest.h"
+#include "unittest/gpos/error/CMessageTableTest.h"
+#include "unittest/gpos/error/CMessageRepositoryTest.h"
+#include "unittest/gpos/error/CMiniDumperTest.h"
+
+#include "unittest/gpos/io/COstreamBasicTest.h"
+#include "unittest/gpos/io/COstreamFileTest.h"
+#include "unittest/gpos/io/COstreamStringTest.h"
+#include "unittest/gpos/io/CFileTest.h"
+
+#include "unittest/gpos/memory/CMemoryPoolBasicTest.h"
+#include "unittest/gpos/memory/CCacheTest.h"
+
+#include "unittest/gpos/string/CStringTest.h"
+#include "unittest/gpos/string/CWStringTest.h"
+
+#include "unittest/gpos/task/CTaskLocalStorageTest.h"
+
 #include "unittest/gpopt/search/CTreeMapTest.h"
 
 #include "unittest/dxl/CDXLMemoryManagerTest.h"
@@ -125,7 +168,6 @@
 #include "unittest/dxl/statistics/CMCVTest.h"
 #include "unittest/dxl/statistics/CJoinCardinalityTest.h"
 #include "unittest/gpopt/cost/CCostTest.h"
-#include "unittest/gpopt/minidump/MinidumpTestHeaders.h"  // auto generated header file
 
 using namespace gpos;
 using namespace gpopt;
@@ -135,7 +177,37 @@ using namespace gpdbcost;
 
 // static array of all known unittest routines
 static gpos::CUnittest rgut[] = {
-#include "unittest/gpopt/minidump/MinidumpTestArray.inl"  // auto generated inlining file
+	// gpos
+	// common
+	GPOS_UNITTEST_STD(CAutoPTest), GPOS_UNITTEST_STD(CAutoRefTest),
+	GPOS_UNITTEST_STD(CAutoRgTest), GPOS_UNITTEST_STD(CBitSetIterTest),
+	GPOS_UNITTEST_STD(CBitSetTest), GPOS_UNITTEST_STD(CBitVectorTest),
+	GPOS_UNITTEST_STD(CDynamicPtrArrayTest), GPOS_UNITTEST_STD(CEnumSetTest),
+	GPOS_UNITTEST_STD(CDoubleTest), GPOS_UNITTEST_STD(CHashMapTest),
+	GPOS_UNITTEST_STD(CHashMapIterTest), GPOS_UNITTEST_STD(CHashSetTest),
+	GPOS_UNITTEST_STD(CHashSetIterTest), GPOS_UNITTEST_STD(CRefCountTest),
+	GPOS_UNITTEST_STD(CListTest), GPOS_UNITTEST_STD(CStackTest),
+	GPOS_UNITTEST_STD(CSyncHashtableTest), GPOS_UNITTEST_STD(CSyncListTest),
+
+	// error
+	GPOS_UNITTEST_STD(CErrorHandlerTest), GPOS_UNITTEST_STD(CExceptionTest),
+	GPOS_UNITTEST_STD(CLoggerTest), GPOS_UNITTEST_STD(CMessageTest),
+	GPOS_UNITTEST_STD(CMessageTableTest),
+	GPOS_UNITTEST_STD(CMessageRepositoryTest),
+	GPOS_UNITTEST_STD(CMiniDumperTest),
+
+	// io
+	GPOS_UNITTEST_STD(COstreamBasicTest), GPOS_UNITTEST_STD(COstreamStringTest),
+	GPOS_UNITTEST_STD(COstreamFileTest), GPOS_UNITTEST_STD(CFileTest),
+
+	// memory
+	GPOS_UNITTEST_STD(CMemoryPoolBasicTest), GPOS_UNITTEST_STD(CCacheTest),
+
+	// string
+	GPOS_UNITTEST_STD(CWStringTest), GPOS_UNITTEST_STD(CStringTest),
+
+	// task
+	GPOS_UNITTEST_STD(CTaskLocalStorageTest),
 
 	// naucrates
 	GPOS_UNITTEST_STD(CCostTest), GPOS_UNITTEST_STD(CDatumTest),
@@ -255,6 +327,16 @@ Cleanup()
 // the actual count of failed tests
 static ULONG tests_failed = 0;
 
+static CHAR *mdpfilename;
+
+GPOS_RESULT
+RunMinidumpTest()
+{
+	const CHAR *mdpfilenames[] = {mdpfilename};
+	ULONG testCounter = 0;
+	return CTestUtils::EresUnittest_RunTests(mdpfilenames, &testCounter, 1);
+}
+
 //---------------------------------------------------------------------------
 //	@function:
 //		PvExec
@@ -282,6 +364,9 @@ PvExec(void *pv)
 
 		switch (ch)
 		{
+			case 'f':
+				file_name = optarg;
+				break;
 			case 'U':
 				szTestName = optarg;
 				// fallthru
@@ -365,11 +450,52 @@ PvExec(void *pv)
 		pdxlnPlan->Release();
 		CMDCache::Shutdown();
 	}
-	else
+	else if (fUnittest)
 	{
-		GPOS_ASSERT(fUnittest);
-		tests_failed = CUnittest::Driver(&bv);
+		tests_failed = CUnittest::DriverTAP(&bv);
 	}
+	else if (file_name)
+	{
+		/*
+		 * The -f file option was used. Is it a .cpp file specifying a class name,
+		 * or a .mdp file?
+		 */
+		if (strlen(file_name) > 4 &&
+			strcmp(&file_name[strlen(file_name) - 4], ".mdp") == 0)
+		{
+			fMinidump = true;
+
+			mdpfilename = file_name;
+			CUnittest *test = new gpos::CUnittest(
+				"MinidumpTest", CUnittest::EttStandard, RunMinidumpTest);
+			CUnittest *rgut[] = {test};
+			tests_failed = CUnittest::DriverTAP(rgut, 1);
+		}
+		else if (strlen(file_name) > 4 &&
+				 strcmp(&file_name[strlen(file_name) - 4], ".cpp") == 0 &&
+				 strchr(file_name, '/') != NULL)
+		{
+			CHAR *szTestName;
+
+			/* find the 'basename' '/' */
+			szTestName = strrchr(file_name, '/') + 1;
+			/* strip .cpp suffix */
+			szTestName[strlen(szTestName) - 4] = '\0';
+
+			CUnittest::FindTest(bv, CUnittest::EttStandard, szTestName);
+
+			tests_failed = CUnittest::DriverTAP(&bv);
+		}
+		else
+		{
+			/* Otherwise, assume it's a plain test name */
+			CUnittest::FindTest(bv, CUnittest::EttStandard, file_name);
+
+			tests_failed = CUnittest::DriverTAP(&bv);
+		}
+	}
+	else
+		GPOS_TRACE(GPOS_WSZ_LIT("No tests specified"));
 
 	return NULL;
 }
@@ -397,7 +523,7 @@ main(INT iArgs, const CHAR **rgszArgs)
 	GPOS_ASSERT(iArgs >= 0);
 
 	// setup args for unittest params
-	CMainArgs ma(iArgs, rgszArgs, "uU:d:xT:i:");
+	CMainArgs ma(iArgs, rgszArgs, "uU:d:xT:i:f:");
 
 	// initialize unittest framework
 	CUnittest::Init(rgut, GPOS_ARRAY_SIZE(rgut), ConfigureTests, Cleanup);

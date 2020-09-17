@@ -16,16 +16,16 @@
 .obj.*
 
 # Local excludes in root directory
-.idea
-.autotools
-.cproject
-.project
-.vscode
-build
-server/minidumps/
-ivy-*.xml
-concourse/gporca_vars.yml
-xcode_build
-server/*.md_actual
-server/*.md_expected
-
+/.idea
+/.autotools
+/.cproject
+/.project
+/.vscode
+/build
+/server/minidumps/
+/ivy-*.xml
+/concourse/gporca_vars.yml
+/xcode_build
+/server/*.md_actual
+/server/*.md_expected
+/gporca_test

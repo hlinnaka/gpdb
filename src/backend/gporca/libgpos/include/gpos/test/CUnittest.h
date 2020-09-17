@@ -168,14 +168,12 @@ public:
 	// driver routine for groups of UTs
 	static GPOS_RESULT EresExecute(const CUnittest *, const ULONG cSize);
 
-	// driver routine; returns the number of failed tests
-	// (0 if all specified tests succeeded)
-	static ULONG Driver(CBitVector *pbv);
-
-	// driver routine parsing input arguments; returns the
-	// number of failed tests (0 if all specified tests
+	// driver routine to run a group of tests and produce TAP output.
+	// returns the number of failed tests (0 if all specified tests
 	// succeeded)
-	static ULONG Driver(CMainArgs *pma);
+	static ULONG DriverTAP(CBitVector *);
+
+	static ULONG DriverTAP(CUnittest **tests, int ntests);
 
 	// initialize unittest array
 	static void Init(CUnittest *rgut, ULONG ulUtCnt, void (*pfConfig)(),

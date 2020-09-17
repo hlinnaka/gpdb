@@ -91,7 +91,7 @@ const CHAR *CTestUtils::m_szXSDPath =
 	"http://greenplum.com/dxl/2010/12/ dxl.xsd";
 
 // metadata file
-const CHAR *CTestUtils::m_szMDFileName = "../data/dxl/metadata/md.xml";
+const CHAR *CTestUtils::m_szMDFileName = "data/dxl/metadata/md.xml";
 
 // provider file
 CMDProviderMemory *CTestUtils::m_pmdpf = NULL;

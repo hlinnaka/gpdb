@@ -42,39 +42,39 @@ ULONG CICGTest::m_ulTestCounterNoAdditionTraceFlag = 0;
 
 // minidump files
 const CHAR *rgszFileNames[] = {
-	"../data/dxl/minidump/InsertIntoNonNullAfterDroppingColumn.mdp",
-	"../data/dxl/minidump/OptimizerConfigWithSegmentsForCosting.mdp",
-	"../data/dxl/minidump/QueryMismatchedDistribution.mdp",
-	"../data/dxl/minidump/QueryMismatchedDistribution-DynamicIndexScan.mdp",
-	"../data/dxl/minidump/3WayJoinOnMultiDistributionColumnsTables.mdp",
-	"../data/dxl/minidump/3WayJoinOnMultiDistributionColumnsTablesNoMotion.mdp",
-	"../data/dxl/minidump/4WayJoinInferredPredsRemovedWith2Motion.mdp",
-	"../data/dxl/minidump/NoRedistributeOnAppend.mdp",
-	"../data/dxl/minidump/ConstraintIntervalIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalNotIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithBoolNotIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithBoolNotIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithInIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithInNotIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithInIncludesNullArray.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithNotIncludesNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithMultiColumnsIncludeNull.mdp",
-	"../data/dxl/minidump/ConstraintIntervalWithMultiColumnsNotIncludeNull.mdp",
+	"data/dxl/minidump/InsertIntoNonNullAfterDroppingColumn.mdp",
+	"data/dxl/minidump/OptimizerConfigWithSegmentsForCosting.mdp",
+	"data/dxl/minidump/QueryMismatchedDistribution.mdp",
+	"data/dxl/minidump/QueryMismatchedDistribution-DynamicIndexScan.mdp",
+	"data/dxl/minidump/3WayJoinOnMultiDistributionColumnsTables.mdp",
+	"data/dxl/minidump/3WayJoinOnMultiDistributionColumnsTablesNoMotion.mdp",
+	"data/dxl/minidump/4WayJoinInferredPredsRemovedWith2Motion.mdp",
+	"data/dxl/minidump/NoRedistributeOnAppend.mdp",
+	"data/dxl/minidump/ConstraintIntervalIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalNotIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithBoolNotIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithBoolNotIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithInIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithInNotIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithInIncludesNullArray.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithNotIncludesNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithMultiColumnsIncludeNull.mdp",
+	"data/dxl/minidump/ConstraintIntervalWithMultiColumnsNotIncludeNull.mdp",
 
-	"../data/dxl/minidump/HAWQ-TPCH-Stat-Derivation.mdp",
-	"../data/dxl/minidump/HJN-Redistribute-One-Side.mdp",
-	"../data/dxl/minidump/TPCH-Q5.mdp",
-	"../data/dxl/minidump/TPCDS-39-InnerJoin-JoinEstimate.mdp",
-	"../data/dxl/minidump/TPCH-Partitioned-256GB.mdp",
+	"data/dxl/minidump/HAWQ-TPCH-Stat-Derivation.mdp",
+	"data/dxl/minidump/HJN-Redistribute-One-Side.mdp",
+	"data/dxl/minidump/TPCH-Q5.mdp",
+	"data/dxl/minidump/TPCDS-39-InnerJoin-JoinEstimate.mdp",
+	"data/dxl/minidump/TPCH-Partitioned-256GB.mdp",
 	// TODO:  - Jul 31st 2018; disabling it since new cost model picks up Indexed nested Loop Joi
 	// however the comment on file says that it should not pick Indexed Nested Loop Join.
 	// disabling it for now. Revisit this test when we upgrade scan cost model.
-	// "../data/dxl/minidump/Tpcds-10TB-Q37-NoIndexJoin.mdp",
+	// "data/dxl/minidump/Tpcds-10TB-Q37-NoIndexJoin.mdp",
 
 	// TODO:  - 06/29/2015: the row estimate for 32-bit rhel is off in the 6th decimel place
-	"../data/dxl/minidump/retail_28.mdp",
-	"../data/dxl/minidump/JoinNDVRemain.mdp",
-	"../data/dxl/minidump/Least-Greatest.mdp",
+	"data/dxl/minidump/retail_28.mdp",
+	"data/dxl/minidump/JoinNDVRemain.mdp",
+	"data/dxl/minidump/Least-Greatest.mdp",
 };
 
 struct UnSupportedTestCase
@@ -91,24 +91,24 @@ struct UnSupportedTestCase
 
 // unsupported minidump files
 const struct UnSupportedTestCase unSupportedTestCases[] = {
-	{"../data/dxl/minidump/OneSegmentGather.mdp", gpdxl::ExmaDXL,
+	{"data/dxl/minidump/OneSegmentGather.mdp", gpdxl::ExmaDXL,
 	 gpdxl::ExmiExpr2DXLUnsupportedFeature},
-	{"../data/dxl/minidump/CTEWithOuterReferences.mdp", gpopt::ExmaGPOPT,
+	{"data/dxl/minidump/CTEWithOuterReferences.mdp", gpopt::ExmaGPOPT,
 	 gpopt::ExmiUnsupportedOp},
-	{"../data/dxl/minidump/BitmapIndexUnsupportedOperator.mdp",
-	 gpopt::ExmaGPOPT, gpopt::ExmiNoPlanFound},
-	{"../data/dxl/minidump/CTEMisAlignedProducerConsumer.mdp", gpopt::ExmaGPOPT,
+	{"data/dxl/minidump/BitmapIndexUnsupportedOperator.mdp", gpopt::ExmaGPOPT,
+	 gpopt::ExmiNoPlanFound},
+	{"data/dxl/minidump/CTEMisAlignedProducerConsumer.mdp", gpopt::ExmaGPOPT,
 	 gpopt::ExmiCTEProducerConsumerMisAligned}};
 
 // negative index apply tests
 const CHAR *rgszNegativeIndexApplyFileNames[] = {
-	"../data/dxl/minidump/Negative-IndexApply1.mdp",
-	"../data/dxl/minidump/Negative-IndexApply2.mdp",
+	"data/dxl/minidump/Negative-IndexApply1.mdp",
+	"data/dxl/minidump/Negative-IndexApply2.mdp",
 };
 
 // index join penalization tests
 const CHAR *rgszPreferHashJoinVersusIndexJoin[] = {
-	"../data/dxl/indexjoin/positive_04.mdp"};
+	"data/dxl/indexjoin/positive_04.mdp"};
 
 
 //---------------------------------------------------------------------------
@@ -162,9 +162,8 @@ CICGTest::EresUnittest_RunMinidumpTests()
 GPOS_RESULT
 CICGTest::EresUnittest_RunTestsWithoutAdditionalTraceFlags()
 {
-	const CHAR *rgszFileNames[] = {
-		"../data/dxl/minidump/Union-On-HJNs.mdp",
-		"../data/dxl/minidump/Tpcds-NonPart-Q70a.mdp"};
+	const CHAR *rgszFileNames[] = {"data/dxl/minidump/Union-On-HJNs.mdp",
+								   "data/dxl/minidump/Tpcds-NonPart-Q70a.mdp"};
 	return CTestUtils::EresUnittest_RunTestsWithoutAdditionalTraceFlags(
 		rgszFileNames, &m_ulTestCounterNoAdditionTraceFlag,
 		GPOS_ARRAY_SIZE(rgszFileNames), true, true);

@@ -31,9 +31,8 @@ XERCES_CPP_NAMESPACE_USE
 using namespace gpos;
 using namespace gpdxl;
 
-static const char *szQueryFile =
-	"../data/dxl/expressiontests/TableScanQuery.xml";
-static const char *szPlanFile = "../data/dxl/expressiontests/TableScanPlan.xml";
+static const char *szQueryFile = "data/dxl/expressiontests/TableScanQuery.xml";
+static const char *szPlanFile = "data/dxl/expressiontests/TableScanPlan.xml";
 
 //---------------------------------------------------------------------------
 //	@function:

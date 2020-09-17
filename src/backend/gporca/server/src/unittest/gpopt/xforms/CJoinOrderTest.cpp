@@ -29,8 +29,8 @@ ULONG CJoinOrderTest::m_ulTestCounter = 0;	// start from first test
 
 // minidump files
 const CHAR *rgszJoinOrderFileNames[] = {
-	"../data/dxl/minidump/JoinOptimizationLevelGreedyNonPartTblInnerJoin.mdp",
-	"../data/dxl/minidump/JoinOptimizationLevelQueryNonPartTblInnerJoin.mdp"};
+	"data/dxl/minidump/JoinOptimizationLevelGreedyNonPartTblInnerJoin.mdp",
+	"data/dxl/minidump/JoinOptimizationLevelQueryNonPartTblInnerJoin.mdp"};
 
 //---------------------------------------------------------------------------
 //	@function:
