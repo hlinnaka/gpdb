@@ -19,13 +19,13 @@ explain (costs off) create table parallel_write as
     select length(stringu1) from tenk1 group by length(stringu1);
                          QUERY PLAN                         
 ------------------------------------------------------------
- Finalize GroupAggregate
+ GroupAggregate
    Group Key: (length((stringu1)::text))
    ->  Sort
          Sort Key: (length((stringu1)::text))
          ->  Redistribute Motion 3:3  (slice1; segments: 3)
                Hash Key: (length((stringu1)::text))
-               ->  Partial HashAggregate
+               ->  HashAggregate
                      Group Key: length((stringu1)::text)
                      ->  Seq Scan on tenk1
  Optimizer: Postgres query optimizer
@@ -38,13 +38,13 @@ explain (costs off) select length(stringu1) into parallel_write
     from tenk1 group by length(stringu1);
                          QUERY PLAN                         
 ------------------------------------------------------------
- Finalize GroupAggregate
+ GroupAggregate
    Group Key: (length((stringu1)::text))
    ->  Sort
          Sort Key: (length((stringu1)::text))
          ->  Redistribute Motion 3:3  (slice1; segments: 3)
                Hash Key: (length((stringu1)::text))
-               ->  Partial HashAggregate
+               ->  HashAggregate
                      Group Key: length((stringu1)::text)
                      ->  Seq Scan on tenk1
  Optimizer: Postgres query optimizer
@@ -57,13 +57,13 @@ explain (costs off) create materialized view parallel_mat_view as
     select length(stringu1) from tenk1 group by length(stringu1);
                          QUERY PLAN                         
 ------------------------------------------------------------
- Finalize GroupAggregate
+ GroupAggregate
    Group Key: (length((stringu1)::text))
    ->  Sort
          Sort Key: (length((stringu1)::text))
          ->  Redistribute Motion 3:3  (slice1; segments: 3)
                Hash Key: (length((stringu1)::text))
-               ->  Partial HashAggregate
+               ->  HashAggregate
                      Group Key: length((stringu1)::text)
                      ->  Seq Scan on tenk1
  Optimizer: Postgres query optimizer
@@ -76,13 +76,13 @@ prepare prep_stmt as select length(stringu1) from tenk1 group by length(stringu1
 explain (costs off) create table parallel_write as execute prep_stmt;
                          QUERY PLAN                         
 ------------------------------------------------------------
- Finalize GroupAggregate
+ GroupAggregate
    Group Key: (length((stringu1)::text))
    ->  Sort
          Sort Key: (length((stringu1)::text))
          ->  Redistribute Motion 3:3  (slice1; segments: 3)
                Hash Key: (length((stringu1)::text))
-               ->  Partial HashAggregate
+               ->  HashAggregate
                      Group Key: length((stringu1)::text)
                      ->  Seq Scan on tenk1
  Optimizer: Postgres query optimizer

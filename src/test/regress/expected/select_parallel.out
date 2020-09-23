@@ -260,10 +260,10 @@ explain (costs off)
 	select length(stringu1) from tenk1 group by length(stringu1);
                     QUERY PLAN                     
 ---------------------------------------------------
- Finalize HashAggregate
+ HashAggregate
    Group Key: (length((stringu1)::text))
    ->  Gather Motion 3:1  (slice1; segments: 3)
-         ->  Partial HashAggregate
+         ->  HashAggregate
                Group Key: length((stringu1)::text)
                ->  Seq Scan on tenk1
  Optimizer: Postgres query optimizer

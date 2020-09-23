@@ -3636,12 +3636,12 @@ select i as a, i as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a
 explain select j as a, j as b from qp_misc_jiras.tbl7553_test group by grouping sets( (a, b), (a)); 
                                                     QUERY PLAN                                                    
 ------------------------------------------------------------------------------------------------------------------
- Finalize GroupAggregate  (cost=10000002790.97..10000002940.97 rows=2000 width=8)
-   Group Key: (GROUPINGSET_ID()), j, j
+ GroupAggregate  (cost=10000002790.97..10000002940.97 rows=2000 width=8)
+   Group Key: j, j, (GROUPINGSET_ID())
    ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=10000002790.97..10000002875.97 rows=6000 width=8)
-         Merge Key: (GROUPINGSET_ID()), j
+         Merge Key: j, (GROUPINGSET_ID())
          ->  Sort  (cost=10000002790.97..10000002795.97 rows=2000 width=8)
-               Sort Key: (GROUPINGSET_ID()), j
+               Sort Key: j, (GROUPINGSET_ID())
                ->  Partial GroupAggregate  (cost=10000002446.06..10000002681.31 rows=2000 width=8)
                      Group Key: j, j
                      Group Key: j
@@ -4764,10 +4764,10 @@ else 'Unidentify' end
 ;
                                                                                                                              QUERY PLAN                                                                                                                              
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Finalize HashAggregate  (cost=284.32..306.82 rows=1000 width=96)
+ HashAggregate  (cost=284.32..306.82 rows=1000 width=96)
    Group Key: (CASE WHEN (ir_call_supplementary_svc_code = ANY ('{S20,S21}'::bpchar[])) THEN 'MO'::text ELSE 'foo'::text END), (CASE WHEN ((ir_call_type_group_code)::text = ANY ('{H,VH,PCB}'::text[])) THEN 'Thailland'::text ELSE 'Unidentify'::text END)
    ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=75.08..270.74 rows=2714 width=102)
-         ->  Partial HashAggregate  (cost=75.08..89.79 rows=905 width=102)
+         ->  HashAggregate  (cost=75.08..89.79 rows=905 width=102)
                Group Key: CASE WHEN (ir_call_supplementary_svc_code = ANY ('{S20,S21}'::bpchar[])) THEN 'MO'::text ELSE 'foo'::text END, CASE WHEN ((ir_call_type_group_code)::text = ANY ('{H,VH,PCB}'::text[])) THEN 'Thailland'::text ELSE 'Unidentify'::text END
                ->  Seq Scan on ir_voice_sms_and_data  (cost=0.00..65.42 rows=1933 width=102)
  Optimizer: Postgres query optimizer

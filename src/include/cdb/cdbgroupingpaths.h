@@ -16,19 +16,23 @@
 
 #include "nodes/pathnodes.h"
 
-extern void cdb_create_twostage_grouping_paths(PlannerInfo *root,
+extern void cdb_create_multistage_grouping_paths(PlannerInfo *root,
+												 RelOptInfo *input_rel,
+												 RelOptInfo *output_rel,
+												 PathTarget *target,
+												 PathTarget *partial_grouping_target,
+												 List *havingQual,
+												 double dNumGroupsTotal,
+												 const AggClauseCosts *agg_costs,
+												 const AggClauseCosts *agg_partial_costs,
+												 const AggClauseCosts *agg_final_costs,
+												 List *rollups);
+
+extern void cdb_create_twostage_distinct_paths(PlannerInfo *root,
 											   RelOptInfo *input_rel,
 											   RelOptInfo *output_rel,
 											   PathTarget *target,
-											   PathTarget *partial_grouping_target,
-											   List *havingQual,
-											   bool can_sort,
-											   bool can_hash,
-											   double dNumGroupsTotal,
-											   const AggClauseCosts *agg_costs,
-											   const AggClauseCosts *agg_partial_costs,
-											   const AggClauseCosts *agg_final_costs,
-											   List *rollups);
+											   double dNumGroupsTotal);
 
 extern Path *cdb_prepare_path_for_sorted_agg(PlannerInfo *root,
 											 bool is_sorted,
