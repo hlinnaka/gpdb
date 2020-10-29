@@ -144,6 +144,7 @@ insert into testsisc select i, i % 1000, i % 100000, i % 75 from
 	(select count(*) as nsegments from gp_segment_configuration where role='p' and content >= 0) foo) bar;
 
 create table foo (i int, j int);
+insert into foo values (1, 1);
 
 set statement_mem=1024; -- 1mb for 3 segment to get leak.
 set gp_resqueue_print_operator_memory_limits=on;
@@ -233,6 +234,7 @@ set statement_mem="1MB";
 
 drop table if exists foo;
 create table foo (c int, d int);
+insert into foo values (1, 1);
 
 -- enable the fault injector
 select gp_inject_fault('workfile_write_failure', 'reset', 2);
@@ -266,6 +268,7 @@ set gp_cte_sharing=on;
 
 drop table if exists foo;
 create table foo (c int, d int);
+insert into foo values (1, 1);
 -- expect to see leak if we hit error
 
 -- enable the fault injector
